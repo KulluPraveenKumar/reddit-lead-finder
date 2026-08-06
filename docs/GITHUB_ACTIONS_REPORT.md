@@ -132,6 +132,33 @@ addition. It was verified by **reproducing its steps exactly** instead:
 The fresh-environment run is the check that matters: it proves CI will not fail on a dependency that
 exists only in the developer's virtual environment.
 
+### 5.0 …and on a tracked-files-only checkout, which is what CI actually gets
+
+The run above still executed inside the working directory, which holds `data/leads.db` and every
+other ignored artefact. `actions/checkout` produces **only committed files**, and `git ls-files`
+lists nothing under `data/`. So the suite was run again from a `git worktree` of `HEAD` — tracked
+files and nothing else:
+
+```
+305 passed, 5 skipped
+```
+
+**Green, and the difference is entirely deliberate skip guards:**
+
+| Skipped in CI | Reason |
+|---|---|
+| `test_migrations.py:180` | *no live database present* |
+| `test_orchestration.py:413`, `:437` | *no live database present* |
+| `test_net.py:140`, `:1356` | *`PROXY_FILE` is not set* |
+
+**So CI's expected line is `305 passed, 5 skipped`, not the `308 passed, 2 skipped` a developer sees
+locally.** Both are correct for their environment; a reviewer comparing the two without knowing why
+would read a regression that is not there.
+
+The three database-dependent checks — the 459-lead fingerprint and the two orchestration schema
+assertions — are therefore **not covered by CI**, by necessity: the live database is correctly not in
+the repository. They remain the phase gate's responsibility, which is what §6 says.
+
 ### 5.1 The first real run failed — on GitHub's side, not this workflow's
 
 Run [`31116314876`](https://github.com/KulluPraveenKumar/reddit-lead-finder/actions/runs/31116314876)

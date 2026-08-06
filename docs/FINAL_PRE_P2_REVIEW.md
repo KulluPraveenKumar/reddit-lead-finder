@@ -132,10 +132,20 @@ was run as a one-off script kept outside the repository, so the transformation i
 | Schema verification | **25 / 25** |
 | Workflow validation | ✅ `ci.yml` parses; triggers, permissions and steps as intended |
 | Clean-environment CI simulation | ✅ install, lint, format, **308 passed, 2 skipped** |
+| **Tracked-files-only checkout** (what `actions/checkout` produces) | ✅ **305 passed, 5 skipped** — the three extra skips are the live-database guards firing correctly, since `data/` is not in the repository |
 | First hosted CI run | ⚠️ **blocked by a GitHub Actions outage**, not by the workflow — R5 in §9 |
 
 The 2 skips are correct: both parse a real proxy credentials file, which lives outside the repository
 by design (R15). With `PROXY_FILE` set the suite reports `310 passed, 0 skipped`.
+
+**Three expected lines, all correct, for three environments** — worth stating once so nobody reads a
+regression into a difference:
+
+| Environment | Expected | Why |
+|---|---|---|
+| Developer machine | `308 passed, 2 skipped` | Live database present; no proxy file |
+| Developer machine with `PROXY_FILE` | `310 passed, 0 skipped` | Everything available |
+| **CI** | `305 passed, 5 skipped` | Tracked files only — no `data/leads.db`, no proxy file |
 
 ---
 
@@ -195,6 +205,7 @@ Versioning follows the existing convention `v<pyproject version>-p<phase>`, set 
 | R4 | [Freeze R20](ARCHITECTURE_FREEZE.md) says "`GET /` byte-identical"; the shipped guard is an API-contract check | Low | A documentation reconciliation, not an amendment. Tracked as **DI7**; editing the freeze is the operator's call |
 | R5 | **CI has not yet completed a real run.** The first two attempts failed at *Set up job* with `Failed to resolve action download info / Service Unavailable` — **GitHub Actions was in a declared partial outage** (incident opened 15:22 UTC; the run started 15:32 UTC) | Low, external | No step of the workflow executed, so nothing in it can be the cause. Repository settings verified permissive. The steps are proven green in a clean-environment reproduction. Re-run `gh run rerun 31116314876` once the incident closes — [GITHUB_ACTIONS_REPORT §5.1](GITHUB_ACTIONS_REPORT.md) |
 | R6 | Formatter drift on a future ruff bump | Low | Mitigated by the exact pin; bumping runs `ruff format .` in the same change |
+| R7 | Four statements about the required Python version give two answers (freeze 3.12; `pyproject` `>=3.11`/`py311`; a guide's "floor is 3.11"; CI 3.12) | Low | Documentation inconsistency, not an architecture change. Pins deliberately unchanged. Tracked as **DI10** |
 
 **No unresolved technical blocker.**
 
@@ -202,10 +213,10 @@ Versioning follows the existing convention `v<pyproject version>-p<phase>`, set 
 
 ## 10. Deferred improvements
 
-Nine open entries and two open decisions in [DEFERRED-IMPROVEMENTS.md](DEFERRED-IMPROVEMENTS.md),
-each with the evidence that would justify acting. Closed in this pass: **DI2** (CI, built) and **O1**
+Ten open entries and two open decisions in [DEFERRED-IMPROVEMENTS.md](DEFERRED-IMPROVEMENTS.md), each
+with the evidence that would justify acting. Closed in this pass: **DI2** (CI, built) and **O1**
 (fixture titles, resolved). Added: **DI7** (R20 wording), **DI8** (SHA-pinned actions), **DI9**
-(workflow concurrency).
+(workflow concurrency), **DI10** (Python-version statements).
 
 Nothing here is scheduled, and nothing here blocks P2.
 
