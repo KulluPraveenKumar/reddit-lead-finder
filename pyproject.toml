@@ -50,6 +50,31 @@ ignore = [
 "src/db/__init__.py" = ["ALL"]
 "src/dashboard/__init__.py" = ["ALL"]
 
+[tool.ruff.format]
+# What the formatter must not touch, so that `ruff format --check .` is a check a
+# machine can run rather than a command every caller has to scope by hand.
+#
+# 1. Markdown. Ruff formats Python inside fenced blocks; the design documents use
+#    hand-aligned columns and arrows in those blocks deliberately, and reflowing
+#    them would rewrite ~22 frozen documents to say the same thing less clearly.
+# 2. The pre-Phase-1 modules already exempted from lint above, for the same
+#    reason: `routes.py` must keep rendering the legacy dashboard unchanged, and
+#    reformatting it would risk that guarantee to fix nothing.
+#
+# Remove a line when its module is genuinely rewritten by the phase that owns it.
+exclude = [
+    "*.md",
+    "src/reddit_client.py",
+    "src/scoring.py",
+    "src/subreddit_loader.py",
+    "src/config.py",
+    "src/scrapers/*",
+    "src/dashboard/routes.py",
+    "src/__init__.py",
+    "src/db/__init__.py",
+    "src/dashboard/__init__.py",
+]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]

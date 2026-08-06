@@ -138,9 +138,7 @@ class ProviderRouter:
             raise NoProviderAvailableError(
                 "No AI provider is configured. Add a key on the Settings page."
             )
-        waits = {
-            n: round(self.health.for_provider(n).seconds_until_retry) for n in configured
-        }
+        waits = {n: round(self.health.for_provider(n).seconds_until_retry) for n in configured}
         soonest = min(waits.values()) if waits else 0
         raise NoProviderAvailableError(
             f"All configured providers are temporarily unavailable ({', '.join(configured)}). "
@@ -171,7 +169,9 @@ class ProviderRouter:
                 latency = getattr(exc, "latency_ms", 0) or 0
                 health.record_failure(exc, latency)
                 self.attempts.append(
-                    RouteAttempt(provider=name, ok=False, error=f"{type(exc).__name__}: {exc}"[:200])
+                    RouteAttempt(
+                        provider=name, ok=False, error=f"{type(exc).__name__}: {exc}"[:200]
+                    )
                 )
                 errors.append((name, exc))
 
@@ -189,9 +189,7 @@ class ProviderRouter:
 
         if errors:
             raise errors[-1][1]
-        raise NoProviderAvailableError(
-            "No configured provider was available to serve the request."
-        )
+        raise NoProviderAvailableError("No configured provider was available to serve the request.")
 
     # -------------------------------------------------------------- readouts
 

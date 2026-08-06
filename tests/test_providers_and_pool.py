@@ -209,7 +209,9 @@ def test_run_with_retry_eventually_succeeds():
             raise ProviderServerError("nope", status_code=500)
         return "done"
 
-    result = run_with_retry(flaky, RetryPolicy(max_attempts=3, base_delay=0.0), sleep=lambda _: None)
+    result = run_with_retry(
+        flaky, RetryPolicy(max_attempts=3, base_delay=0.0), sleep=lambda _: None
+    )
     assert result == "done"
     assert attempts == [1, 2, 3]
 

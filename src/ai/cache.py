@@ -160,7 +160,9 @@ class ResponseCache:
     would show up in wall-clock time on a 200-item run.
     """
 
-    def __init__(self, session_factory=None, *, memory_only: bool = False, max_memory_entries: int = 2000):
+    def __init__(
+        self, session_factory=None, *, memory_only: bool = False, max_memory_entries: int = 2000
+    ):
         self._memory: dict[str, CacheEntry] = {}
         self._lock = threading.Lock()
         self._session_factory = session_factory
@@ -245,7 +247,9 @@ class ResponseCache:
                 item_content_hash=item_content_hash,
             )
 
-    def _db_put(self, key, payload, *, provider, model, stage, prompt_version, item_content_hash) -> None:
+    def _db_put(
+        self, key, payload, *, provider, model, stage, prompt_version, item_content_hash
+    ) -> None:
         session = self._open_session()
         if session is None:
             return
@@ -289,7 +293,9 @@ class ResponseCache:
 
             row = (
                 session.query(AICache)
-                .filter_by(content_hash=item_content_hash, stage=stage, prompt_version=prompt_version)
+                .filter_by(
+                    content_hash=item_content_hash, stage=stage, prompt_version=prompt_version
+                )
                 .first()
             )
             if row is None:

@@ -112,7 +112,11 @@ class FakeProvider(LLMProvider):
 
         cached = scripted.input_tokens_cached
         uncached = scripted.input_tokens_uncached
-        if cached == 0 and call_number > self.cache_warm_after and self.capabilities.supports_prefix_caching:
+        if (
+            cached == 0
+            and call_number > self.cache_warm_after
+            and self.capabilities.supports_prefix_caching
+        ):
             cached = self.simulated_prefix_tokens
             uncached = max(0, uncached - cached) if uncached > cached else uncached
 

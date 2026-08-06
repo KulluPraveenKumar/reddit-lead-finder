@@ -1,0 +1,39 @@
+name: CI
+
+# Push is filtered to main so a branch that has an open pull request is not
+# checked twice for the same commit. A branch without a PR is still covered the
+# moment it opens one.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# The workflow reads the repository and nothing else. Everything below runs
+# offline: the suite mocks HTTP and needs no secret, no token and no service.
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          # ARCHITECTURE_FREEZE.md §5 pins Python 3.12. One version, no matrix:
+          # this is a single-operator tool that runs on one VPS.
+          python-version: '3.12'
+          # Measured on this project: a cold install takes 67 s, a warm one 46 s.
+          # One line, no extra action, no cache key to maintain.
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - run: python -m pip install -r requirements.txt
+
+      - run: ruff check .
+
+      - run: ruff format --check .
+
+      - run: pytest

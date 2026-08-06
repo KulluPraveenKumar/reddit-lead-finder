@@ -17,4 +17,7 @@ python-dotenv>=1.0
 pytest>=8.0
 pytest-cov>=5.0
 responses>=0.25
-ruff>=0.5
+# Pinned exactly, not floored: the formatter's output changes between releases,
+# so an unpinned ruff turns `ruff format --check` in CI red on a day nobody
+# touched the code. Bump deliberately, then run `ruff format .` in the same change.
+ruff==0.16.1

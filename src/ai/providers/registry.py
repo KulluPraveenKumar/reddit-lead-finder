@@ -132,7 +132,9 @@ def get_descriptor(name: str) -> ProviderDescriptor:
         ) from None
 
 
-def build_provider(name: str, api_key: str | None = None, *, model: str | None = None, **options) -> LLMProvider:
+def build_provider(
+    name: str, api_key: str | None = None, *, model: str | None = None, **options
+) -> LLMProvider:
     descriptor = get_descriptor(name)
     return descriptor.cls(api_key=api_key, model=model or descriptor.default_model, **options)
 

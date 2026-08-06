@@ -91,13 +91,17 @@ which looks exactly like a broken change:
 ```
 → **Expected**, on the last line:
 ```
-310 passed, 9 warnings
+308 passed, 2 skipped
 ```
-→ The count must be **310 or more**, and **`failed` must not appear**. The elapsed time varies and
+→ The count must be **308 or more**, and **`failed` must not appear**. The elapsed time varies and
 does not matter.
 
 > The figure was `265` when P0 was signed off. P1 added 36 tests and the P1 verification pass added
 > nine more. A **higher** number is correct; a lower one means tests were lost.
+
+> **The 2 skipped are correct, not a regression.** Both parse a *real* proxy credentials file, which
+> lives outside the repository by design (R15), so they skip unless `PROXY_FILE` points at one. With
+> `PROXY_FILE` set the suite reports `310 passed, 0 skipped`. Either line passes this step.
 
 ### Step 2
 Confirm the new credential-safety tests ran:
@@ -122,7 +126,7 @@ test_disabled_provider_refuses_every_call PASSED
 **Logs to verify:** the 9 warnings are pre-existing `datetime.utcnow()` deprecations in SQLAlchemy.
 They are expected and are not caused by P0.
 
-**Acceptance:** ✅ 310+ passed, 0 failed, 10 probe tests present.
+**Acceptance:** ✅ 308+ passed, 0 failed (2 skipped is expected), 10 probe tests present.
 
 ---
 
@@ -412,7 +416,7 @@ Confirm the application is unaffected:
 | Check | Pass |
 |---|---|
 | T1 — lint and format clean | ☐ |
-| T2 — 310+ tests pass, 0 failed | ☐ |
+| T2 — 308+ tests pass, 0 failed (2 skipped is expected) | ☐ |
 | T3 — credentials never leak | ☐ |
 | T4 — recommendation is `direct`, no IP leak | ☐ |
 | T5 — RSS verdicts as measured | ☐ |

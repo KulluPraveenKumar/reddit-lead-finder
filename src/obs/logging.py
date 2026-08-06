@@ -60,9 +60,7 @@ class RedactingFilter(logging.Filter):
                     k: redact(v) if isinstance(v, str) else v for k, v in record.args.items()
                 }
             elif isinstance(record.args, tuple):
-                record.args = tuple(
-                    redact(a) if isinstance(a, str) else a for a in record.args
-                )
+                record.args = tuple(redact(a) if isinstance(a, str) else a for a in record.args)
 
         if record.exc_text:
             record.exc_text = redact(record.exc_text)
@@ -75,10 +73,27 @@ class RedactingFilter(logging.Filter):
 
 
 _RESERVED = {
-    "name", "msg", "args", "levelname", "levelno", "pathname", "filename",
-    "module", "exc_info", "exc_text", "stack_info", "lineno", "funcName",
-    "created", "msecs", "relativeCreated", "thread", "threadName",
-    "processName", "process", "taskName",
+    "name",
+    "msg",
+    "args",
+    "levelname",
+    "levelno",
+    "pathname",
+    "filename",
+    "module",
+    "exc_info",
+    "exc_text",
+    "stack_info",
+    "lineno",
+    "funcName",
+    "created",
+    "msecs",
+    "relativeCreated",
+    "thread",
+    "threadName",
+    "processName",
+    "process",
+    "taskName",
 }
 
 # Context keys carried on every line when in scope.
@@ -109,12 +124,16 @@ class ConsoleFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         base = super().format(record)
         ctx = " ".join(
-            f"{k}={getattr(record, k)}" for k in _CONTEXT_KEYS if getattr(record, k, None) is not None
+            f"{k}={getattr(record, k)}"
+            for k in _CONTEXT_KEYS
+            if getattr(record, k, None) is not None
         )
         return f"{base}  [{ctx}]" if ctx else base
 
 
-def configure_logging(level: str = "INFO", fmt: str = "console", log_file: str | None = None) -> None:
+def configure_logging(
+    level: str = "INFO", fmt: str = "console", log_file: str | None = None
+) -> None:
     """Install handlers with the redacting filter attached to every one."""
     root = logging.getLogger()
     root.setLevel(getattr(logging, level.upper(), logging.INFO))

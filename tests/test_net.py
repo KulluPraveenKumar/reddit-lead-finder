@@ -255,7 +255,7 @@ class TestBlockClassification:
         assert blocks.classify(200, html, expect_selector_hits=5).kind is BlockKind.SOFT
 
     def test_interstitial_title_path_alone(self):
-        """"Welcome to Reddit" served in place of a subreddit -- 200, real HTML,
+        """ "Welcome to Reddit" served in place of a subreddit -- 200, real HTML,
         no posts. This is the exact shape observed live."""
         html = "<html><title>Welcome to Reddit</title><body><p>hi</p></body></html>"
         assert blocks.classify(200, html, expect_selector_hits=0).kind is BlockKind.SOFT
@@ -495,9 +495,7 @@ class TestTransport:
         interstitial = "<html><title>Welcome to Reddit</title><body></body></html>"
         good = "<html><div class='thing'>post</div></html>"
         client, pool, _ = _client_with([_FakeResponse(200, interstitial), _FakeResponse(200, good)])
-        result = client.get(
-            "https://old.reddit.com/r/SaaS/new/", expect_selector="div.thing"
-        )
+        result = client.get("https://old.reddit.com/r/SaaS/new/", expect_selector="div.thing")
         assert result.ok
         assert result.attempts == 2
         assert "Welcome to Reddit" not in result.text
@@ -546,8 +544,10 @@ class TestTransport:
     def test_allow_cache_false_bypasses_the_cache(self, no_sleep):
         cache = HTTPCache(memory_only=True)
         client, pool, session = _client_with(
-            [_FakeResponse(200, "<div class='thing'>a</div>"),
-             _FakeResponse(200, "<div class='thing'>b</div>")]
+            [
+                _FakeResponse(200, "<div class='thing'>a</div>"),
+                _FakeResponse(200, "<div class='thing'>b</div>"),
+            ]
         )
         client.cache = cache
         url = "https://old.reddit.com/r/SaaS/new/"
@@ -574,8 +574,10 @@ class TestTransport:
         import requests as _requests
 
         client, pool, _ = _client_with(
-            [_requests.exceptions.ConnectionError("refused"),
-             _FakeResponse(200, "<div class='thing'>ok</div>")]
+            [
+                _requests.exceptions.ConnectionError("refused"),
+                _FakeResponse(200, "<div class='thing'>ok</div>"),
+            ]
         )
         assert client.get("https://old.reddit.com/r/SaaS/new/").ok
 
@@ -637,8 +639,10 @@ class TestTransport:
         endpoints = [_endpoint("7.7.7.1"), _endpoint("7.7.7.2")]
         pool = ProxyManager(endpoints, delay_range=(0.0, 0.0))
         session = _FakeSession(
-            [_FakeResponse(429, "slow down", headers={"Retry-After": "30"}),
-             _FakeResponse(200, "<div class='thing'>ok</div>")]
+            [
+                _FakeResponse(429, "slow down", headers={"Retry-After": "30"}),
+                _FakeResponse(200, "<div class='thing'>ok</div>"),
+            ]
         )
 
         def tracking_session_for(endpoint):
@@ -655,8 +659,10 @@ class TestTransport:
     def test_429_retry_after_is_honoured(self, no_sleep):
         """AC8's wait. The slept duration is captured rather than timed."""
         client, pool, _ = _client_with(
-            [_FakeResponse(429, "slow", headers={"Retry-After": "30"}),
-             _FakeResponse(200, "<div class='thing'>ok</div>")]
+            [
+                _FakeResponse(429, "slow", headers={"Retry-After": "30"}),
+                _FakeResponse(200, "<div class='thing'>ok</div>"),
+            ]
         )
         client.get("https://old.reddit.com/r/SaaS/new/")
         assert no_sleep, "no backoff was applied to a 429"
@@ -678,8 +684,11 @@ class TestTransport:
     def test_every_request_exits_through_a_proxy(self, no_sleep):
         """AC2. Zero requests may leave from the local IP."""
         client, pool, session = _client_with(
-            [_FakeResponse(403, "no"), _FakeResponse(403, "no"),
-             _FakeResponse(200, "<div class='thing'>ok</div>")]
+            [
+                _FakeResponse(403, "no"),
+                _FakeResponse(403, "no"),
+                _FakeResponse(200, "<div class='thing'>ok</div>"),
+            ]
         )
         client.get("https://old.reddit.com/r/SaaS/new/")
         assert len(session.calls) == 3
@@ -936,6 +945,10 @@ class TestRedditParsers:
         posts, _ = client._parse_listing(html)
         assert len(posts) > 0
         assert any(p["score"] is not None for p in posts), "listing scores were all None"
+        # Mutation testing during the fixture anonymisation found this gap: breaking the
+        # title selector left every post with an empty title and the test still passed.
+        # A listing whose posts have no title is a parser regression, not a quiet subreddit.
+        assert all(p["title"] for p in posts), "listing titles were empty"
 
     def test_soft_block_fixture_yields_no_posts(self, client):
         """The parser must not invent posts from an interstitial, and the block
@@ -1140,11 +1153,23 @@ class TestScoringSettingsQueryCount:
         d = config.get("scoring", {})
         q = lambda k: session.query(Settings).filter_by(key=k).first()  # noqa: E731
         return {
-            "keyword_weight": float(q("keyword_weight").value if q("keyword_weight") else d.get("keyword_weight", 3)),
-            "upvote_weight": float(q("upvote_weight").value if q("upvote_weight") else d.get("upvote_weight", 1)),
-            "comment_weight": float(q("comment_weight").value if q("comment_weight") else d.get("comment_weight", 2)),
-            "recency_weight": float(q("recency_weight").value if q("recency_weight") else d.get("recency_weight", 1.5)),
-            "high_intent_multiplier": float(q("high_intent_multiplier").value if q("high_intent_multiplier") else d.get("high_intent_multiplier", 2)),
+            "keyword_weight": float(
+                q("keyword_weight").value if q("keyword_weight") else d.get("keyword_weight", 3)
+            ),
+            "upvote_weight": float(
+                q("upvote_weight").value if q("upvote_weight") else d.get("upvote_weight", 1)
+            ),
+            "comment_weight": float(
+                q("comment_weight").value if q("comment_weight") else d.get("comment_weight", 2)
+            ),
+            "recency_weight": float(
+                q("recency_weight").value if q("recency_weight") else d.get("recency_weight", 1.5)
+            ),
+            "high_intent_multiplier": float(
+                q("high_intent_multiplier").value
+                if q("high_intent_multiplier")
+                else d.get("high_intent_multiplier", 2)
+            ),
         }
 
     def test_output_matches_the_previous_implementation(self, temp_db):
@@ -1288,9 +1313,7 @@ class TestProxyHealthEndpoints:
         outbound proxy requests."""
         assert client.get("/api/health/proxies/check").status_code == 405
 
-    def test_check_reports_when_the_leak_comparison_could_not_be_made(
-        self, client, monkeypatch
-    ):
+    def test_check_reports_when_the_leak_comparison_could_not_be_made(self, client, monkeypatch):
         """An empty ``leaking`` list is ambiguous on its own.
 
         If the local address cannot be determined, nothing was compared -- and

@@ -1,5 +1,6 @@
 # Reddit Lead Finder
 
+[![CI](https://github.com/KulluPraveenKumar/reddit-lead-finder/actions/workflows/ci.yml/badge.svg)](https://github.com/KulluPraveenKumar/reddit-lead-finder/actions/workflows/ci.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Lint: ruff](https://img.shields.io/badge/lint-ruff-261230.svg)](https://github.com/astral-sh/ruff)
@@ -108,7 +109,13 @@ python -m ruff check --fix .               # autofix
 The suite runs entirely offline: HTTP is mocked with `responses`, and everything
 else uses `FakeProvider`. Two tests parse a real proxy list and **skip** unless
 `PROXY_FILE` points at one — that file holds live credentials, so it lives
-outside the repository by design.
+outside the repository by design. Expect `308 passed, 2 skipped`, or
+`310 passed` with `PROXY_FILE` set.
+
+The same three commands run in CI on every push to `main` and every pull request
+([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) — no secrets, no
+deployment. The test fixtures are fully synthetic: no real Reddit username,
+post title or post id is published here ([docs/PRIVACY_REVIEW.md](docs/PRIVACY_REVIEW.md)).
 
 ### Verifying the database
 
@@ -131,6 +138,8 @@ testing guides in [docs/testing/](docs/testing/) use it throughout.
 
 ```
 main.py              CLI entry point
+CHANGELOG.md         Release history, hand-maintained
+.github/workflows/   CI: ruff check, ruff format --check, pytest
 config.yaml          Non-secret configuration (never an API key)
 .env                 APP_SECRET_KEY  (gitignored)
 migrations/          Alembic revisions - a single linear chain

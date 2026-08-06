@@ -158,7 +158,9 @@ class MigrationRunner:
             backup_path = self.backup()
 
         if current is None and self._has_legacy_tables():
-            log.info("existing tables found with no migration history — stamping %s", BASELINE_REVISION)
+            log.info(
+                "existing tables found with no migration history — stamping %s", BASELINE_REVISION
+            )
             command.stamp(cfg, BASELINE_REVISION)
 
         command.upgrade(cfg, "head")

@@ -182,9 +182,7 @@ def test_batch_id_mismatch_is_a_failure(settings):
     service = _service(settings, provider)
 
     with pytest.raises(SchemaValidationError, match="id mismatch"):
-        service.enrich_batch(
-            items=[{"id": "item-1"}, {"id": "item-2"}], business_context="ctx"
-        )
+        service.enrich_batch(items=[{"id": "item-1"}, {"id": "item-2"}], business_context="ctx")
 
 
 def test_results_are_matched_by_id_not_position(settings):
@@ -211,9 +209,7 @@ def test_results_are_matched_by_id_not_position(settings):
 
 def test_401_is_not_retried_and_marks_state(settings):
     provider = FakeProvider(
-        handler=lambda _r: ScriptedResponse(
-            raises=InvalidAPIKeyError("rejected", status_code=401)
-        )
+        handler=lambda _r: ScriptedResponse(raises=InvalidAPIKeyError("rejected", status_code=401))
     )
     service = _service(settings, provider)
 
@@ -334,7 +330,9 @@ def test_daily_spend_is_resumed_after_a_restart(settings, enrichment_payload, te
     def provider():
         return FakeProvider(
             handler=lambda req: ScriptedResponse(
-                content=json.dumps({"results": [dict(enrichment_payload["results"][0], id=_only_id(req))]})
+                content=json.dumps(
+                    {"results": [dict(enrichment_payload["results"][0], id=_only_id(req))]}
+                )
             )
         )
 
@@ -368,7 +366,9 @@ def test_daily_cap_counts_spend_from_before_the_restart(settings, enrichment_pay
     def provider():
         return FakeProvider(
             handler=lambda req: ScriptedResponse(
-                content=json.dumps({"results": [dict(enrichment_payload["results"][0], id=_only_id(req))]})
+                content=json.dumps(
+                    {"results": [dict(enrichment_payload["results"][0], id=_only_id(req))]}
+                )
             )
         )
 

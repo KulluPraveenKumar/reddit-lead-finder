@@ -66,11 +66,7 @@ class LeadRepository:
         found: set[str] = set()
         for start in range(0, len(ordered), _IN_CHUNK):
             chunk = ordered[start : start + _IN_CHUNK]
-            rows = (
-                self.session.query(Lead.reddit_id)
-                .filter(Lead.reddit_id.in_(chunk))
-                .all()
-            )
+            rows = self.session.query(Lead.reddit_id).filter(Lead.reddit_id.in_(chunk)).all()
             found.update(row[0] for row in rows)
         return found
 

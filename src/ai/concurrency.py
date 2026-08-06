@@ -111,7 +111,14 @@ class PoolReport:
 class ConcurrencyPool:
     """Adaptive pool: halves on pressure, steps up on a clean window."""
 
-    def __init__(self, initial: int = 8, floor: int = 1, ceiling: int = 16, *, rate_limiter: RateLimiter | None = None):
+    def __init__(
+        self,
+        initial: int = 8,
+        floor: int = 1,
+        ceiling: int = 16,
+        *,
+        rate_limiter: RateLimiter | None = None,
+    ):
         self.initial = max(1, initial)
         self.floor = max(1, floor)
         self.ceiling = max(self.floor, ceiling)

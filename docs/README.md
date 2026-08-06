@@ -48,6 +48,14 @@ the ones to read when you want to know what exists rather than what is intended.
 | **P1** — Run & job schema | ✅ complete 2026-08-05 | [PHASE-01-COMPLETION-REPORT.md](PHASE-01-COMPLETION-REPORT.md) · [PHASE-01-HANDOVER.md](PHASE-01-HANDOVER.md) · [progress/P01-COMPLETE.md](progress/P01-COMPLETE.md) | [testing/P01-testing.md](testing/P01-testing.md) |
 | **P2** — Job queue, worker, logging | ⬜ not started | — | — |
 
+**Operational records** — verification passes between phases, not phases themselves:
+[PRE-P2-VERIFICATION-REPORT.md](PRE-P2-VERIFICATION-REPORT.md) ·
+[PRIVACY_REVIEW.md](PRIVACY_REVIEW.md) ·
+[GITHUB_ACTIONS_REPORT.md](GITHUB_ACTIONS_REPORT.md) ·
+[TAG_REPORT.md](TAG_REPORT.md) ·
+[FINAL_PRE_P2_REVIEW.md](FINAL_PRE_P2_REVIEW.md) ·
+[../CHANGELOG.md](../CHANGELOG.md)
+
 [`progress/`](progress/) holds one `PNN-COMPLETE.md` per finished phase, each ending in a **resume
 point**. It exists so an interruption — power loss, crash, context reset — can be recovered from
 without re-deriving state. [`../RECOVERY_REPORT.md`](../RECOVERY_REPORT.md) is the audit produced the

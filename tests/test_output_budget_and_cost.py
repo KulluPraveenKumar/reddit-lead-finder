@@ -98,7 +98,9 @@ def test_escalation_is_bounded(settings):
 
     def handler(request):
         seen.append(request.max_tokens)
-        return ScriptedResponse(content="", output_tokens=request.max_tokens, finish_reason="length")
+        return ScriptedResponse(
+            content="", output_tokens=request.max_tokens, finish_reason="length"
+        )
 
     service = _service(settings, FakeProvider(handler=handler))
 

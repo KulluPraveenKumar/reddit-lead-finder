@@ -214,9 +214,7 @@ def health_ai():
     # Persisted history is more honest than in-process counters, which reset on
     # restart and would make a cache regression look like it had healed.
     total_input = today["input_tokens_cached"] + today["input_tokens_uncached"]
-    persisted_cache_ratio = (
-        today["input_tokens_cached"] / total_input if total_input else None
-    )
+    persisted_cache_ratio = today["input_tokens_cached"] / total_input if total_input else None
     if persisted_cache_ratio is not None:
         health_metrics["prefix_cache_ratio"]["value"] = round(persisted_cache_ratio, 4)
         health_metrics["prefix_cache_ratio"]["ok"] = (

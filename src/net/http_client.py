@@ -96,7 +96,10 @@ class ProxiedHTTPClient:
             if cached is not None:
                 self.metrics.record_cache_hit()
                 return FetchResult(
-                    url=url, status_code=200, text=cached, from_cache=True,
+                    url=url,
+                    status_code=200,
+                    text=cached,
+                    from_cache=True,
                     verdict=blocks.BlockVerdict(blocks.BlockKind.NONE),
                 )
 
@@ -180,8 +183,13 @@ class ProxiedHTTPClient:
                 if allow_cache and self.cache is not None and verdict.cacheable:
                     self.cache.put(url, text, ttl=cache_ttl)
                 return FetchResult(
-                    url=url, status_code=status, text=text, proxy=endpoint.label if endpoint else None,
-                    latency_ms=latency, attempts=attempt, verdict=verdict,
+                    url=url,
+                    status_code=status,
+                    text=text,
+                    proxy=endpoint.label if endpoint else None,
+                    latency_ms=latency,
+                    attempts=attempt,
+                    verdict=verdict,
                     final_url=str(response.url),
                 )
 
@@ -190,12 +198,15 @@ class ProxiedHTTPClient:
             if endpoint:
                 self.proxies.record_failure(endpoint, reason, blocked=verdict.blocked)
             self.metrics.record_request(
-                ok=False, latency_ms=latency, proxy=endpoint.label if endpoint else None,
+                ok=False,
+                latency_ms=latency,
+                proxy=endpoint.label if endpoint else None,
                 blocked=verdict.blocked,
             )
 
             error_class = (
-                NetErrorClass.ROTATE if verdict.kind is blocks.BlockKind.SOFT
+                NetErrorClass.ROTATE
+                if verdict.kind is blocks.BlockKind.SOFT
                 else classify_status(status)
             )
             last_error = BlockedError(reason, kind=str(verdict.kind), status=status)
@@ -203,9 +214,13 @@ class ProxiedHTTPClient:
             if not self.retry.should_retry(error_class, attempt):
                 if error_class is NetErrorClass.FATAL:
                     return FetchResult(
-                        url=url, status_code=status, text=text,
+                        url=url,
+                        status_code=status,
+                        text=text,
                         proxy=endpoint.label if endpoint else None,
-                        latency_ms=latency, attempts=attempt, verdict=verdict,
+                        latency_ms=latency,
+                        attempts=attempt,
+                        verdict=verdict,
                     )
                 break
 
@@ -213,13 +228,18 @@ class ProxiedHTTPClient:
             delay = self.retry.delay_for(error_class, attempt, retry_after)
             log.info(
                 "%s on attempt %d (%s); retrying in %.1fs",
-                reason, attempt, endpoint.label if endpoint else "direct", delay,
+                reason,
+                attempt,
+                endpoint.label if endpoint else "direct",
+                delay,
             )
             time.sleep(delay)
 
         message = f"Giving up on {url} after {attempt} attempts: {last_error}"
         log.warning(message)
-        raise BlockedError(message) if isinstance(last_error, BlockedError) else BlockedError(message)
+        raise (
+            BlockedError(message) if isinstance(last_error, BlockedError) else BlockedError(message)
+        )
 
     # ------------------------------------------------------------- support
 

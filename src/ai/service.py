@@ -223,7 +223,11 @@ class AIService:
         ).value
 
     def enrich_batch(
-        self, *, items: list[dict[str, Any]], business_context: str, frozen: FrozenContext | None = None
+        self,
+        *,
+        items: list[dict[str, Any]],
+        business_context: str,
+        frozen: FrozenContext | None = None,
     ) -> EnrichmentBatchOut:
         """Analyse a batch of Reddit items in one call.
 
@@ -347,8 +351,14 @@ class AIService:
             "routing": self.router.status(),
         }
 
-    def provider_comparison(self, *, prefix_tokens: int = 3500, item_tokens: int = 500,
-                            output_tokens: int = 250, items: int = 1000) -> list[dict]:
+    def provider_comparison(
+        self,
+        *,
+        prefix_tokens: int = 3500,
+        item_tokens: int = 500,
+        output_tokens: int = 250,
+        items: int = 1000,
+    ) -> list[dict]:
         """What the same workload would cost on each registered provider.
 
         Estimated from published price tables, not measured. Its job is to make
@@ -622,8 +632,7 @@ class AIService:
             # content problems. Sending them down the repair ladder wastes two
             # attempts on a fault no rewording can fix.
             budget_starved = response.truncated or (
-                not response.content.strip()
-                and response.reasoning_tokens >= max_tokens * 0.9
+                not response.content.strip() and response.reasoning_tokens >= max_tokens * 0.9
             )
             if budget_starved and max_tokens < MAX_OUTPUT_CEILING:
                 previous = max_tokens
@@ -637,8 +646,12 @@ class AIService:
                     max_tokens,
                 )
                 self._record_ai_call(
-                    stage=stage, version=version, response=response, cost=0.0,
-                    outcome="truncated", attempt=total_attempts,
+                    stage=stage,
+                    version=version,
+                    response=response,
+                    cost=0.0,
+                    outcome="truncated",
+                    attempt=total_attempts,
                     prefix_hash=prefix_hash,
                     error=f"output budget {previous} exhausted; retrying at {max_tokens}",
                 )
@@ -650,8 +663,13 @@ class AIService:
                 # Two rows per call would inflate every calls-per-1,000-posts
                 # figure by the repair rate.
                 self._record_ai_call(
-                    stage=stage, version=version, response=response, cost=cost,
-                    outcome="ok", attempt=total_attempts, prefix_hash=prefix_hash,
+                    stage=stage,
+                    version=version,
+                    response=response,
+                    cost=cost,
+                    outcome="ok",
+                    attempt=total_attempts,
+                    prefix_hash=prefix_hash,
                 )
                 return CallResult(
                     value=outcome.value,
@@ -679,7 +697,9 @@ class AIService:
                 self.metrics.record_failure()
                 raise ResponseRepairer.to_exception(outcome, response.content, total_attempts)
 
-            log.info("repairing %s: %s (branch attempt %d)", stage, branch.value, branch_attempts[branch])
+            log.info(
+                "repairing %s: %s (branch attempt %d)", stage, branch.value, branch_attempts[branch]
+            )
             repair_hint = outcome.retry_hint
 
     # -------------------------------------------------------------- recording

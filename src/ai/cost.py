@@ -62,7 +62,9 @@ class Spend:
     output_tokens: int = 0
     cache_hits: int = 0
 
-    def add(self, *, cost: float, cached: int, uncached: int, out: int, from_cache: bool = False) -> None:
+    def add(
+        self, *, cost: float, cached: int, uncached: int, out: int, from_cache: bool = False
+    ) -> None:
         self.cost_usd += cost
         self.calls += 1
         self.input_tokens_cached += cached
@@ -127,8 +129,12 @@ class CostTracker:
             cost = reported
         else:
             cost = self.cost_of(cached, uncached, out)
-        self.run_spend.add(cost=cost, cached=cached, uncached=uncached, out=out, from_cache=from_cache)
-        self.day_spend().add(cost=cost, cached=cached, uncached=uncached, out=out, from_cache=from_cache)
+        self.run_spend.add(
+            cost=cost, cached=cached, uncached=uncached, out=out, from_cache=from_cache
+        )
+        self.day_spend().add(
+            cost=cost, cached=cached, uncached=uncached, out=out, from_cache=from_cache
+        )
         return cost
 
     def load_day_spend(self, spent_usd: float, calls: int = 0, when: date | None = None) -> None:
@@ -177,21 +183,35 @@ class CostTracker:
                 spent=day.cost_usd,
             )
 
-    def estimate(self, *, prefix_tokens: int, item_tokens: int, output_tokens: int, warm: bool = True) -> float:
+    def estimate(
+        self, *, prefix_tokens: int, item_tokens: int, output_tokens: int, warm: bool = True
+    ) -> float:
         """Estimate one call. ``warm=False`` is the cold-cache upper bound."""
         if warm:
             return self.cost_of(prefix_tokens, item_tokens, output_tokens)
         return self.cost_of(0, prefix_tokens + item_tokens, output_tokens)
 
-    def estimate_range(self, *, prefix_tokens: int, item_tokens: int, output_tokens: int) -> tuple[float, float]:
+    def estimate_range(
+        self, *, prefix_tokens: int, item_tokens: int, output_tokens: int
+    ) -> tuple[float, float]:
         """``(hot, cold)``.
 
         Quoted as a range because DeepSeek's caching is best-effort. A run
         quoting $0.03 and billing $0.11 because the cache was cold would destroy
         trust in every later estimate.
         """
-        hot = self.estimate(prefix_tokens=prefix_tokens, item_tokens=item_tokens, output_tokens=output_tokens, warm=True)
-        cold = self.estimate(prefix_tokens=prefix_tokens, item_tokens=item_tokens, output_tokens=output_tokens, warm=False)
+        hot = self.estimate(
+            prefix_tokens=prefix_tokens,
+            item_tokens=item_tokens,
+            output_tokens=output_tokens,
+            warm=True,
+        )
+        cold = self.estimate(
+            prefix_tokens=prefix_tokens,
+            item_tokens=item_tokens,
+            output_tokens=output_tokens,
+            warm=False,
+        )
         return hot, cold
 
     def reset_run(self) -> None:

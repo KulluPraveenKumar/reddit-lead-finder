@@ -126,10 +126,7 @@ class ProxyManager:
         for endpoint in self.endpoints:
             stats = self.stats_for(endpoint)
             if stats.state is ProxyState.BLACKLISTED:
-                if (
-                    stats.blacklisted_at
-                    and now - stats.blacklisted_at >= self.blacklist_cooldown
-                ):
+                if stats.blacklisted_at and now - stats.blacklisted_at >= self.blacklist_cooldown:
                     log.info("proxy %s cooldown elapsed; returning to rotation", endpoint.label)
                     stats.state = ProxyState.DEGRADED
                     stats.consecutive_failures = 0
@@ -166,9 +163,7 @@ class ProxyManager:
             if not wait:
                 raise ProxyExhaustedError("No proxy is ready and waiting was disabled.")
             if time.monotonic() + sleep_for > deadline:
-                raise ProxyExhaustedError(
-                    f"No proxy became ready within {timeout:.0f}s."
-                )
+                raise ProxyExhaustedError(f"No proxy became ready within {timeout:.0f}s.")
             time.sleep(min(sleep_for, 1.0))
 
     # ------------------------------------------------------------ reporting
@@ -182,9 +177,7 @@ class ProxyManager:
             stats.state = ProxyState.HEALTHY
             stats.last_error = None
 
-    def record_failure(
-        self, endpoint: ProxyEndpoint, error: str, *, blocked: bool = False
-    ) -> None:
+    def record_failure(self, endpoint: ProxyEndpoint, error: str, *, blocked: bool = False) -> None:
         with self._lock:
             stats = self.stats_for(endpoint)
             stats.requests += 1

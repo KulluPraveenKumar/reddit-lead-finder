@@ -23,7 +23,9 @@ def test_every_nav_target_resolves(client):
     """A nav link that 404s turns 'not built yet' into 'broken'."""
     for item in NAV_ITEMS:
         response = client.get(item.url)
-        assert response.status_code == 200, f"{item.label} -> {item.url} gave {response.status_code}"
+        assert response.status_code == 200, (
+            f"{item.label} -> {item.url} gave {response.status_code}"
+        )
 
 
 def test_nav_appears_on_every_page(client):

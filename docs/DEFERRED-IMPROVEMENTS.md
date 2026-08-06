@@ -22,7 +22,9 @@ amendment and it needs a failed measurement.
 | # | Improvement | Trigger — the evidence that would justify it | Raised |
 |---|---|---|---|
 | **DI1** | **`scripts/check_repo_hygiene.py`** — mechanise the [§5](EXECUTION_MODE_LOCK.md) hygiene checklist as a script, the way `check_schema.py` mechanised the schema checks | A hygiene review **misses** something that reaches a public commit, or a phase ships with the review demonstrably skipped. Until then the brief calls for a *review* of staged changes, and gate check 14 already covers the secret scan | 2026-08-06 |
-| **DI2** | **GitHub Actions CI** — one workflow: `ruff check` · `ruff format --check` · `pytest`, on push and PR. No secrets needed; the suite is offline | A phase reaches `main` with a gate failure the local run would have caught. Proposed in [PRE-P2 §6.3](PRE-P2-VERIFICATION-REPORT.md) and **not** built, because nothing has yet failed that it would have caught | 2026-08-06 |
+| **DI7** | **[Freeze R20](ARCHITECTURE_FREEZE.md) states the legacy contract as "`GET /` byte-identical", but the shipped guard is an API-contract check** (`tests/test_boundaries.py::test_legacy_api_contract_is_frozen`), which compares response *shape* and the 13-column CSV header. The docstring says the byte-identical form was deliberately superseded during Phase 1 | Someone acts on R20 as written — most likely by refusing a correct change, or by claiming a guarantee the suite does not enforce. This is a [freeze §11.1](ARCHITECTURE_FREEZE.md) documentation reconciliation, not an amendment: no technology, table or decision changes. **Recorded here rather than reconciled unilaterally**, because editing the freeze is the operator's call | 2026-08-06 |
+| **DI8** | **Pin GitHub Actions to commit SHAs** instead of major-version tags | A supply-chain advisory affecting `actions/checkout` or `actions/setup-python`, or a second contributor. Major tags are GitHub's documented default and are re-pointed by GitHub | 2026-08-06 |
+| **DI9** | **`concurrency: cancel-in-progress` in the CI workflow** | More than one push in flight at a time — i.e. a second contributor. With one developer there is nothing to supersede | 2026-08-06 |
 | **DI3** | **Consolidate the completion report and the progress record.** Both describe a finished phase and overlap substantially ([PHASE-01-COMPLETION-REPORT.md](PHASE-01-COMPLETION-REPORT.md) vs [progress/P01-COMPLETE.md](progress/P01-COMPLETE.md)) | The two **contradict each other** in a phase. They answer different questions today (evidence vs resume point) and merging them would lose the resume point that [RECOVERY_REPORT.md](../RECOVERY_REPORT.md) exists because of | 2026-08-06 |
 | **DI4** | **`ruff format` the 28 unformatted legacy modules** | The **byte-identical `GET /`** half of the R20 legacy contract is retired. Not before: reformatting `src/dashboard/routes.py` risks the exact guarantee the contract pins. Excluded in `pyproject.toml` on purpose | 2026-08-06 |
 | **DI5** | **`docs/02-research-findings.md` is linked from several documents but does not exist** — a pre-existing broken link, recorded in [RECOVERY_REPORT.md](../RECOVERY_REPORT.md) §5.4 | A documentation link check is added to the gate (check 18 covers *this phase's* links only), or a reader is actually blocked by it | 2026-08-06 |
@@ -37,13 +39,24 @@ until answered.
 
 | # | Decision | Why it is open now | Cost of acting |
 |---|---|---|---|
-| **O1** | **Post titles in `tests/baseline/` were retained when the repository was going to be private.** It is now public. Authors, post ids and permalinks are anonymised; titles are not, and a title plus its subreddit is searchable — which re-identifies the 413 authors the anonymisation protected | [PRE-P2 §5.3](PRE-P2-VERIFICATION-REPORT.md) justified retention with *"acceptable for a private repository"*. That premise no longer holds | One command. Titles are the fixture's reference value but nothing asserts their **content** — the 459-row / 13-column / 164.28 / 42.29 fingerprint is what the suite pins |
 | **O2** | **`mypy` is required by [35 §2](35-testing-strategy.md) check 3 and [freeze §5](ARCHITECTURE_FREEZE.md), and is not installed** (blocker **B3**, still open) | The gate cannot be claimed in full until it runs. Verified absent 2026-08-06 | `python -m pip install mypy`, then record the baseline error count so check 3 has something to compare against |
 | **O3** | **P00 and P01 manual sign-off tables are unsigned** (blocker **D1** in [progress/P01-COMPLETE.md](progress/P01-COMPLETE.md)) | [PHASE-01-HANDOVER.md §8](PHASE-01-HANDOVER.md) makes this the entry condition for P2. **This is the one gate standing between here and P2** | ~20 minutes each, non-destructive, by a non-developer |
 
 ---
 
-## 3. Rules for this file
+## 3. Closed
+
+Per rule 2 below, an entry leaves §1 or §2 only when it is built or its trigger is disproved — with a
+line saying which.
+
+| # | Was | Closed | Date |
+|---|---|---|---|
+| **DI2** | GitHub Actions CI — one workflow: `ruff check` · `ruff format --check` · `pytest` | **Built.** `.github/workflows/ci.yml`; the research, the measured caching decision and the local verification are in [GITHUB_ACTIONS_REPORT.md](GITHUB_ACTIONS_REPORT.md) | 2026-08-06 |
+| **O1** | Post titles retained in `tests/baseline/` under a private-repository premise that no longer held | **Resolved by synthesising.** Every verbatim title, username, account id, post id and title-derived slug in `tests/baseline/` and `tests/fixtures/reddit/` is now synthetic; row counts, columns, numbers and the fingerprint are unchanged. Evidence and mutation testing in [PRIVACY_REVIEW.md](PRIVACY_REVIEW.md) | 2026-08-06 |
+
+---
+
+## 4. Rules for this file
 
 1. **Every entry names a trigger.** No trigger, no entry.
 2. **An entry is removed only when it is built, or when its trigger is proved impossible** — with a

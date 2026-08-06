@@ -98,7 +98,9 @@ def create_app(*, run_migrations: bool = True):
 
     settings = get_settings()
     app.secret_key = (
-        settings.get_secret("FLASK_SECRET_KEY") or settings.get_secret("APP_SECRET_KEY") or "dev-only"
+        settings.get_secret("FLASK_SECRET_KEY")
+        or settings.get_secret("APP_SECRET_KEY")
+        or "dev-only"
     )
 
     from .nav import nav_context

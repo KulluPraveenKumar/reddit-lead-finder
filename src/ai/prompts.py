@@ -96,10 +96,10 @@ class PromptManager:
 
         path = self.path_for(stage, version)
         if not path.exists():
-            raise FileNotFoundError(
-                f"No prompt template for stage {stage!r} v{version} at {path}"
-            )
-        template = PromptTemplate(stage=stage, version=version, path=path, raw=path.read_text(encoding="utf-8"))
+            raise FileNotFoundError(f"No prompt template for stage {stage!r} v{version} at {path}")
+        template = PromptTemplate(
+            stage=stage, version=version, path=path, raw=path.read_text(encoding="utf-8")
+        )
         self._cache[key] = template
         return template
 

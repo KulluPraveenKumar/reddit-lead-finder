@@ -56,7 +56,7 @@ guide — every later step compares against it:
 ```
 → **Expected:** every line reads `PASS`, and the last line begins `OK —`.
 → The **number** of checks depends on which revision your live database is at, and both answers are
-fine: `all 26 checks passed` at `0004_orchestration`, or — after adding `--skip-p1`, which you must
+fine: `all 25 checks passed` at `0004_orchestration`, or — after adding `--skip-p1`, which you must
 at `0003` — `all 5 checks passed`. Read the table below before deciding anything is wrong.
 → The `INFO  alembic_version is ...` line reports the version without judging it.
 
@@ -75,7 +75,7 @@ Either answer can be correct, and the guide works from both:
 | `0003_net_infrastructure` | P1 shipped the migration and you have not applied it to your live database | Nothing. This is the state P1 delivers |
 | `0004_orchestration` | The migration has been applied to the live database — a deliberate operator action, or an accidental one during T4 | Nothing in P1 or P2 breaks. The three new tables are empty and unused until P2 |
 
-**Neither is a defect, and 26 passing checks confirm the data is intact either way.** What *would* be
+**Neither is a defect, and 25 passing checks confirm the data is intact either way.** What *would* be
 a defect is the lead count or the `intent_score` fingerprint moving, and those are checked above.
 If you are at `0004` and want to return to the delivered state, run
 `.\.venv\Scripts\python.exe -m alembic downgrade 0003` — but read T4 first, and take a backup.
@@ -134,10 +134,14 @@ All checks passed!
 ```
 → **Expected**, on the last line:
 ```
-310 passed, 9 warnings
+308 passed, 2 skipped
 ```
-→ The count must be **310 or more**, and the word **`failed` must not appear**. The line also reports
+→ The count must be **308 or more**, and the word **`failed` must not appear**. The line also reports
 an elapsed time; it varies between 40 s and 2 minutes and does not matter.
+
+> **The 2 skipped are correct, not a regression.** Both parse a *real* proxy credentials file, which
+> lives outside the repository by design (R15), so they skip unless `PROXY_FILE` points at one. With
+> `PROXY_FILE` set the suite reports `310 passed, 0 skipped`. Either line passes this step.
 
 ### Step 2
 Confirm the new orchestration tests ran:
@@ -180,7 +184,8 @@ SQLAlchemy. They existed before P1 and are not caused by it.
 **Database values to verify:** none — the suite uses temporary databases.
 **API response to verify:** none.
 
-**Acceptance:** ✅ 310+ passed, 0 failed; 44 orchestration tests present; fences green.
+**Acceptance:** ✅ 308+ passed, 0 failed (2 skipped is fine); 44 orchestration tests present; fences
+green.
 
 ---
 
@@ -281,7 +286,7 @@ INFO  [alembic.runtime.migration] Running upgrade 0003_net_infrastructure -> 000
 ```
 > .\.venv\Scripts\python.exe scripts\check_schema.py --db data\p1-test.db --revision 0004
 ```
-→ **Expected:** every line `PASS`, ending in `OK — all 26 checks passed.`
+→ **Expected:** every line `PASS`, ending in `OK — all 25 checks passed.`
 → This one command checks the migration version, all 18 tables, the index column orders, the foreign
 keys, the constraints **and** that all 459 leads survived with their scores unchanged.
 
@@ -297,7 +302,7 @@ Then confirm the reversal was complete:
 ```
 > .\.venv\Scripts\python.exe scripts\check_schema.py --db data\p1-test.db --revision 0003 --skip-p1
 ```
-→ **Expected:** every line `PASS`, ending in `OK — all 6 checks passed.`
+→ **Expected:** every line `PASS`, ending in `OK — all 5 checks passed.`
 → `--skip-p1` is what makes this the *reversal* check: it tells the script the 0004 tables should
 **not** be there, so it verifies only integrity, the revision and the 459 leads. Running it without
 `--skip-p1` here would correctly fail, because `runs`, `jobs` and `run_events` are gone — which is
@@ -360,7 +365,7 @@ If you deleted it in T4 Step 8, re-run T4 Steps 1–4 first.
 ```
 > .\.venv\Scripts\python.exe scripts\check_schema.py --db data\p1-test.db --revision 0004 --verbose
 ```
-→ **Expected:** 26 `PASS` lines under eight headings, ending in `OK — all 26 checks passed.`
+→ **Expected:** 25 `PASS` lines under eight headings, ending in `OK — all 25 checks passed.`
 
 Read the headings rather than every line. Each one answers a different question, and a `FAIL`
 prints the value it actually found next to the value it wanted:
@@ -416,11 +421,11 @@ schema checker deliberately does not read — see the note at the top of `script
 
 **Screenshot expected:** none.
 **Logs to verify:** none.
-**Database values to verify:** all 26 checks `PASS`. `--verbose` prints the actual value beside each
+**Database values to verify:** all 25 checks `PASS`. `--verbose` prints the actual value beside each
 one if you want to read them rather than trust them.
 **API response to verify:** none.
 
-**Acceptance:** ✅ `OK — all 26 checks passed`, and `tests/test_migrations.py` reports 9 passed.
+**Acceptance:** ✅ `OK — all 25 checks passed`, and `tests/test_migrations.py` reports 9 passed.
 
 ---
 
@@ -535,7 +540,7 @@ listed; no expiry column on the `Run` model; all 144 run-state and 25 job-state 
 ```
 > .\.venv\Scripts\python.exe scripts\check_schema.py --db data\leads.db
 ```
-→ **Expected:** every line `PASS` (`all 26 checks passed` at `0004`; add `--skip-p1` and expect
+→ **Expected:** every line `PASS` (`all 25 checks passed` at `0004`; add `--skip-p1` and expect
 `all 5 checks passed` at `0003`).
 → The three figures that constitute the legacy fingerprint — **459 leads, `max` 164.28, `avg`
 42.29** — appear under *Legacy fingerprint*. **These are what must not move.**
@@ -634,7 +639,7 @@ orchestration tables empty.
 ```
 > .\.venv\Scripts\python.exe scripts\check_schema.py --db data\p1-rollback.db --revision 0003 --skip-p1
 ```
-→ **Expected:** `OK — all 6 checks passed.` — integrity, the revision back at
+→ **Expected:** `OK — all 5 checks passed.` — integrity, the revision back at
 `0003_net_infrastructure`, and 459 leads with their fingerprint intact.
 → `--skip-p1` asserts nothing about the 0004 tables, which is correct here: the downgrade removed
 them.
@@ -686,10 +691,10 @@ returns the version to `0003`, and the application still passes its navigation t
 | Check | Pass |
 |---|---|
 | T1 — lint and format clean | ☐ |
-| T2 — 310+ tests pass, 0 failed | ☐ |
+| T2 — 308+ tests pass, 0 failed (2 skipped is expected) | ☐ |
 | T3 — exactly one migration head | ☐ |
 | T4 — upgrade/downgrade/upgrade on a live-DB copy, 459 leads intact | ☐ |
-| T5 — all 26 schema checks pass; `test_migrations.py` 9 passed | ☐ |
+| T5 — all 25 schema checks pass; `test_migrations.py` 9 passed | ☐ |
 | T6 — 12 states; illegal transition raises; gates have no timeout; all pairs exhaustive | ☐ |
 | T7 — legacy fingerprint intact, orchestration tables empty | ☐ |
 | Rollback executed and verified | ☐ |

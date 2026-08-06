@@ -51,7 +51,9 @@ def _startup_banner(config):
             f"[{colour}]{key.status}[/{colour}]"
         )
         if key.status != "valid":
-            console.print("[dim]                AI features disabled. Scraping is unaffected.[/dim]")
+            console.print(
+                "[dim]                AI features disabled. Scraping is unaffected.[/dim]"
+            )
     except Exception as exc:
         console.print(f"[dim]AI provider[/dim]     [dim]unavailable ({exc})[/dim]")
 
@@ -85,7 +87,11 @@ def cmd_dashboard(config):
 
 def cmd_schedule(config):
     interval = config.get("schedule", {}).get("interval_minutes", 60)
-    console.print(Panel(f"[bold cyan]Scheduling scrapers every {interval} minutes. Press Ctrl+C to stop.[/bold cyan]"))
+    console.print(
+        Panel(
+            f"[bold cyan]Scheduling scrapers every {interval} minutes. Press Ctrl+C to stop.[/bold cyan]"
+        )
+    )
 
     def job():
         console.print("\n[bold]--- Scheduled scrape starting ---[/bold]")
@@ -128,7 +134,9 @@ def cmd_migrate(config, args):
         console.print(f"Current: [bold]{status.current or '(none)'}[/bold]")
         console.print(f"Head:    [bold]{status.head}[/bold]")
         console.print(
-            "[green]Up to date.[/green]" if status.is_current else "[yellow]Upgrade available.[/yellow]"
+            "[green]Up to date.[/green]"
+            if status.is_current
+            else "[yellow]Upgrade available.[/yellow]"
         )
         return
 
@@ -178,9 +186,7 @@ def cmd_ai(config, args):
         console.print("[dim]Testing connection...[/dim]")
         result = service.test_connection()
         if result.ok:
-            console.print(
-                f"[green]Connected in {result.latency_ms} ms · {result.model}[/green]"
-            )
+            console.print(f"[green]Connected in {result.latency_ms} ms · {result.model}[/green]")
         else:
             console.print(f"[red]{result.error}[/red]  (status: {result.status})")
         return

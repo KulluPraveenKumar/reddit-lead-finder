@@ -58,8 +58,7 @@ def _chrome(version: int, platform: str, ua_platform: str) -> HeaderProfile:
             "Accept-Language": "en-US,en;q=0.9",
             "Accept-Encoding": "gzip, deflate, br",
             "sec-ch-ua": (
-                f'"Google Chrome";v="{version}", "Chromium";v="{version}", '
-                f'"Not_A Brand";v="24"'
+                f'"Google Chrome";v="{version}", "Chromium";v="{version}", "Not_A Brand";v="24"'
             ),
             "sec-ch-ua-mobile": "?0",
             "sec-ch-ua-platform": ua_platform,

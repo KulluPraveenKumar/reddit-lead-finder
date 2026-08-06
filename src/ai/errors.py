@@ -161,7 +161,9 @@ class BudgetExceededError(AIError):
     retryable = False
     outcome = "budget_exceeded"
 
-    def __init__(self, message: str, *, limit_name: str = "", limit: float = 0.0, spent: float = 0.0):
+    def __init__(
+        self, message: str, *, limit_name: str = "", limit: float = 0.0, spent: float = 0.0
+    ):
         super().__init__(message)
         self.limit_name = limit_name
         self.limit = limit
