@@ -1,20 +1,23 @@
 # Documentation Index
 
-> ## ⛔ ARCHITECTURE FROZEN — 2026-08-05
+> ## ⛔ ARCHITECTURE FROZEN — 2026-08-05 · 🔒 EXECUTION MODE — 2026-08-06
 >
 > **Start here, in this order:**
 >
 > | # | Document | What it is |
 > |---|---|---|
 > | 1 | **[ARCHITECTURE_FREEZE.md](ARCHITECTURE_FREEZE.md)** | **The binding constraint set.** 20 architecture rules, 31 decisions, 10 migration rules, the frozen technology list, budgets, non-goals, and 18 known risks. Amendable only by a *failed measurement* |
-> | 2 | **[34 — Implementation Plan](34-implementation-plan.md)** | **The execution guide.** 31 phases, 83 days, each deployable, testable, reversible and independently mergeable |
-> | 3 | **[35 — Testing Strategy](35-testing-strategy.md)** | The gate every phase must pass, and the manual-guide template |
-> | 4 | **[36 — Skills Architecture](36-skills-architecture.md)** | Three skill namespaces, and why 13 of the 22 proposed "skills" are Python modules |
-> | 5 | **[33 — Final Review](33-final-review.md)** | The freeze review: consistency verification, the final research pass, the authority rules |
+> | 2 | **[EXECUTION_MODE_LOCK.md](EXECUTION_MODE_LOCK.md)** | **The binding process.** The 16-step session workflow, phase discipline, the public-repository hygiene review, git discipline, engineering priorities, and what may no longer be written. **The last planning document** |
+> | 3 | **[34 — Implementation Plan](34-implementation-plan.md)** | **The execution guide.** 31 phases, 83 days, each deployable, testable, reversible and independently mergeable |
+> | 4 | **[35 — Testing Strategy](35-testing-strategy.md)** | The gate every phase must pass, and the manual-guide template |
+> | 5 | **[DEFERRED-IMPROVEMENTS.md](DEFERRED-IMPROVEMENTS.md)** | Where a good idea waits for the evidence that would justify building it — plus the open operator decisions |
+> | 6 | **[36 — Skills Architecture](36-skills-architecture.md)** | Three skill namespaces, and why 13 of the 22 proposed "skills" are Python modules |
+> | 7 | **[33 — Final Review](33-final-review.md)** | The freeze review: consistency verification, the final research pass, the authority rules |
 >
-> **Implementation proceeds one phase at a time**, gated by both automated and manual testing.
-> The `.claude/skills/phase-manager` skill enforces this and must be loaded before any code is
-> written.
+> **Implementation proceeds one phase at a time**, gated by both automated and manual testing, and
+> **stops for approval after every phase**. The `.claude/skills/phase-manager` skill is the
+> executable form of [EXECUTION_MODE_LOCK.md](EXECUTION_MODE_LOCK.md) and must be loaded before any
+> code is written.
 >
 > Everything numbered 00–32 below is **rationale**. It explains *why* the frozen design is what it
 > is, and is retained for that purpose. Where a document below disagrees with the freeze, **the
@@ -56,7 +59,12 @@ first time that was needed.
 ---
 
 Planning and architecture documentation for the Reddit Lead Intelligence platform.
-**This is planning only — no application code has been written or modified.**
+
+> **This section is rationale, and it is now historical.** It was written while the project was in
+> Research Mode and described a documentation set with no application code behind it. That has not
+> been true since P0/P1 shipped — see the **Execution record** above, and
+> [EXECUTION_MODE_LOCK.md](EXECUTION_MODE_LOCK.md) for the process that governs everything from
+> 2026-08-06 onward.
 
 This is an **internal intelligence platform**, not a commercial SaaS. It optimises for lead quality,
 research depth, AI efficiency, and long-term maintainability — never for onboarding simplicity or

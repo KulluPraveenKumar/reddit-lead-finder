@@ -3,7 +3,7 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Lint: ruff](https://img.shields.io/badge/lint-ruff-261230.svg)](https://github.com/astral-sh/ruff)
-[![Tests](https://img.shields.io/badge/tests-310%20passing-brightgreen.svg)](#development)
+[![Tests](https://img.shields.io/badge/tests-308%20passing-brightgreen.svg)](#development)
 
 **Paste a website URL; get a ranked list of Reddit conversations where real
 people are describing the problem that website solves — with evidence for why
@@ -151,9 +151,10 @@ docs/                Architecture and phase plans (~40 documents)
 tests/               Offline test suite
 ```
 
-Start with [docs/ARCHITECTURE_FREEZE.md](docs/ARCHITECTURE_FREEZE.md) — it is the
+Start with [docs/ARCHITECTURE_FREEZE.md](docs/ARCHITECTURE_FREEZE.md) — the
 binding constraint set that governs every change — then
-[docs/README.md](docs/README.md) for the architecture.
+[docs/EXECUTION_MODE_LOCK.md](docs/EXECUTION_MODE_LOCK.md) for the process every
+change follows, and [docs/README.md](docs/README.md) for the architecture.
 
 ---
 

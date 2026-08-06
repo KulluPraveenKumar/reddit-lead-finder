@@ -377,4 +377,14 @@ labelled rollback point that is not just a local commit.
 
 ---
 
+## 9. Addendum — 2026-08-06
+
+**This report is a historical record and has not been rewritten.** Two of its statements no longer
+hold, and both are recorded here rather than edited in place.
+
+| § | What the report says | Correction |
+|---|---|---|
+| §5.3, §6.3, §7.2 | The repository **will be private**; retaining post titles in the anonymised fixtures is *"acceptable for a private repository"* | **The repository is public** (`github.com/KulluPraveenKumar/reddit-lead-finder`). The premise that justified retaining titles is gone: a title plus its subreddit is searchable, which re-identifies the 413 authors the anonymisation protected. Carried as open decision **O1** in [DEFERRED-IMPROVEMENTS.md](DEFERRED-IMPROVEMENTS.md) — it is the operator's call, and the fix is one command |
+| §2 | `check_schema.py` runs **26 checks** | It runs **25**, measured 2026-08-06 against the live database. The script is byte-identical to the commit this report was written against (`git log scripts/check_schema.py` → one commit), so **no check was lost** — the count in the prose was wrong when written |
+
 *P2 was not started. No work beyond P1 was performed.*

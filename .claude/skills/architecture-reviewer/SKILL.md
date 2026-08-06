@@ -1,7 +1,7 @@
 ---
 name: architecture-reviewer
 description: Check a change against the frozen architecture before it merges
-version: 1.0.0
+version: 1.1.0
 ---
 
 # Architecture Reviewer
@@ -57,7 +57,18 @@ policy, R19 overflow-is-an-error — are read against the diff.
 Every AD-1…AD-31 that the change touches. Name the AD number in the finding — *"violates AD-21"* is
 actionable; *"seems wrong"* is not.
 
-### 5. Report
+### 5. Check the execution-mode lock
+
+`docs/EXECUTION_MODE_LOCK.md` §2 closes the planning stage. Block the change if the diff adds a new
+architecture document, roadmap, implementation strategy, governance model, ADR, technology
+evaluation, framework comparison, testing strategy, or a "v2 / revised / final" copy of a frozen
+document — unless a **failed** implementation, measurement or validation is named alongside it.
+
+Execution records are not planning documents and are expected every phase: the manual guide,
+completion report, handover and progress record listed in §2.1. An improvement with no failed
+measurement behind it belongs in `docs/DEFERRED-IMPROVEMENTS.md`, with its trigger.
+
+### 6. Report
 
 For each finding: the rule or AD number, the file and line, what the change does, and what the rule
 requires. Then a verdict: **pass** or **blocked**.
@@ -82,6 +93,7 @@ requires. Then a verdict: **pass** or **blocked**.
 - [ ] No dependency or technology outside §5
 - [ ] No ceiling raised
 - [ ] No non-goal being built
+- [ ] No prohibited planning document added — `EXECUTION_MODE_LOCK.md` §2
 - [ ] Every finding names its rule or AD number, with file and line
 - [ ] Verdict stated: pass or blocked
 - [ ] If an amendment is proposed, the **failed measurement** is named, dated, and recorded in §11
