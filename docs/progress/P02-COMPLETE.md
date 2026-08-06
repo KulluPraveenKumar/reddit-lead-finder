@@ -73,11 +73,12 @@ One new dependency: **`python-json-logger>=3.1`**, named by the freeze. No amend
 | Grep fences 2 and 3 | ✅ 0 matches |
 | Schema verification | ✅ **25 / 25** |
 | Migration round-trip on a live-DB **copy** | ✅ `0004 → 0003 → 0004`, 459 leads at every stage |
-| Live DB | ✅ 459 leads · 164.28 / 42.29 · untouched |
+| Live DB | ✅ 459 leads · 164.28 / 42.29 · orchestration tables empty. mtime moved when the worker was started against it once by hand; **no row written** |
 | **10-minute soak** | ✅ `27931 claims, 27931 events, 62168 reads, 0 errors` |
 | 10 MB log secret grep | ✅ 0 credentials |
 | 1,000-attempt claim race, 4 threads | ✅ 0 lost updates |
-| Clean-environment CI simulation | ✅ **428 passed, 2 skipped** |
+| Clean-environment CI simulation | ✅ **428 passed, 2 skipped** (run twice) |
+| Hosted CI run | ⚠️ **GitHub created none** for either P2 commit — external; see the completion report R7 |
 | Mutation testing | ✅ **10 mutations, 10 detected** |
 | `mypy` | ⚠️ not runnable — not installed (**O2**) |
 

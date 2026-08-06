@@ -148,8 +148,9 @@ Every criterion from [34 §P2](34-implementation-plan.md), with the evidence.
 | Fences 1 & 4 (AST) | ✅ `tests/test_boundaries.py` passes |
 | Schema verification | ✅ **OK — all 25 checks passed** |
 | Migration round-trip on a **copy** | ✅ `0004 → 0003 → 0004`; 459 leads at every stage; one head |
-| Live database | ✅ 459 leads · 164.28 / 42.29 · untouched |
-| Clean-environment CI simulation | ✅ fresh venv from `requirements.txt`: install, lint, format, **428 passed, 2 skipped** |
+| Live database | ✅ 459 leads · 164.28 / 42.29 · `runs`, `jobs`, `run_events` all empty. **Its mtime did change**, and that is expected rather than alarming: `main.py worker` was started against the real database once, to verify T2 by hand. Opening a WAL database touches the file. **No row was written** — the fingerprint and all three orchestration row counts were re-verified afterwards |
+| Clean-environment CI simulation | ✅ fresh venv from `requirements.txt`: install (`python-json-logger` resolved to 4.1.0), lint, format, **428 passed, 2 skipped** — run twice, before and after the final correction |
+| Hosted CI run for this phase | ⚠️ **not created by GitHub** — R7 |
 | Offline guarantee | ✅ verified by probe — internet blocked, loopback allowed |
 | `mypy` | ⚠️ **not run** — still not installed (**O2**, operator's decision) |
 
@@ -249,6 +250,7 @@ after this phase — which is why the rollback is one environment variable. Veri
 | R4 | `run_events` growth is bounded only by a handler nobody schedules yet | Low | The `maintenance` purge exists and is tested; **nothing enqueues it** until P24 adds scheduling. Until then it is run by hand |
 | R5 | `VACUUM` in the maintenance handler commits mid-handler | Low | Unavoidable — SQLite refuses to VACUUM in a transaction. Guarded by a 2,000-page threshold and a `{"vacuum": false}` payload switch, and documented at the call site |
 | R6 | K13 is mitigated, not eliminated | Medium | WAL + `busy_timeout=10000` + short transactions + a single bulk writer. The pragmas are now asserted rather than assumed |
+| **R7** | **GitHub created no workflow run for either P2 commit** | Low, external | Both commits are on `origin/main` (`git ls-remote` → `d9827f3`), `.github/workflows/ci.yml` is present at that tree, the workflow is `active`, and repository Actions permissions are `{"enabled": true, "allowed_actions": "all"}`. No run was queued after ~25 minutes. This is the same GitHub-side instability that produced [FINAL_PRE_P2 §9 R5](FINAL_PRE_P2_REVIEW.md) — where two runs died at *Set up job* with `Failed to resolve action download info / Service Unavailable`, confirmed again today in run `31117917785`. **Nothing in this phase can be the cause, since no step executed.** The evidence that stands in its place is the clean-environment reproduction, run twice. **Action for the operator:** re-check `gh run list`, and `gh workflow run CI --ref main` if still empty |
 
 ---
 

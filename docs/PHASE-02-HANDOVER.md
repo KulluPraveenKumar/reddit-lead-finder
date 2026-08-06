@@ -161,7 +161,7 @@ F1, F3 and F4 were found only by mutation testing.
 | `alembic heads` | `0004_orchestration (head)` — one head |
 | `alembic current` (live DB) | `0004_orchestration` |
 | `check_schema.py` | **OK — all 25 checks passed** |
-| Live DB | 459 leads · `intent_score` max 164.28 / avg 42.29 |
+| Live DB | 459 leads · `intent_score` max 164.28 / avg 42.29 · orchestration tables empty. mtime moved (the worker was started against it once); no row written |
 | 10-minute soak | `27931 claims, 27931 events, 62168 reads, **0 errors**` |
 | Mutation testing | 10 mutations, 10 detected |
 | Clean-environment CI simulation | install · lint · format · **428 passed, 2 skipped** |
@@ -175,6 +175,7 @@ F1, F3 and F4 were found only by mutation testing.
 | **D1** | P00, P01 **and P02** manual sign-off tables are unsigned | **By the project's own rule, yes.** [lock §4](EXECUTION_MODE_LOCK.md) requires manual testing completed and signed by a human. P2 was implemented on the operator's declaration that sign-off is complete; the tables in the repository are still blank |
 | **B3 / O2** | `mypy` required by [35 §2](35-testing-strategy.md) check 3, not installed | **No** — but the gate cannot be claimed in full |
 | **B1** | `.env` has no `DEEPSEEK_API_KEY` / `TELEGRAM_BOT_TOKEN` | **No** — gates P23 |
+| **R7** | GitHub created no CI run for either P2 commit, with Actions enabled and the workflow active | **No** — external. Verified locally twice in a clean venv. Check `gh run list` at the start of P3; `gh workflow run CI --ref main` forces one |
 | — | Multireddit volume anomaly | **No** — scheduled for P6 |
 
 ---
