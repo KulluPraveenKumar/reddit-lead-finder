@@ -132,6 +132,7 @@ was run as a one-off script kept outside the repository, so the transformation i
 | Schema verification | **25 / 25** |
 | Workflow validation | ✅ `ci.yml` parses; triggers, permissions and steps as intended |
 | Clean-environment CI simulation | ✅ install, lint, format, **308 passed, 2 skipped** |
+| First hosted CI run | ⚠️ **blocked by a GitHub Actions outage**, not by the workflow — R5 in §9 |
 
 The 2 skips are correct: both parse a real proxy credentials file, which lives outside the repository
 by design (R15). With `PROXY_FILE` set the suite reports `310 passed, 0 skipped`.
@@ -192,7 +193,7 @@ Versioning follows the existing convention `v<pyproject version>-p<phase>`, set 
 | R2 | `mypy` required by [35 §2](35-testing-strategy.md) check 3 and [freeze §5](ARCHITECTURE_FREEZE.md), not installed — verified absent today | Medium | The gate cannot be claimed **in full**. Tracked as **O2**. Deliberately not installed here: adding it would change the gate's baseline the day before P2 starts, and choosing that baseline is the operator's call |
 | R3 | Git history still contains the original fixtures in `87ba926` and `d5089ee` | Low, recorded | Rewriting published history breaks every clone and the tag, for content that was public for the life of those commits. **Not done silently** — [PRIVACY_REVIEW §4.2](PRIVACY_REVIEW.md) |
 | R4 | [Freeze R20](ARCHITECTURE_FREEZE.md) says "`GET /` byte-identical"; the shipped guard is an API-contract check | Low | A documentation reconciliation, not an amendment. Tracked as **DI7**; editing the freeze is the operator's call |
-| R5 | CI has never actually run — the workflow lands with this commit | Low | Simulated end-to-end in a clean environment (§3). The first real run is the confirmation |
+| R5 | **CI has not yet completed a real run.** The first two attempts failed at *Set up job* with `Failed to resolve action download info / Service Unavailable` — **GitHub Actions was in a declared partial outage** (incident opened 15:22 UTC; the run started 15:32 UTC) | Low, external | No step of the workflow executed, so nothing in it can be the cause. Repository settings verified permissive. The steps are proven green in a clean-environment reproduction. Re-run `gh run rerun 31116314876` once the incident closes — [GITHUB_ACTIONS_REPORT §5.1](GITHUB_ACTIONS_REPORT.md) |
 | R6 | Formatter drift on a future ruff bump | Low | Mitigated by the exact pin; bumping runs `ruff format .` in the same change |
 
 **No unresolved technical blocker.**

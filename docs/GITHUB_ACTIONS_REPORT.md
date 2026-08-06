@@ -132,6 +132,37 @@ addition. It was verified by **reproducing its steps exactly** instead:
 The fresh-environment run is the check that matters: it proves CI will not fail on a dependency that
 exists only in the developer's virtual environment.
 
+### 5.1 The first real run failed — on GitHub's side, not this workflow's
+
+Run [`31116314876`](https://github.com/KulluPraveenKumar/reddit-lead-finder/actions/runs/31116314876)
+failed twice at **Set up job**, before a single step of this workflow executed:
+
+```
+X Set up job
+  Failed to resolve action download info.
+  Service Unavailable
+```
+
+That is GitHub failing to resolve `actions/checkout` and `actions/setup-python` from its own registry.
+Confirmed external, not inferred:
+
+| Evidence | Finding |
+|---|---|
+| [githubstatus.com](https://www.githubstatus.com/) at the time of the run | **Actions: partial outage**, major impact, incident opened **15:22 UTC**. The first run started **15:32 UTC** |
+| Repository Actions settings | `enabled: true`, `allowed_actions: all` — nothing is blocking either action |
+| Default workflow permissions | `read` — consistent with the workflow's own `contents: read` |
+| Failure point | Before `checkout`, so no step of this file ran and nothing in it can be the cause |
+
+**No change was made in response.** Retrying during an active outage is not diagnosis, and changing a
+verified workflow to work around a platform incident would be the wrong fix for the wrong problem.
+Re-run it once the incident closes:
+
+```bash
+gh run rerun 31116314876      # or push any commit
+```
+
+The steps themselves are already proven green in the clean-environment reproduction above.
+
 ---
 
 ## 6. What this workflow is for
