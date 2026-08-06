@@ -1,0 +1,284 @@
+{
+  "direct": {
+    "transport": "direct",
+    "requests": 7,
+    "success_rate": 1.0,
+    "block_rate": 0.0,
+    "outcome_mix": {
+      "ok": 7
+    },
+    "latency_ok_ms": {
+      "mean": 1341.7,
+      "p50": 1219.0,
+      "p95": 2266.0
+    },
+    "latency_fail_ms": {
+      "mean": 0.0,
+      "p50": 0.0,
+      "p95": 0.0
+    },
+    "total_posts_found": 175,
+    "exits_used": 1,
+    "exits_that_ever_succeeded": 1,
+    "cpu_seconds": 0.453,
+    "peak_memory_kb": 3002.1
+  },
+  "webshare": {
+    "transport": "webshare",
+    "requests": 7,
+    "success_rate": 0.714,
+    "block_rate": 0.286,
+    "outcome_mix": {
+      "ok": 5,
+      "hard_block": 2
+    },
+    "latency_ok_ms": {
+      "mean": 2081.2,
+      "p50": 1578.0,
+      "p95": 3391.0
+    },
+    "latency_fail_ms": {
+      "mean": 1672.0,
+      "p50": 1875.0,
+      "p95": 1875.0
+    },
+    "total_posts_found": 125,
+    "exits_used": 4,
+    "exits_that_ever_succeeded": 2,
+    "cpu_seconds": 1.156,
+    "peak_memory_kb": 2987.4
+  },
+  "egress": {
+    "direct": {
+      "transport": "direct",
+      "local_ip": "ip-09",
+      "exit_ips": [
+        "ip-09"
+      ],
+      "leaking": []
+    },
+    "webshare": {
+      "transport": "webshare",
+      "local_ip": "ip-09",
+      "exit_ips": [
+        {
+          "exit": "proxy-09",
+          "ip": "ip-10",
+          "status": 200
+        },
+        {
+          "exit": "proxy-04",
+          "ip": "ip-04",
+          "status": 200
+        },
+        {
+          "exit": "proxy-07",
+          "ip": "ip-07",
+          "status": 200
+        },
+        {
+          "exit": "proxy-10",
+          "ip": "ip-11",
+          "status": 200
+        },
+        {
+          "exit": "proxy-01",
+          "ip": "ip-01",
+          "status": 200
+        },
+        {
+          "exit": "proxy-02",
+          "ip": "ip-02",
+          "status": 200
+        },
+        {
+          "exit": "proxy-06",
+          "ip": "ip-06",
+          "status": 200
+        },
+        {
+          "exit": "proxy-05",
+          "ip": "ip-05",
+          "status": 200
+        },
+        {
+          "exit": "proxy-08",
+          "ip": "ip-08",
+          "status": 200
+        },
+        {
+          "exit": "proxy-03",
+          "ip": "ip-03",
+          "status": 200
+        }
+      ],
+      "leaking": []
+    }
+  },
+  "recommendation": {
+    "recommendation": "direct",
+    "reason": "Direct succeeded on 100% of requests versus 71% through Webshare.",
+    "direct_success_rate": 1.0,
+    "webshare_success_rate": 0.714,
+    "direct_block_rate": 0.0,
+    "webshare_block_rate": 0.286,
+    "direct_mean_ok_latency_ms": 1341.7,
+    "webshare_mean_ok_latency_ms": 2081.2
+  },
+  "attempts": [
+    {
+      "transport": "direct",
+      "exit_label": "local",
+      "url": "https://old.reddit.com/r/SaaS/new/",
+      "status": 200,
+      "outcome": "ok",
+      "latency_ms": 2266.0,
+      "size": 175671,
+      "posts_found": 25,
+      "error": null
+    },
+    {
+      "transport": "direct",
+      "exit_label": "local",
+      "url": "https://old.reddit.com/r/startups/new/",
+      "status": 200,
+      "outcome": "ok",
+      "latency_ms": 1219.0,
+      "size": 133428,
+      "posts_found": 25,
+      "error": null
+    },
+    {
+      "transport": "direct",
+      "exit_label": "local",
+      "url": "https://old.reddit.com/r/Entrepreneur/new/",
+      "status": 200,
+      "outcome": "ok",
+      "latency_ms": 1047.0,
+      "size": 132897,
+      "posts_found": 25,
+      "error": null
+    },
+    {
+      "transport": "direct",
+      "exit_label": "local",
+      "url": "https://old.reddit.com/r/marketing/new/",
+      "status": 200,
+      "outcome": "ok",
+      "latency_ms": 1266.0,
+      "size": 128719,
+      "posts_found": 25,
+      "error": null
+    },
+    {
+      "transport": "direct",
+      "exit_label": "local",
+      "url": "https://old.reddit.com/r/SaaS/new/?count=25",
+      "status": 200,
+      "outcome": "ok",
+      "latency_ms": 1219.0,
+      "size": 175867,
+      "posts_found": 25,
+      "error": null
+    },
+    {
+      "transport": "direct",
+      "exit_label": "local",
+      "url": "https://old.reddit.com/r/SaaS/search?q=%22looking+for%22&restrict_sr=on&sort=new",
+      "status": 200,
+      "outcome": "ok",
+      "latency_ms": 984.0,
+      "size": 115128,
+      "posts_found": 25,
+      "error": null
+    },
+    {
+      "transport": "direct",
+      "exit_label": "local",
+      "url": "https://old.reddit.com/r/startups/",
+      "status": 200,
+      "outcome": "ok",
+      "latency_ms": 1391.0,
+      "size": 133156,
+      "posts_found": 25,
+      "error": null
+    },
+    {
+      "transport": "webshare",
+      "exit_label": "proxy-06",
+      "url": "https://old.reddit.com/r/SaaS/new/",
+      "status": 200,
+      "outcome": "ok",
+      "latency_ms": 3391.0,
+      "size": 175671,
+      "posts_found": 25,
+      "error": null
+    },
+    {
+      "transport": "webshare",
+      "exit_label": "proxy-05",
+      "url": "https://old.reddit.com/r/startups/new/",
+      "status": 200,
+      "outcome": "ok",
+      "latency_ms": 3375.0,
+      "size": 133429,
+      "posts_found": 25,
+      "error": null
+    },
+    {
+      "transport": "webshare",
+      "exit_label": "proxy-08",
+      "url": "https://old.reddit.com/r/Entrepreneur/new/",
+      "status": 403,
+      "outcome": "hard_block",
+      "latency_ms": 1469.0,
+      "size": 1522,
+      "posts_found": 0,
+      "error": null
+    },
+    {
+      "transport": "webshare",
+      "exit_label": "proxy-03",
+      "url": "https://old.reddit.com/r/marketing/new/",
+      "status": 403,
+      "outcome": "hard_block",
+      "latency_ms": 1875.0,
+      "size": 1522,
+      "posts_found": 0,
+      "error": null
+    },
+    {
+      "transport": "webshare",
+      "exit_label": "proxy-06",
+      "url": "https://old.reddit.com/r/SaaS/new/?count=25",
+      "status": 200,
+      "outcome": "ok",
+      "latency_ms": 1234.0,
+      "size": 175863,
+      "posts_found": 25,
+      "error": null
+    },
+    {
+      "transport": "webshare",
+      "exit_label": "proxy-06",
+      "url": "https://old.reddit.com/r/SaaS/search?q=%22looking+for%22&restrict_sr=on&sort=new",
+      "status": 200,
+      "outcome": "ok",
+      "latency_ms": 828.0,
+      "size": 115125,
+      "posts_found": 25,
+      "error": null
+    },
+    {
+      "transport": "webshare",
+      "exit_label": "proxy-05",
+      "url": "https://old.reddit.com/r/startups/",
+      "status": 200,
+      "outcome": "ok",
+      "latency_ms": 1578.0,
+      "size": 133166,
+      "posts_found": 25,
+      "error": null
+    }
+  ]
+}

@@ -1,0 +1,154 @@
+{% extends "_base_ai.html" %}
+{% block title %}Proxy Health{% endblock %}
+
+{% block content %}
+<h1>Proxy Health</h1>
+<p class="sub">Every Reddit request leaves through one of these. When none of them work,
+scraping stops rather than falling back to this machine's address.</p>
+
+<div id="banner" class="banner"></div>
+
+<div class="card">
+  <h2>Pool</h2>
+  <div class="row"><span class="k">Proxying</span><span class="v" id="p-enabled">&mdash;</span></div>
+  <div class="row"><span class="k">Healthy</span><span class="v" id="p-healthy">&mdash;</span></div>
+  <div class="row"><span class="k">Degraded</span><span class="v" id="p-degraded">&mdash;</span></div>
+  <div class="row"><span class="k">Blacklisted</span><span class="v" id="p-black">&mdash;</span></div>
+  <div class="row"><span class="k">Not yet tested</span><span class="v" id="p-untested">&mdash;</span></div>
+  <div class="row"><span class="k">Circuit</span><span class="v" id="p-circuit">&mdash;</span></div>
+  <div class="row"><span class="k">On exhaustion</span><span class="v" id="p-failclosed">&mdash;</span></div>
+  <p class="note"><strong>Degraded is not broken.</strong> A proxy leaves rotation after
+  consecutive failures and returns automatically once its cooldown expires &mdash; a run
+  that ends with most proxies degraded but some leads collected worked as designed.</p>
+</div>
+
+<div class="card">
+  <h2>Proxies</h2>
+  <div class="scroll-x">
+    <table class="data" id="proxy-table">
+      <thead><tr>
+        <th>Proxy</th><th>State</th><th>Exit IP</th><th>Requests</th>
+        <th>Failures</th><th>Fail rate</th><th>Blocked</th><th>Mean</th><th>Last error</th>
+      </tr></thead>
+      <tbody><tr><td colspan="9" class="empty">Loading&hellip;</td></tr></tbody>
+    </table>
+  </div>
+  <p class="note">Proxies are identified by <code>host:port</code> only. The username and
+  password live in the proxy file and are never written to the database, the logs or this
+  page &mdash; a copied database cannot become a compromised proxy account.</p>
+</div>
+
+<div class="card">
+  <h2>Live check</h2>
+  <p class="note" style="margin-top:0">Sends one request per proxy to an IP echo service and
+  compares each exit IP against this machine's real address. A proxy that reports
+  <em>our</em> IP is not proxying, and Reddit would be seeing the real address &mdash; that is
+  the one failure this pool exists to prevent, so it is called out explicitly rather than
+  left to be spotted in the table.</p>
+  <p class="note">This spends real requests through real proxies, so it runs only when you
+  click it &mdash; loading this page never fires outbound traffic.</p>
+  <button id="check-btn">Check all proxies</button>
+  <span id="check-result" class="note" style="margin-left:12px"></span>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function pill(text, kind){ return '<span class="pill ' + kind + '">' + text + '</span>'; }
+
+function stateKind(state){
+  if(state === 'healthy') return 'ok';
+  if(state === 'blacklisted') return 'bad';
+  if(state === 'degraded') return 'warn';
+  return '';
+}
+
+function render(d){
+  const banner = document.getElementById('banner');
+  banner.className = 'banner';
+
+  if(!d.enabled){
+    document.getElementById('p-enabled').innerHTML = pill('disabled', 'warn');
+    banner.className = 'banner warn show';
+    banner.textContent = d.error
+      ? ('Proxy pool unavailable: ' + d.error + ' — requests would go out from this machine’s address.')
+      : 'Proxying is off. Requests go out from this machine’s address.';
+  } else {
+    document.getElementById('p-enabled').innerHTML = pill('enabled', 'ok');
+    if(d.circuit_open){
+      banner.className = 'banner bad show';
+      banner.textContent = d.fail_closed
+        ? 'No usable proxy. Scraping is stopped — it will not fall back to this machine’s address.'
+        : 'No usable proxy, and fail_closed is off, so requests will fall back to this machine’s address.';
+    }
+  }
+
+  document.getElementById('p-healthy').textContent  = d.healthy + ' / ' + d.total;
+  document.getElementById('p-degraded').textContent = d.degraded;
+  document.getElementById('p-black').textContent    = d.blacklisted;
+  document.getElementById('p-untested').textContent = d.untested;
+  document.getElementById('p-circuit').innerHTML =
+    d.circuit_open ? pill('open — nothing usable', 'bad') : pill('closed — proxies available', 'ok');
+  document.getElementById('p-failclosed').textContent =
+    d.fail_closed === null ? '—'
+    : (d.fail_closed ? 'stop the run (fail closed)' : 'use this machine’s IP (fail open)');
+
+  const body = document.querySelector('#proxy-table tbody');
+  if(!d.proxies || !d.proxies.length){
+    body.innerHTML = '<tr><td colspan="9" class="empty">'
+      + (d.enabled ? 'No proxies loaded.' : 'Proxying is disabled.') + '</td></tr>';
+    return;
+  }
+  body.innerHTML = d.proxies.map(p =>
+    '<tr>'
+    + '<td>' + p.proxy + '</td>'
+    + '<td>' + pill(p.state, stateKind(p.state)) + '</td>'
+    + '<td>' + (p.exit_ip || '<span class="empty">not checked</span>') + '</td>'
+    + '<td>' + p.requests + '</td>'
+    + '<td>' + p.failures + '</td>'
+    + '<td>' + fmtPct(p.failure_rate) + '</td>'
+    + '<td>' + p.blocked_responses + '</td>'
+    + '<td>' + (p.mean_latency_ms === null ? '—' : p.mean_latency_ms + ' ms') + '</td>'
+    + '<td>' + (p.last_error ? p.last_error : '—') + '</td>'
+    + '</tr>').join('');
+}
+
+async function load(){
+  try { render(await api('/api/health/proxies')); } catch(e) { /* toast already shown */ }
+}
+
+const checkBtn = document.getElementById('check-btn');
+if(checkBtn){
+  checkBtn.addEventListener('click', async () => {
+    const out = document.getElementById('check-result');
+    checkBtn.disabled = true;
+    out.textContent = 'Checking… one request per proxy, this takes a few seconds.';
+    try{
+      const d = await api('/api/health/proxies/check', {method: 'POST'});
+      render(d);
+      const reach = d.reachable + ' of ' + d.checked + ' proxies reachable. ';
+      if(d.leaking && d.leaking.length){
+        out.innerHTML = pill('IP LEAK', 'bad')
+          + ' ' + d.leaking.length + ' proxy/proxies exit from this machine’s own address: '
+          + d.leaking.join(', ') + '. Traffic through them is NOT anonymised.';
+      } else if(d.local_ip_known === false){
+        // An empty `leaking` list here means nothing was compared, not that
+        // nothing leaked. Saying "no leak" would be a false negative on the
+        // one check this page exists for.
+        out.innerHTML = reach + pill('LEAK CHECK DID NOT RUN', 'warn')
+          + ' This machine’s own address could not be determined, so no exit IP'
+          + ' was compared against it. Re-run when the network settles.';
+      } else {
+        out.textContent = reach + 'No proxy exits from this machine’s address.';
+      }
+    }catch(e){
+      out.textContent = 'Check failed. See the message in the corner.';
+    }finally{
+      checkBtn.disabled = false;
+    }
+  });
+}
+
+load();
+</script>
+{% endblock %}

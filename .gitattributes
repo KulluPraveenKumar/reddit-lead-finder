@@ -1,0 +1,32 @@
+# Normalise line endings. Without this, a checkout on Windows rewrites every
+# file to CRLF and the next `git status` on macOS or Linux shows the whole tree
+# as modified. Text is stored LF in the repository and checked out natively.
+* text=auto
+
+# Explicitly text, whatever the heuristic guesses.
+*.py      text diff=python
+*.md      text
+*.yml     text
+*.yaml    text
+*.toml    text
+*.ini     text
+*.cfg     text
+*.txt     text
+*.json    text
+*.html    text diff=html
+*.csv     text
+*.mako    text
+.env.example text
+
+# Binary — never diff, never convert.
+*.db      binary
+*.png     binary
+*.jpg     binary
+*.gif     binary
+*.ico     binary
+*.zip     binary
+
+# Keep generated and vendored material out of language statistics and diffs.
+tests/baseline/*.html linguist-generated=true
+tests/baseline/*.csv  linguist-generated=true
+docs/**               linguist-documentation=true

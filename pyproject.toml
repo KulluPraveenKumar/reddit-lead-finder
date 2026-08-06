@@ -1,0 +1,63 @@
+[project]
+name = "reddit-lead-finder"
+version = "0.1.0"
+description = "Paste a website URL; get a ranked list of Reddit conversations where people describe the problem it solves."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+keywords = ["reddit", "lead-generation", "sqlite", "flask", "self-hosted"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Web Environment",
+    "Framework :: Flask",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Internet :: WWW/HTTP :: Indexing/Search",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+exclude = ["migrations/versions", ".venv", "data"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]
+ignore = [
+    "E501",    # line length is handled by the formatter
+    "B008",    # function call in default arg — used deliberately for Depends-style factories
+    "SIM108",  # ternary-vs-if is a readability judgement, not a rule
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E402"]
+
+# Pre-Phase-1 modules. These are deliberately NOT reformatted: `routes.py` in
+# particular must keep rendering byte-identical output, which is the
+# backward-compatibility proof for the 459 legacy leads. Reformatting them for
+# lint cleanliness would risk that guarantee to fix nothing.
+#
+# Remove a line from this list when its module is genuinely rewritten — Phase 2
+# takes reddit_client.py and the scrapers, Phase 6 takes scoring.py.
+"src/reddit_client.py" = ["ALL"]
+"src/scoring.py" = ["ALL"]
+"src/subreddit_loader.py" = ["ALL"]
+"src/config.py" = ["ALL"]
+"src/scrapers/*" = ["ALL"]
+"src/dashboard/routes.py" = ["ALL"]
+"src/__init__.py" = ["ALL"]
+"src/db/__init__.py" = ["ALL"]
+"src/dashboard/__init__.py" = ["ALL"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q --strict-markers"
+markers = [
+    "live: requires a real API key and network access (deselected by default)",
+]
+
+[tool.coverage.run]
+source = ["src"]
+omit = ["src/dashboard/templates/*", "migrations/*"]

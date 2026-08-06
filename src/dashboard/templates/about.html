@@ -1,0 +1,82 @@
+{% extends "_base_ai.html" %}
+{% block title %}About{% endblock %}
+
+{% block content %}
+<h1>About</h1>
+<p class="sub">What is built, what is not, and how to check for yourself.</p>
+
+<div class="card">
+  <h2>System</h2>
+  <div class="row"><span class="k">Stack</span><span class="v">Python 3.12 &middot; Flask &middot; SQLAlchemy &middot; Alembic &middot; SQLite</span></div>
+  <div class="row"><span class="k">Schema version</span><span class="v">
+    <code>{{ schema.current or 'unknown' }}</code>
+    {% if schema.up_to_date %}<span class="pill ok">up to date</span>
+    {% else %}<span class="pill warn">head is {{ schema.head }}</span>{% endif %}
+  </span></div>
+  <div class="row"><span class="k">Leads in database</span><span class="v">{{ "{:,}".format(lead_count) }}</span></div>
+  <div class="row"><span class="k">Roadmap position</span><span class="v">Phase 1 of 8</span></div>
+  <p class="note">
+    There is no Node.js, npm or pnpm in this project &mdash; the dashboard is
+    server-rendered Jinja with no build step. <code>pnpm run dev</code> fails because
+    there is no <code>package.json</code>, which is expected. Start the app with
+    <code>python main.py dashboard</code>.
+  </p>
+</div>
+
+<div class="card">
+  <h2>Built and usable now</h2>
+  <div class="scroll-x">
+  <table class="data">
+    <thead><tr><th>Capability</th><th>Where</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td>Lead scraping &amp; keyword scoring</td><td><a href="/">Dashboard</a></td>
+          <td>Pre-existing. Deterministic <code>intent_score</code>, not AI.</td></tr>
+      <tr><td>Scraper targets &amp; scoring weights</td><td><a href="/configuration">Configuration</a></td>
+          <td>Subreddits, keywords, search queries, weights.</td></tr>
+      <tr><td>AI provider configuration</td><td><a href="/settings/ai">AI Provider</a></td>
+          <td>Key entry, validation, provider choice, budget caps.</td></tr>
+      <tr><td>Cost, cache &amp; latency telemetry</td><td><a href="/health/ai">AI Health</a></td>
+          <td>Every provider call is recorded in <code>ai_calls</code>.</td></tr>
+      <tr><td>Provider health &amp; failover</td><td><a href="/health/ai">AI Health</a></td>
+          <td>Circuit breaker per provider; automatic fallback.</td></tr>
+      <tr><td>Migration safety</td><td>CLI</td>
+          <td><code>python main.py migrate</code> &mdash; backs up before every change.</td></tr>
+    </tbody>
+  </table>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Not built yet</h2>
+  <p class="note">Listed so the absence is deliberate rather than mysterious. These have
+  no navigation entry because a link to an unbuilt page turns &ldquo;not yet&rdquo; into
+  &ldquo;broken&rdquo;.</p>
+  <div class="scroll-x">
+  <table class="data">
+    <thead><tr><th>Capability</th><th>Phase</th><th>Blocked on</th></tr></thead>
+    <tbody>
+      <tr><td>Rotating proxy service</td><td>2</td><td>&mdash;</td></tr>
+      <tr><td>Runs, jobs, background worker</td><td>3</td><td>Phase 2</td></tr>
+      <tr><td>Website analysis &rarr; Business Knowledge Base</td><td>4</td><td>Phase 2</td></tr>
+      <tr><td>Subreddit discovery &amp; review gates</td><td>5</td><td>Phase 4</td></tr>
+      <tr><td>Comment scraping, dedup, pre-scoring</td><td>6</td><td>Phase 5</td></tr>
+      <tr><td>AI enrichment, confidence scoring, explainability</td><td>7</td><td>Phase 6</td></tr>
+      <tr><td>Quality measurement, calibration, learning</td><td>8</td><td>Phase 7</td></tr>
+    </tbody>
+  </table>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Verify it yourself</h2>
+  <div class="row"><span class="k">Health JSON</span><span class="v"><a href="/api/health">/api/health</a></span></div>
+  <div class="row"><span class="k">AI metrics JSON</span><span class="v"><a href="/api/health/ai">/api/health/ai</a></span></div>
+  <div class="row"><span class="k">Provider health &amp; cost comparison</span><span class="v"><a href="/api/health/providers">/api/health/providers</a></span></div>
+  <div class="row"><span class="k">Usage today</span><span class="v"><a href="/api/ai/usage?period=today">/api/ai/usage?period=today</a></span></div>
+  <p class="note">
+    Test suite: <code>python -m pytest tests/ -q</code> &mdash; runs fully offline.<br>
+    Lint: <code>python -m ruff check .</code><br>
+    Manual test guide: <code>docs/MANUAL-TESTING-PHASE-01.md</code>
+  </p>
+</div>
+{% endblock %}

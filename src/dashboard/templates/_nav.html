@@ -1,0 +1,93 @@
+{#
+  Shared top navigation. Included by BOTH the legacy dashboard (index.html) and
+  the Phase-1 pages (_base_ai.html), so there is exactly one navigation in the
+  product rather than one per visual generation.
+
+  Self-contained styles, prefixed `appnav-`, because it is injected into two
+  pages with different and independent stylesheets. Prefixing means it cannot
+  collide with either, and neither can restyle it by accident.
+
+  ADDING A PAGE IN A LATER PHASE: add one entry to NAV_ITEMS in
+  src/dashboard/nav.py. Nothing here changes. Items are only listed when the
+  feature exists — an enabled-looking link to an unbuilt page is worse than no
+  link, because it turns "not built yet" into "broken".
+#}
+<style>
+  .appnav {
+    background: #12151a;
+    border-bottom: 1px solid #262d36;
+    font: 500 13px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    position: sticky; top: 0; z-index: 50;
+  }
+  .appnav-inner {
+    max-width: 1600px; margin: 0 auto; padding: 0 22px;
+    display: flex; align-items: center; gap: 28px; flex-wrap: wrap; min-height: 52px;
+  }
+  .appnav-brand {
+    color: #ff4500; font-weight: 700; font-size: 15px; text-decoration: none;
+    letter-spacing: -.01em; white-space: nowrap;
+  }
+  .appnav-brand:hover { text-decoration: none; opacity: .85; }
+  .appnav-links { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; flex: 1; }
+  .appnav-links a {
+    color: #8b949e; text-decoration: none; padding: 7px 11px; border-radius: 6px;
+    white-space: nowrap; transition: background .12s, color .12s;
+  }
+  .appnav-links a:hover { color: #e6e9ec; background: #1c2229; text-decoration: none; }
+  .appnav-links a.active { color: #fff; background: #23292f; }
+  .appnav-group {
+    margin-left: 8px; padding-left: 14px; border-left: 1px solid #262d36;
+    display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
+  }
+  .appnav-right { display: flex; align-items: center; gap: 12px; margin-left: auto; }
+  .appnav-phase {
+    color: #6e7681; font-size: 11px; letter-spacing: .04em; text-transform: uppercase;
+    white-space: nowrap;
+  }
+  /* Live AI pill. Rendered server-side so it is correct on first paint rather
+     than flashing "unknown" while JS runs. */
+  .appnav-ai {
+    display: inline-flex; align-items: center; gap: 7px; padding: 5px 11px;
+    border-radius: 999px; background: #1c2229; border: 1px solid #262d36;
+    color: #8b949e; font-size: 12px; text-decoration: none; white-space: nowrap;
+  }
+  .appnav-ai:hover { border-color: #3a434e; text-decoration: none; color: #e6e9ec; }
+  .appnav-ai .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .appnav-ai.s-valid .dot { background: #3fb950; }
+  .appnav-ai.s-unconfigured .dot { background: #6e7681; }
+  .appnav-ai.s-invalid_key .dot { background: #f85149; }
+  .appnav-ai.s-insufficient_balance .dot,
+  .appnav-ai.s-unreachable .dot,
+  .appnav-ai.s-undecryptable .dot { background: #d29922; }
+  @media (max-width: 760px) {
+    .appnav-inner { gap: 14px; padding: 8px 14px; }
+    .appnav-group { margin-left: 0; padding-left: 0; border-left: 0; }
+    .appnav-right { margin-left: 0; width: 100%; }
+  }
+</style>
+
+<nav class="appnav">
+  <div class="appnav-inner">
+    <a class="appnav-brand" href="/">Reddit Lead Finder</a>
+
+    <div class="appnav-links">
+      {% for item in nav_items %}
+        {% if item.group_start %}<span class="appnav-group">{% endif %}
+        <a href="{{ item.url }}"
+           class="{% if item.key == nav_active %}active{% endif %}"
+           {% if item.title %}title="{{ item.title }}"{% endif %}>{{ item.label }}</a>
+        {% if item.group_end %}</span>{% endif %}
+      {% endfor %}
+    </div>
+
+    <div class="appnav-right">
+      {% if nav_ai %}
+      <a class="appnav-ai s-{{ nav_ai.status }}" href="/health/ai"
+         title="{{ nav_ai.tooltip }}">
+        <span class="dot"></span>{{ nav_ai.label }}
+      </a>
+      {% endif %}
+      <span class="appnav-phase">Phase 1 / 8</span>
+    </div>
+  </div>
+</nav>

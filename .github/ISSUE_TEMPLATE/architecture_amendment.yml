@@ -1,0 +1,50 @@
+name: Architecture amendment
+description: Propose a change to something ARCHITECTURE_FREEZE.md has frozen
+labels: ["amendment", "needs-measurement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        `docs/ARCHITECTURE_FREEZE.md` §11 allows exactly one amendment path: a
+        Validation Sprint or a phase's acceptance testing **proved a stated
+        assumption false**.
+
+        > If a proposed change is not answering a failed measurement, the answer
+        > is no.
+
+        A better idea, a new framework or a blog post is not an amendment. Open a
+        discussion instead.
+
+  - type: input
+    id: frozen_item
+    attributes:
+      label: What is frozen
+      description: The rule, decision or table entry being challenged (e.g. "R18", "AD-25", "§5 Logging").
+    validations:
+      required: true
+
+  - type: textarea
+    id: measurement
+    attributes:
+      label: The measurement that failed
+      description: >
+        What did you measure, how, how many times, and what did it return?
+        Include the raw output. "It felt slow" is not a measurement.
+    validations:
+      required: true
+
+  - type: textarea
+    id: replacement
+    attributes:
+      label: The replacement
+      description: What should the frozen document say instead?
+    validations:
+      required: true
+
+  - type: input
+    id: phase
+    attributes:
+      label: Phase that discovered it
+      placeholder: P4
+    validations:
+      required: true

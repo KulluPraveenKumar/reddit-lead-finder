@@ -1,0 +1,430 @@
+"""Verify a database's shape against the schema the phase specified.
+
+**Why this exists.** ``docs/testing/P01-testing.md`` T5 originally checked the
+schema with five ``python -c "import sqlite3; ..."`` one-liners, the longest of
+them 350 characters on a single line. They were correct, and they were also
+unusable by the non-developer the guide is written for: a mistyped bracket
+produced a ``SyntaxError`` about quoting rather than an answer about the
+database, and the guide had to carry a paragraph explaining PowerShell's
+handling of ``\\"`` to make them survive a copy-paste.
+
+This script replaces them with one command that prints one verdict per check.
+
+**Why stdlib only.** ``sqlite3`` and ``argparse`` ship with Python, so this runs
+on Windows, macOS and Linux with the interpreter the project already requires
+and nothing else. In particular it does **not** need the ``sqlite3`` *command
+line tool*, which is absent from a default Windows install. It also adds no
+dependency, which ``docs/ARCHITECTURE_FREEZE.md`` §5 would otherwise forbid.
+
+**What it is not.** Not a test. ``tests/test_orchestration.py`` and
+``tests/test_migrations.py`` remain the enforcement; this is the operator-facing
+view of the same facts, so a human running the manual guide sees *why* a check
+failed rather than a pytest traceback.
+
+Usage::
+
+    python scripts/check_schema.py --db data/p1-test.db
+    python scripts/check_schema.py --db data/leads.db --revision 0003 --skip-p1
+
+Exit code is 0 when every check passes and 1 when any fails, so it can also be
+used as a gate in a script.
+"""
+
+from __future__ import annotations
+
+import argparse
+import sqlite3
+import sys
+from pathlib import Path
+
+# ---------------------------------------------------------------------------
+# The specification, transcribed from docs/05-database-plan.md and
+# docs/04-system-design.md. Written out here rather than imported from
+# src.db.models on purpose: a check that reads the same declaration the
+# migration reads would agree with itself no matter what shipped.
+# ---------------------------------------------------------------------------
+
+#: Every table present once 0004 is applied. Sorted; compared as a set.
+EXPECTED_TABLES_AT_0004 = (
+    "ai_cache",
+    "ai_calls",
+    "ai_provider_state",
+    "alembic_version",
+    "dashboard_keywords",
+    "dashboard_search_queries",
+    "dashboard_subreddits",
+    "http_cache",
+    "jobs",
+    "leads",
+    "metrics",
+    "proxies",
+    "run_events",
+    "runs",
+    "scrape_runs",
+    "settings",
+    "subreddits",
+    "tracked_users",
+)
+
+#: Index name -> the column order the query planner needs.
+#:
+#: Order matters and presence does not. ``ix_jobs_claim`` backs
+#: ``WHERE state=? AND available_at<=? ORDER BY priority, id``; with the columns
+#: in any other order the index still "exists" and the claim degrades to a table
+#: scan under exactly the load it was built for.
+EXPECTED_INDEXES = {
+    "ix_jobs_claim": ["state", "available_at", "priority", "id"],
+    "ix_jobs_run": ["run_id", "state"],
+    "ix_jobs_lease": ["state", "lease_expires_at"],
+    "ix_run_events_run": ["run_id", "id"],
+    "ix_runs_project_state": ["project_id", "state"],
+}
+
+#: Table -> (referenced table, referenced column, ON DELETE action).
+#:
+#: The two actions are deliberately different and the difference is the point:
+#: ``SET NULL`` means deleting a run never deletes its spend history or its
+#: legacy scrape record; ``CASCADE`` means deleting a run does clean up its own
+#: work items. If these ever match each other, one of them is wrong.
+EXPECTED_FOREIGN_KEYS = {
+    "ai_calls": ("runs", "run_id", "SET NULL"),
+    "scrape_runs": ("runs", "run_id", "SET NULL"),
+    "jobs": ("runs", "run_id", "CASCADE"),
+    "run_events": ("runs", "run_id", "CASCADE"),
+}
+
+#: The `runs` columns, in declaration order.
+EXPECTED_RUNS_COLUMNS = [
+    "id",
+    "project_id",
+    "state",
+    "options_json",
+    "stats_json",
+    "llm_cost_usd",
+    "error",
+    "started_at",
+    "updated_at",
+    "finished_at",
+]
+
+#: Column names that would give a human gate an expiry.
+#:
+#: A gate that expires proceeds without the human it exists to wait for, which
+#: defeats the quality mechanism the pipeline is built on (AD-6). There is
+#: nothing to assert positively about an absent feature, so the absence itself
+#: is the check.
+FORBIDDEN_EXPIRY_COLUMNS = frozenset({"expires_at", "timeout_at", "deadline", "ttl", "expiry"})
+
+#: The legacy contract from ARCHITECTURE_FREEZE R20. A migration that changed
+#: any of these has destroyed data, whatever else it did correctly.
+EXPECTED_LEADS = 459
+EXPECTED_INTENT_MAX = 164.28
+EXPECTED_INTENT_AVG = 42.29
+
+
+class Report:
+    """Collects verdicts so every check runs before anything reports failure.
+
+    Stopping at the first failure would make the operator re-run the script once
+    per problem. One pass, one list.
+    """
+
+    def __init__(self, verbose: bool = False) -> None:
+        self.failures: list[str] = []
+        self.checks = 0
+        self.verbose = verbose
+
+    def check(self, ok: bool, label: str, detail: str = "") -> bool:
+        self.checks += 1
+        if ok:
+            print(f"  PASS  {label}")
+            if detail and self.verbose:
+                print(f"          {detail}")
+        else:
+            print(f"  FAIL  {label}")
+            if detail:
+                print(f"          {detail}")
+            self.failures.append(label)
+        return ok
+
+    def section(self, title: str) -> None:
+        print(f"\n{title}")
+
+    def summary(self) -> int:
+        print()
+        if self.failures:
+            print(f"FAILED — {len(self.failures)} of {self.checks} checks did not pass:")
+            for name in self.failures:
+                print(f"  - {name}")
+            return 1
+        print(f"OK — all {self.checks} checks passed.")
+        return 0
+
+
+def _index_columns(conn: sqlite3.Connection, name: str) -> list[str] | None:
+    """Column order for an index, or None when the index does not exist.
+
+    ``PRAGMA index_info`` on a missing index returns an empty result rather than
+    raising, so 'absent' and 'present but empty' need distinguishing here or a
+    dropped index would read as a column-order mismatch.
+    """
+    rows = list(
+        conn.execute("SELECT name FROM sqlite_master WHERE type='index' AND name=?", (name,))
+    )
+    if not rows:
+        return None
+    return [r[2] for r in conn.execute(f"PRAGMA index_info({name})")]
+
+
+def check_integrity(conn: sqlite3.Connection, report: Report) -> None:
+    """Is the file itself sound, before anything is asserted about its shape?
+
+    A corrupt page or a violated foreign key makes every later check meaningless,
+    so these run first.
+    """
+    report.section("Database integrity")
+
+    result = conn.execute("PRAGMA integrity_check").fetchone()[0]
+    report.check(result == "ok", "integrity_check reports ok", f"got: {result}")
+
+    violations = list(conn.execute("PRAGMA foreign_key_check"))
+    report.check(
+        not violations,
+        "no foreign key violations",
+        f"{len(violations)} violation(s): {violations[:5]}",
+    )
+
+
+def check_revision(conn: sqlite3.Connection, report: Report, expected: str | None) -> None:
+    report.section("Migration version")
+
+    row = conn.execute("SELECT version_num FROM alembic_version").fetchone()
+    actual = row[0] if row else "(none)"
+
+    if expected is None:
+        print(f"  INFO  alembic_version is {actual}")
+        return
+
+    # Accept the short form ("0003") as well as the full revision id, because
+    # that is what `alembic downgrade` takes and what the operator will type.
+    ok = actual == expected or actual.startswith(expected)
+    report.check(ok, f"alembic_version is {expected}", f"got: {actual}")
+
+
+def check_tables(conn: sqlite3.Connection, report: Report) -> None:
+    report.section("Tables")
+
+    actual = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    actual = {t for t in actual if not t.startswith("sqlite_")}
+    expected = set(EXPECTED_TABLES_AT_0004)
+
+    missing = sorted(expected - actual)
+    extra = sorted(actual - expected)
+
+    report.check(not missing, f"all {len(expected)} expected tables present", f"missing: {missing}")
+    report.check(not extra, "no unexpected tables", f"unexpected: {extra}")
+
+
+def check_indexes(conn: sqlite3.Connection, report: Report) -> None:
+    report.section("Indexes (column order matters)")
+
+    for name, expected in EXPECTED_INDEXES.items():
+        actual = _index_columns(conn, name)
+        if actual is None:
+            report.check(False, f"{name} exists", "the index is missing entirely")
+            continue
+        report.check(
+            actual == expected,
+            f"{name} = {expected}",
+            f"got: {actual}",
+        )
+
+
+def check_foreign_keys(conn: sqlite3.Connection, report: Report) -> None:
+    report.section("Foreign keys (ON DELETE action matters)")
+
+    for table, expected in EXPECTED_FOREIGN_KEYS.items():
+        actual = [(r[2], r[3], r[6]) for r in conn.execute(f"PRAGMA foreign_key_list({table})")]
+        report.check(
+            expected in actual,
+            f"{table} -> {expected[0]}.{expected[1]} ON DELETE {expected[2]}",
+            f"got: {actual}",
+        )
+
+    # `runs.project_id` stays a bare column until 0007 creates `projects`.
+    # A REFERENCES clause here would name a table that does not exist.
+    runs_fks = [r[2] for r in conn.execute("PRAGMA foreign_key_list(runs)")]
+    report.check(
+        runs_fks == [],
+        "runs has no foreign keys yet (projects arrives in 0007)",
+        f"got: {runs_fks}",
+    )
+
+
+def check_constraints(conn: sqlite3.Connection, report: Report) -> None:
+    """Column-level guarantees that a table-existence check would not catch."""
+    report.section("Constraints")
+
+    runs_info = list(conn.execute("PRAGMA table_info(runs)"))
+    columns = [r[1] for r in runs_info]
+
+    report.check(
+        columns == EXPECTED_RUNS_COLUMNS,
+        "runs columns are exactly as specified, in order",
+        f"got: {columns}",
+    )
+
+    present = FORBIDDEN_EXPIRY_COLUMNS & set(columns)
+    report.check(
+        not present,
+        "runs has no expiry column — gates never time out (AD-6)",
+        f"found: {sorted(present)}",
+    )
+
+    nullable = {r[1]: not r[3] for r in runs_info}
+    report.check(
+        nullable.get("project_id") is True,
+        "runs.project_id is nullable until 0007",
+        f"got notnull={not nullable.get('project_id')}",
+    )
+
+    # The two `run_id` columns differ on purpose, per docs/05 §7.3:
+    # a job may be standalone (maintenance, canary) and so is nullable; an event
+    # is always an event *about a run* and so is not.
+    jobs_notnull = {r[1]: r[3] for r in conn.execute("PRAGMA table_info(jobs)")}
+    report.check(
+        jobs_notnull.get("run_id") == 0,
+        "jobs.run_id is nullable — a job need not belong to a run",
+        f"got notnull={jobs_notnull.get('run_id')}",
+    )
+
+    events_notnull = {r[1]: r[3] for r in conn.execute("PRAGMA table_info(run_events)")}
+    report.check(
+        events_notnull.get("run_id") == 1,
+        "run_events.run_id is NOT NULL — an event always belongs to a run",
+        f"got notnull={events_notnull.get('run_id')}",
+    )
+
+
+def check_row_counts(conn: sqlite3.Connection, report: Report) -> None:
+    """P1 ships shape, not behaviour — nothing writes to the new tables yet.
+
+    Independent of the legacy-lead contract below, so this still runs against an
+    empty or non-production database.
+    """
+    report.section("Row counts")
+
+    for table in ("runs", "jobs", "run_events"):
+        count = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+        report.check(count == 0, f"{table} is empty (P1 runs nothing yet)", f"got: {count} rows")
+
+
+def check_legacy_fingerprint(conn: sqlite3.Connection, report: Report, expect_leads: bool) -> None:
+    """The legacy contract: 459 leads with an unchanged score fingerprint (R20).
+
+    Only meaningful against the production database or a copy of it, so it is
+    skippable — but skipping is announced rather than silent, because a check
+    that quietly did not run reads exactly like a check that passed.
+    """
+    report.section("Legacy fingerprint")
+
+    leads = conn.execute("SELECT COUNT(*) FROM leads").fetchone()[0]
+
+    if not expect_leads:
+        print(f"  INFO  leads = {leads} (not checked; --no-leads-check was passed)")
+        return
+
+    report.check(leads == EXPECTED_LEADS, f"leads = {EXPECTED_LEADS}", f"got: {leads}")
+
+    if leads == 0:
+        print("  INFO  empty database — skipping the intent_score fingerprint")
+        return
+
+    hi, avg = conn.execute("SELECT MAX(intent_score), AVG(intent_score) FROM leads").fetchone()
+    report.check(
+        round(hi, 2) == EXPECTED_INTENT_MAX,
+        f"max(intent_score) = {EXPECTED_INTENT_MAX}",
+        f"got: {round(hi, 2)}",
+    )
+    report.check(
+        round(avg, 2) == EXPECTED_INTENT_AVG,
+        f"avg(intent_score) = {EXPECTED_INTENT_AVG}",
+        f"got: {round(avg, 2)}",
+    )
+
+
+def run_checks(
+    db_path: Path,
+    revision: str | None,
+    skip_p1: bool,
+    expect_leads: bool,
+    verbose: bool,
+) -> int:
+    if not db_path.exists():
+        print(f"ERROR: no such database: {db_path}")
+        print("Create it first — see P01-testing.md T4 Step 1.")
+        return 2
+
+    report = Report(verbose=verbose)
+    print(f"Checking {db_path}")
+
+    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    try:
+        check_integrity(conn, report)
+        check_revision(conn, report, revision)
+
+        if skip_p1:
+            print("\n(--skip-p1: the 0004 shape and row-count checks were not run)")
+        else:
+            check_tables(conn, report)
+            check_indexes(conn, report)
+            check_foreign_keys(conn, report)
+            check_constraints(conn, report)
+            check_row_counts(conn, report)
+
+        check_legacy_fingerprint(conn, report, expect_leads)
+    finally:
+        conn.close()
+
+    return report.summary()
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Verify a SQLite database against the P1 schema specification.",
+        epilog="Needs only Python. The sqlite3 command line tool is not required.",
+    )
+    parser.add_argument(
+        "--db",
+        type=Path,
+        default=Path("data/leads.db"),
+        help="path to the database file (default: data/leads.db)",
+    )
+    parser.add_argument(
+        "--revision",
+        help="alembic revision the database should be at, e.g. 0004 or 0003",
+    )
+    parser.add_argument(
+        "--skip-p1",
+        action="store_true",
+        help="skip the 0004 shape checks — use on a database still at 0003",
+    )
+    parser.add_argument(
+        "--no-leads-check",
+        action="store_true",
+        help="report the lead count without asserting the 459-lead legacy contract",
+    )
+    parser.add_argument("-v", "--verbose", action="store_true", help="print detail for passes too")
+    args = parser.parse_args(argv)
+
+    return run_checks(
+        db_path=args.db,
+        revision=args.revision,
+        skip_p1=args.skip_p1,
+        expect_leads=not args.no_leads_check,
+        verbose=args.verbose,
+    )
+
+
+if __name__ == "__main__":
+    sys.exit(main())

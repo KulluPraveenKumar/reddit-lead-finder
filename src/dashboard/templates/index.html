@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reddit Lead Finder Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f1117; color: #e0e0e0; }
+        .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+        h1 { color: #ff4500; margin-bottom: 20px; }
+        h2 { color: #ccc; margin-bottom: 10px; font-size: 1.1rem; }
+        h3 { color: #aaa; margin-bottom: 8px; font-size: 0.95rem; }
+
+        .stats-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 15px; margin-bottom: 25px; }
+        .stat-card { background: #1a1d27; border-radius: 10px; padding: 20px; text-align: center; }
+        .stat-card .value { font-size: 2rem; font-weight: bold; color: #ff4500; }
+        .stat-card .label { color: #888; font-size: 0.85rem; margin-top: 5px; }
+        .stat-card.green .value { color: #4ade80; }
+        .stat-card.blue .value { color: #60a5fa; }
+        .stat-card.yellow .value { color: #fbbf24; }
+
+        .charts-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; margin-bottom: 25px; }
+        .chart-card { background: #1a1d27; border-radius: 10px; padding: 15px; }
+        .chart-card h3 { color: #ccc; font-size: 0.9rem; margin-bottom: 10px; }
+        .chart-card canvas { max-height: 200px; }
+
+        .filters { background: #1a1d27; border-radius: 10px; padding: 15px; margin-bottom: 20px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+        .filters input, .filters select { background: #252830; border: 1px solid #333; color: #e0e0e0; padding: 8px 12px; border-radius: 6px; }
+        .btn { border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 0.9rem; }
+        .btn-primary { background: #ff4500; color: white; }
+        .btn-primary:hover { background: #e03d00; }
+        .btn-success { background: #16a34a; color: white; }
+        .btn-success:hover { background: #15803d; }
+        .btn-sm { padding: 4px 10px; font-size: 0.8rem; }
+        .btn-danger { background: #dc2626; color: white; padding: 4px 8px; font-size: 0.75rem; border-radius: 4px; cursor: pointer; border: none; }
+        .btn-danger:hover { background: #b91c1c; }
+        .btn-outline { background: transparent; border: 1px solid #555; color: #ccc; }
+        .btn-outline:hover { border-color: #ff4500; color: #ff4500; }
+
+        .main-grid { display: grid; grid-template-columns: 1fr 340px; gap: 20px; }
+        .leads-table { background: #1a1d27; border-radius: 10px; overflow: hidden; }
+        table { width: 100%; border-collapse: collapse; }
+        th { background: #252830; padding: 12px 15px; text-align: left; font-size: 0.8rem; text-transform: uppercase; color: #888; }
+        td { padding: 10px 15px; border-bottom: 1px solid #252830; font-size: 0.9rem; }
+        tr:hover { background: #252830; }
+        a { color: #ff4500; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        .score-badge { background: #2d333b; padding: 3px 8px; border-radius: 12px; font-size: 0.8rem; }
+        .score-high { background: #1a472a; color: #4ade80; }
+        .score-med { background: #4a3728; color: #fbbf24; }
+        .score-low { background: #3b2828; color: #f87171; }
+
+        .keyword-tag { display: inline-block; background: #2d333b; padding: 2px 6px; border-radius: 4px; font-size: 0.75rem; margin: 1px; }
+        .keyword-high { background: #1a3a2a; color: #4ade80; }
+
+        .status-select { background: #252830; border: 1px solid #333; color: #e0e0e0; padding: 4px 8px; border-radius: 4px; font-size: 0.8rem; cursor: pointer; }
+        .status-new { border-color: #60a5fa; }
+        .status-contacted { border-color: #fbbf24; }
+        .status-interested { border-color: #4ade80; }
+        .status-rejected { border-color: #f87171; }
+
+        .sidebar { display: flex; flex-direction: column; gap: 15px; }
+        .sidebar-card { background: #1a1d27; border-radius: 10px; padding: 15px; }
+        .sidebar-card ul { list-style: none; }
+        .sidebar-card li { padding: 5px 0; border-bottom: 1px solid #252830; font-size: 0.85rem; }
+        .sidebar-card li:last-child { border-bottom: none; }
+
+        .tag-input-wrap { display: flex; gap: 8px; margin-bottom: 10px; }
+        .tag-input-wrap input { flex: 1; }
+        .tags-list { display: flex; flex-wrap: wrap; gap: 6px; }
+        .tag-chip { display: inline-flex; align-items: center; gap: 4px; background: #252830; padding: 4px 10px; border-radius: 16px; font-size: 0.8rem; }
+        .tag-chip .remove { cursor: pointer; color: #f87171; font-weight: bold; margin-left: 2px; }
+        .tag-chip .remove:hover { color: #ef4444; }
+
+        .keyword-section { margin-bottom: 12px; }
+        .keyword-section label { display: block; font-size: 0.8rem; color: #888; margin-bottom: 4px; }
+
+        .settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .settings-grid label { font-size: 0.8rem; color: #888; }
+        .settings-grid input { background: #252830; border: 1px solid #333; color: #e0e0e0; padding: 6px 8px; border-radius: 4px; width: 100%; font-size: 0.85rem; }
+
+        .pagination { display: flex; gap: 5px; justify-content: center; margin-top: 15px; }
+        .pagination a { padding: 6px 12px; background: #252830; border-radius: 4px; color: #e0e0e0; }
+        .pagination a.active { background: #ff4500; }
+
+        .export-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .scrape-status { font-size: 0.85rem; padding: 8px; display: none; }
+        .scrape-status.active { display: block; color: #fbbf24; }
+        .scrape-status.done { display: block; color: #4ade80; }
+
+        .tabs { display: flex; gap: 0; margin-bottom: 0; }
+        .tab { padding: 8px 16px; background: #252830; border: none; color: #888; cursor: pointer; font-size: 0.85rem; border-radius: 6px 6px 0 0; }
+        .tab.active { background: #1a1d27; color: #ff4500; }
+        /* Page heading */
+        .page-head { margin: 4px 0 22px; }
+        .page-head h1 { margin: 0 0 4px; }
+        .page-sub { color: #8b949e; font-size: 0.88rem; margin: 0; }
+        /* Phase 1 AI status strip */
+        .ai-strip { background:#16191d; border:1px solid #272d34; border-radius:8px;
+                    padding:14px 18px; margin-bottom:22px; }
+        .ai-strip-head { display:flex; align-items:center; gap:11px; flex-wrap:wrap; }
+        .ai-strip-head strong { font-size:0.95rem; }
+        .ai-dot { width:9px; height:9px; border-radius:50%; background:#6e7681; flex:none; }
+        .ai-strip.s-valid .ai-dot { background:#3fb950; }
+        .ai-strip.s-invalid_key .ai-dot { background:#f85149; }
+        .ai-strip.s-insufficient_balance .ai-dot,
+        .ai-strip.s-unreachable .ai-dot,
+        .ai-strip.s-undecryptable .ai-dot { background:#d29922; }
+        .ai-status { color:#8b949e; font-size:0.85rem; }
+        .ai-links { margin-left:auto; display:flex; gap:14px; }
+        .ai-links a { color:#ff4500; font-size:0.82rem; text-decoration:none; }
+        .ai-links a:hover { text-decoration:underline; }
+        .ai-strip-metrics { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr));
+                            gap:10px 20px; margin-top:13px; }
+        .ai-strip-metrics .m-label { display:block; color:#6e7681; font-size:0.68rem;
+                                     text-transform:uppercase; letter-spacing:.05em; }
+        .ai-strip-metrics .m-value { display:block; color:#e6e9ec; font-size:0.9rem;
+                                     font-variant-numeric:tabular-nums; margin-top:2px; }
+        .ai-strip-note { color:#d29922; font-size:0.82rem; margin-top:11px; display:none; }
+        .ai-strip-note.show { display:block; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+    </style>
+</head>
+<body>
+    {% include "_nav.html" %}
+    <div class="container">
+        <div class="page-head">
+            <h1>Dashboard</h1>
+            <p class="page-sub">Lead volume, scoring activity and scraper status.
+               Scraper targets and weights live in <a href="/configuration">Configuration</a>.</p>
+        </div>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="value">{{ stats.total_leads }}</div>
+                <div class="label">Total Leads</div>
+            </div>
+            <div class="stat-card blue">
+                <div class="value">{{ stats.new_leads }}</div>
+                <div class="label">New Leads</div>
+            </div>
+            <div class="stat-card yellow">
+                <div class="value">{{ stats.contacted }}</div>
+                <div class="label">Contacted</div>
+            </div>
+            <div class="stat-card green">
+                <div class="value">{{ stats.interested }}</div>
+                <div class="label">Interested</div>
+            </div>
+            <div class="stat-card">
+                <div class="value">{{ "%.1f"|format(stats.avg_score) }}</div>
+                <div class="label">Avg Intent Score</div>
+            </div>
+        </div>
+
+        <!-- Phase 1 AI status. Summary only; detail lives on AI Health. -->
+        <div class="ai-strip" id="ai-strip">
+            <div class="ai-strip-head">
+                <span class="ai-dot" id="ai-dot"></span>
+                <strong id="ai-provider">AI provider</strong>
+                <span class="ai-status" id="ai-status">checking...</span>
+                <span class="ai-links">
+                    <a href="/settings/ai">Configure</a>
+                    <a href="/health/ai">Full health &rarr;</a>
+                </span>
+            </div>
+            <div class="ai-strip-metrics" id="ai-metrics">
+                <div><span class="m-label">Model</span><span class="m-value" id="ai-model">&mdash;</span></div>
+                <div><span class="m-label">Last validated</span><span class="m-value" id="ai-validated">&mdash;</span></div>
+                <div><span class="m-label">Latency</span><span class="m-value" id="ai-latency">&mdash;</span></div>
+                <div><span class="m-label">Cost today</span><span class="m-value" id="ai-cost">&mdash;</span></div>
+                <div><span class="m-label">Circuit</span><span class="m-value" id="ai-circuit">&mdash;</span></div>
+                <div><span class="m-label">Calls today</span><span class="m-value" id="ai-calls">&mdash;</span></div>
+            </div>
+            <div class="ai-strip-note" id="ai-note"></div>
+        </div>
+
+        <div class="charts-grid">
+            <div class="chart-card">
+                <h3>Leads Over Time</h3>
+                <canvas id="leadsOverTime"></canvas>
+            </div>
+            <div class="chart-card">
+                <h3>Top Subreddits</h3>
+                <canvas id="topSubreddits"></canvas>
+            </div>
+            <div class="chart-card">
+                <h3>Keyword Breakdown</h3>
+                <canvas id="keywordBreakdown"></canvas>
+            </div>
+        </div>
+
+        <form class="filters" method="GET" action="/">
+            <input type="text" name="search" placeholder="Search leads..." value="{{ search }}">
+            <select name="subreddit">
+                <option value="">All Subreddits</option>
+                {% for sub in subreddits %}
+                <option value="{{ sub.name }}" {% if subreddit == sub.name %}selected{% endif %}>r/{{ sub.name }}</option>
+                {% endfor %}
+            </select>
+            <select name="status">
+                <option value="">All Statuses</option>
+                <option value="new" {% if status_filter == 'new' %}selected{% endif %}>New</option>
+                <option value="contacted" {% if status_filter == 'contacted' %}selected{% endif %}>Contacted</option>
+                <option value="interested" {% if status_filter == 'interested' %}selected{% endif %}>Interested</option>
+                <option value="rejected" {% if status_filter == 'rejected' %}selected{% endif %}>Rejected</option>
+            </select>
+            <select name="sort">
+                <option value="intent_score" {% if sort_by == 'intent_score' %}selected{% endif %}>Intent Score</option>
+                <option value="score" {% if sort_by == 'score' %}selected{% endif %}>Upvotes</option>
+                <option value="num_comments" {% if sort_by == 'num_comments' %}selected{% endif %}>Comments</option>
+                <option value="created_utc" {% if sort_by == 'created_utc' %}selected{% endif %}>Newest</option>
+                <option value="scraped_at" {% if sort_by == 'scraped_at' %}selected{% endif %}>Recently Scraped</option>
+            </select>
+            <input type="number" name="min_score" placeholder="Min score" value="{{ min_score if min_score > 0 else '' }}" step="0.5" min="0" style="width:100px">
+            <button type="submit" class="btn btn-primary">Filter</button>
+        </form>
+
+        <div class="main-grid">
+            <div class="leads-table">
+                <div class="export-bar">
+                    <span style="color:#888; font-size:0.85rem;">{{ total }} leads found</span>
+                    <a href="/api/leads/export?subreddit={{ subreddit }}&status={{ status_filter }}&search={{ search }}" class="btn btn-success btn-sm">Export CSV</a>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Score</th>
+                            <th>Title</th>
+                            <th>Subreddit</th>
+                            <th>Author</th>
+                            <th>Upvotes</th>
+                            <th>Comments</th>
+                            <th>Keywords</th>
+                            <th>Status</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for lead in leads %}
+                        <tr id="lead-row-{{ lead.id }}">
+                            <td>
+                                <span class="score-badge {% if lead.intent_score >= 20 %}score-high{% elif lead.intent_score >= 10 %}score-med{% else %}score-low{% endif %}">
+                                    {{ lead.intent_score }}
+                                </span>
+                            </td>
+                            <td><a href="{{ lead.url }}" target="_blank" rel="noopener">{{ lead.title[:70] }}{% if lead.title|length > 70 %}...{% endif %}</a></td>
+                            <td>r/{{ lead.subreddit }}</td>
+                            <td>u/{{ lead.author }}</td>
+                            <td>{{ lead.score }}</td>
+                            <td>{{ lead.num_comments }}</td>
+                            <td>
+                                {% for kw in lead.matched_keywords.split(', ') if lead.matched_keywords %}
+                                <span class="keyword-tag {% if '[HIGH]' in kw %}keyword-high{% endif %}">{{ kw.replace('[HIGH]', '').replace('[MED]', '') }}</span>
+                                {% endfor %}
+                            </td>
+                            <td>
+                                <select class="status-select status-{{ lead.status }}" onchange="updateStatus({{ lead.id }}, this.value)" data-lead-id="{{ lead.id }}">
+                                    <option value="new" {% if lead.status == 'new' %}selected{% endif %}>New</option>
+                                    <option value="contacted" {% if lead.status == 'contacted' %}selected{% endif %}>Contacted</option>
+                                    <option value="interested" {% if lead.status == 'interested' %}selected{% endif %}>Interested</option>
+                                    <option value="rejected" {% if lead.status == 'rejected' %}selected{% endif %}>Rejected</option>
+                                </select>
+                            </td>
+                            <td>
+                                <button class="btn-danger" onclick="deleteLead({{ lead.id }})" title="Delete lead">X</button>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="9" style="text-align:center;padding:30px;color:#888;">No leads found. Run a scrape first.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+
+                {% if total > per_page %}
+                <div class="pagination">
+                    {% if page > 1 %}<a href="?page={{ page-1 }}&subreddit={{ subreddit }}&sort={{ sort_by }}&search={{ search }}&status={{ status_filter }}">Prev</a>{% endif %}
+                    {% for p in range(1, ((total / per_page)|int) + 2) %}
+                    <a href="?page={{ p }}&subreddit={{ subreddit }}&sort={{ sort_by }}&search={{ search }}&status={{ status_filter }}" class="{% if p == page %}active{% endif %}">{{ p }}</a>
+                    {% endfor %}
+                    {% if page * per_page < total %}<a href="?page={{ page+1 }}&subreddit={{ subreddit }}&sort={{ sort_by }}&search={{ search }}&status={{ status_filter }}">Next</a>{% endif %}
+                </div>
+                {% endif %}
+            </div>
+
+            <div class="sidebar">
+                <!-- Subreddits, Keywords, Search Queries and Scoring Settings moved to
+                     /configuration. The dashboard answers "what is happening?"; the
+                     Configuration page answers "what is configured?". Both drive the
+                     same legacy endpoints - no API changed. -->
+                <div class="sidebar-card">
+                    <h2>Configuration</h2>
+                    <p style="color:#8b949e;font-size:0.85rem;margin:0 0 10px">
+                        Subreddits, keywords, search queries and scoring weights.
+                    </p>
+                    <a class="btn btn-primary btn-sm" href="/configuration"
+                       style="display:block;text-align:center;text-decoration:none">Open Configuration</a>
+                </div>
+
+                <!-- Run Scraper -->
+                <div class="sidebar-card">
+                    <h2>Run Scraper</h2>
+                    <button class="btn btn-success" onclick="runScrape()" id="scrape-btn" style="width:100%;">Run Scrape Now</button>
+                    <div class="scrape-status" id="scrape-status"></div>
+                </div>
+
+                <!-- Recent Runs -->
+                <div class="sidebar-card">
+                    <h2>Recent Scrape Runs</h2>
+                    <ul>
+                        {% for run in recent_runs %}
+                        <li>{{ run.scraper_type }} — {{ run.leads_found }} leads <span style="color:#888">({{ run.run_at.strftime('%m/%d %H:%M') }})</span></li>
+                        {% else %}
+                        <li style="color:#888">No runs yet</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const chartData = {{ chart_data | tojson }};
+
+        /* AI status strip. Summary only - detail belongs on AI Health.
+           Fails silently: an AI outage must never break the lead dashboard. */
+        const AI_LABEL = {
+            valid: 'Connected', unconfigured: 'Not configured',
+            invalid_key: 'Key rejected', insufficient_balance: 'Needs credit',
+            unreachable: 'Unreachable', undecryptable: 'Key unreadable'
+        };
+        const AI_NOTE = {
+            unconfigured: 'No API key yet. AI features are disabled; scraping is unaffected. Open Configure to add one.',
+            invalid_key: 'The provider rejected the stored key. Open Configure to replace it.',
+            insufficient_balance: 'The key is valid but the account needs credit. Nothing is broken.',
+            unreachable: 'Could not reach the provider. Usually a network issue; scraping is unaffected.',
+            undecryptable: 'APP_SECRET_KEY changed, so the stored key cannot be read. Re-enter it.'
+        };
+        async function loadAiStrip(){
+            const strip = document.getElementById('ai-strip');
+            try {
+                const [settings, usage, providers] = await Promise.all([
+                    fetch('/api/settings/ai').then(r => r.json()),
+                    fetch('/api/ai/usage?period=today').then(r => r.json()),
+                    fetch('/api/health/providers').then(r => r.json()).catch(() => null)
+                ]);
+                const key = settings.key || {};
+                const status = key.status || 'unconfigured';
+                strip.className = 'ai-strip s-' + status;
+                document.getElementById('ai-provider').textContent = settings.provider || 'AI provider';
+                document.getElementById('ai-status').textContent = AI_LABEL[status] || status;
+                document.getElementById('ai-model').textContent =
+                    key.model_id || (settings.advanced && settings.advanced.model) || '\u2014';
+                document.getElementById('ai-validated').textContent = key.last_validated_at
+                    ? new Date(key.last_validated_at).toLocaleString() : 'never';
+                document.getElementById('ai-latency').textContent =
+                    key.last_validation_ms ? key.last_validation_ms + ' ms' : '\u2014';
+                document.getElementById('ai-cost').textContent =
+                    '$' + (Number(usage.cost_usd) || 0).toFixed(4);
+                document.getElementById('ai-calls').textContent = usage.calls != null ? usage.calls : '\u2014';
+
+                let circuit = '\u2014';
+                if (providers && providers.routing) {
+                    const me = (providers.routing.providers || [])
+                        .find(p => p.provider === settings.provider);
+                    if (me) circuit = me.state + (me.total_failures ? ' (' + me.total_failures + ' fail)' : '');
+                }
+                document.getElementById('ai-circuit').textContent = circuit;
+
+                const note = document.getElementById('ai-note');
+                const text = key.last_error || AI_NOTE[status] || '';
+                note.textContent = text;
+                note.className = text ? 'ai-strip-note show' : 'ai-strip-note';
+            } catch (e) {
+                document.getElementById('ai-status').textContent = 'status unavailable';
+                const note = document.getElementById('ai-note');
+                note.textContent = 'Could not read AI status. Scraping and leads are unaffected.';
+                note.className = 'ai-strip-note show';
+            }
+        }
+        loadAiStrip();
+        setInterval(loadAiStrip, 30000);
+
+        // Charts
+        new Chart(document.getElementById('leadsOverTime'), {
+            type: 'line',
+            data: {
+                labels: chartData.leads_by_day.map(d => d.day),
+                datasets: [{
+                    label: 'Leads',
+                    data: chartData.leads_by_day.map(d => d.count),
+                    borderColor: '#ff4500',
+                    backgroundColor: 'rgba(255,69,0,0.1)',
+                    fill: true,
+                    tension: 0.3,
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { ticks: { color: '#888', maxTicksLimit: 7 }, grid: { color: '#252830' } },
+                    y: { ticks: { color: '#888' }, grid: { color: '#252830' } }
+                }
+            }
+        });
+
+        new Chart(document.getElementById('topSubreddits'), {
+            type: 'bar',
+            data: {
+                labels: chartData.top_subreddits.map(d => 'r/' + d.subreddit),
+                datasets: [{
+                    label: 'Leads',
+                    data: chartData.top_subreddits.map(d => d.count),
+                    backgroundColor: '#ff4500',
+                }]
+            },
+            options: {
+                responsive: true,
+                indexAxis: 'y',
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { ticks: { color: '#888' }, grid: { color: '#252830' } },
+                    y: { ticks: { color: '#888' }, grid: { display: false } }
+                }
+            }
+        });
+
+        new Chart(document.getElementById('keywordBreakdown'), {
+            type: 'doughnut',
+            data: {
+                labels: chartData.keyword_breakdown.map(d => d.keyword),
+                datasets: [{
+                    data: chartData.keyword_breakdown.map(d => d.count),
+                    backgroundColor: ['#ff4500','#ff6b35','#ff8c5a','#ffa97a','#ffc49a','#60a5fa','#3b82f6','#2563eb','#1d4ed8','#1e40af'],
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: { legend: { position: 'right', labels: { color: '#888', font: { size: 11 } } } }
+            }
+        });
+
+        // Subreddit, keyword and query managers moved to /configuration along
+        // with their Enter-key handlers. Left behind, these bound to elements
+        // that no longer exist and threw on every page load.
+
+        // Run scrape
+        function runScrape() {
+            const btn = document.getElementById('scrape-btn');
+            const status = document.getElementById('scrape-status');
+            btn.disabled = true;
+            btn.textContent = 'Scraping...';
+            status.className = 'scrape-status active';
+            status.textContent = 'Scrape running in background...';
+            fetch('/api/scrape', { method: 'POST' })
+            .then(r => r.json())
+            .then(data => {
+                setTimeout(() => {
+                    btn.disabled = false;
+                    btn.textContent = 'Run Scrape Now';
+                    status.className = 'scrape-status done';
+                    status.textContent = 'Scrape complete! Refresh to see new leads.';
+                }, 5000);
+            });
+        }
+
+        // Lead status
+        function updateStatus(leadId, status) {
+            fetch('/api/leads/' + leadId + '/status', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: status })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.ok) {
+                    const select = document.querySelector('select[data-lead-id="' + leadId + '"]');
+                    select.className = 'status-select status-' + status;
+                }
+            });
+        }
+
+        // Delete lead
+        function deleteLead(leadId) {
+            if (!confirm('Delete this lead?')) return;
+            fetch('/api/leads/' + leadId, { method: 'DELETE' })
+            .then(r => r.json())
+            .then(data => { if (data.ok) document.getElementById('lead-row-' + leadId).remove(); });
+        }
+    </script>
+</body>
+</html>

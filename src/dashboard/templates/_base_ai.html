@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Reddit Lead Finder{% endblock %}</title>
+<style>
+  :root{
+    --bg:#0f1113; --panel:#16191d; --panel2:#1c2126; --line:#272d34;
+    --text:#e6e9ec; --muted:#8b949e; --accent:#ff4500;
+    --ok:#3fb950; --warn:#d29922; --bad:#f85149;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+       font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+  main{max-width:1040px;margin:0 auto;padding:26px 22px 60px}
+  .crumbs{color:var(--muted);font-size:12px;margin:0 0 12px}
+  .crumbs a{color:var(--muted)}
+  .crumbs a:hover{color:var(--text)}
+  .chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px}
+  .chip{display:inline-flex;align-items:center;gap:7px;background:var(--panel2);
+        border:1px solid var(--line);border-radius:999px;padding:5px 11px;font-size:12.5px}
+  .chip b{cursor:pointer;color:var(--muted);font-weight:400;font-size:15px;line-height:1}
+  .chip b:hover{color:var(--bad)}
+  .empty{color:var(--muted);font-size:13px;font-style:italic;margin:12px 0 0}
+  .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:0 20px}
+  table.data{width:100%;border-collapse:collapse;font-size:13px;margin-top:6px}
+  table.data th{text-align:left;color:var(--muted);font-weight:600;font-size:11px;
+                text-transform:uppercase;letter-spacing:.06em;padding:7px 10px 7px 0;
+                border-bottom:1px solid var(--line);white-space:nowrap}
+  table.data td{padding:8px 10px 8px 0;border-bottom:1px solid rgba(255,255,255,.04);
+                vertical-align:top}
+  table.data tr:last-child td{border-bottom:0}
+  .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;
+        border:1px solid var(--line);background:var(--panel2);white-space:nowrap}
+  .pill.ok{color:var(--ok);border-color:rgba(63,185,80,.35)}
+  .pill.warn{color:var(--warn);border-color:rgba(210,153,34,.35)}
+  .pill.bad{color:var(--bad);border-color:rgba(248,81,73,.35)}
+  .scroll-x{overflow-x:auto}
+  h1{font-size:20px;margin:0 0 6px}
+  .sub{color:var(--muted);font-size:13px;margin:0 0 22px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:8px;
+        padding:18px 20px;margin-bottom:18px}
+  .card h2{font-size:13px;text-transform:uppercase;letter-spacing:.08em;
+           color:var(--muted);margin:0 0 14px;font-weight:600}
+  .row{display:flex;justify-content:space-between;gap:14px;padding:7px 0;
+       border-bottom:1px solid rgba(255,255,255,.04)}
+  .row:last-child{border-bottom:0}
+  .row .k{color:var(--muted)}
+  .row .v{font-variant-numeric:tabular-nums;text-align:right}
+  label{display:block;color:var(--muted);font-size:12px;margin:12px 0 5px}
+  input[type=text],input[type=password],input[type=number],select{
+    width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:6px;
+    color:var(--text);padding:9px 11px;font-size:13px;font-family:inherit}
+  input:focus,select:focus{outline:0;border-color:var(--accent)}
+  button{background:var(--accent);color:#fff;border:0;border-radius:6px;
+         padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit}
+  button:hover{filter:brightness(1.1)}
+  button.ghost{background:transparent;border:1px solid var(--line);color:var(--text)}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  .actions{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap}
+  .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:8px;
+       vertical-align:middle}
+  .s-valid .dot{background:var(--ok)}
+  .s-unconfigured .dot{background:var(--muted)}
+  .s-invalid_key .dot{background:var(--bad)}
+  .s-insufficient_balance .dot{background:var(--warn)}
+  .s-unreachable .dot{background:var(--warn)}
+  .s-undecryptable .dot{background:var(--warn)}
+  .s-validating .dot{background:var(--accent)}
+  .note{color:var(--muted);font-size:12px;margin-top:9px;line-height:1.5}
+  .banner{border-radius:6px;padding:11px 14px;margin-bottom:14px;font-size:13px;display:none}
+  .banner.show{display:block}
+  .banner.warn{background:rgba(210,153,34,.12);border:1px solid rgba(210,153,34,.4)}
+  .banner.bad{background:rgba(248,81,73,.12);border:1px solid rgba(248,81,73,.4)}
+  .banner.ok{background:rgba(63,185,80,.12);border:1px solid rgba(63,185,80,.4)}
+  .bar{height:6px;background:var(--panel2);border-radius:3px;overflow:hidden;
+       margin-top:6px;width:190px}
+  .bar > i{display:block;height:100%;background:var(--ok)}
+  .bar.bad > i{background:var(--bad)}
+  .metric{display:flex;justify-content:space-between;align-items:center;
+          gap:16px;padding:9px 0;border-bottom:1px solid rgba(255,255,255,.04)}
+  .metric:last-child{border-bottom:0}
+  .metric .target{color:var(--muted);font-size:11px}
+  code{background:var(--panel2);padding:1px 5px;border-radius:4px;font-size:12px}
+  #toast{position:fixed;right:20px;bottom:20px;background:var(--panel2);
+         border:1px solid var(--line);border-left:3px solid var(--accent);
+         border-radius:6px;padding:11px 15px;font-size:13px;max-width:380px;
+         opacity:0;transform:translateY(8px);transition:.18s;pointer-events:none;z-index:99}
+  #toast.show{opacity:1;transform:none}
+  #toast.bad{border-left-color:var(--bad)}
+  #toast.ok{border-left-color:var(--ok)}
+</style>
+</head>
+<body>
+{% include "_nav.html" %}
+<main>{% block content %}{% endblock %}</main>
+<div id="toast"></div>
+<script>
+/* Shared toast. Every AJAX failure surfaces here — the fix for the existing
+   silent-failure pattern, where a failed fetch left the page looking fine. */
+let _toastTimer;
+function toast(message, kind){
+  const el = document.getElementById('toast');
+  el.textContent = message;
+  el.className = 'show' + (kind ? ' ' + kind : '');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => { el.className = ''; }, 5200);
+}
+async function api(url, options){
+  try{
+    const res = await fetch(url, options);
+    let data = null;
+    try { data = await res.json(); } catch(e) { data = null; }
+    if(!res.ok){
+      const msg = (data && data.error) || (res.status + ' ' + res.statusText);
+      throw new Error(msg);
+    }
+    return data;
+  }catch(err){
+    toast(err.message || 'Request failed', 'bad');
+    throw err;
+  }
+}
+function fmtUSD(n){ return '$' + (Number(n)||0).toFixed(4); }
+function fmtPct(n){ return ((Number(n)||0) * 100).toFixed(1) + '%'; }
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

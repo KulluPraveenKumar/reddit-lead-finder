@@ -1,0 +1,418 @@
+# 06c — Local-First Pipeline: Never Call AI If It Isn't Required
+
+> **The governing rule: AI is the last enrichment step, never the first.**
+> Anything a regex, a hash, a set-membership test, a SQL query, or arithmetic can decide must not
+> cost a token. This document specifies the deterministic machinery that runs before any provider
+> call, and the measurement that proves it isn't silently discarding good leads.
+
+---
+
+## 1. The two funnels
+
+### 1.1 Website intelligence
+
+```
+Website URL
+     │
+     ▼  LOCAL
+┌──────────────────────────────────────────────────────────┐
+│ Crawler          bounded fetch, ≤7 pages, ≤40 KB          │
+│ HTML parsing     trafilatura → plain text                 │
+│ Local extraction competitor dictionary · tech signals ·   │
+│                  pricing regex · social links · schema.org│
+│ Fingerprint      sha256(normalised extracted text)        │
+└────────────────────────┬─────────────────────────────────┘
+                         ▼
+             ┌───────────────────────┐
+             │  L1 Website cache     │  fingerprint unchanged?
+             │  L2 Profile cache     │  profile exists for it?
+             └───────────┬───────────┘
+                    HIT  │  MISS
+              ┌──────────┴──────────┐
+              ▼                     ▼
+        reuse, $0.00      ╔══════════════════════════╗
+                          ║ ONE DeepSeek call        ║
+                          ║ BusinessIntelligence     ║
+                          ╚═══════════┬══════════════╝
+                                      ▼
+                              Stored + fingerprinted
+```
+
+### 1.2 Reddit enrichment
+
+```
+Scraping (old.reddit.com)
+     │
+     ▼  LOCAL — every stage below is deterministic and free
+┌──────────────────────────────────────────────────────────────────┐
+│ 1. Parsing            HTML → structured posts/comments           │
+│ 2. Exact dedup        reddit_id + content_hash                   │
+│ 3. Near-dedup         MinHash+LSH, char 5-grams, Jaccard ≥ 0.85  │
+│ 4. Rule engine        keywords · negatives · competitor dict ·   │
+│                       structural noise · author heuristics       │
+│ 5. Metric scoring     upvotes · comments · recency · sub fit     │
+│ 6. Ranking            deterministic pre-score, 0–100             │
+│ 7. Filtering          PreAIGate — 11 rejection reasons, counted  │
+│ 8. Semantic grouping  cluster representatives chosen             │
+│ 9. Candidate select   top-N by pre-score within budget           │
+└────────────────────────────────┬─────────────────────────────────┘
+                                 ▼
+                   ┌─────────────────────────┐
+                   │  L3 Post-analysis cache │  content_hash seen
+                   │      at this version?   │
+                   └────────────┬────────────┘
+                           HIT  │  MISS
+                    ┌───────────┴───────────┐
+                    ▼                       ▼
+              reuse, $0.00      ╔═══════════════════════════╗
+                                ║ Batched DeepSeek call     ║
+                                ║ B=8 items per request     ║
+                                ╚════════════┬══════════════╝
+                                             ▼
+                                    Persist · fan out to
+                                    every lead in the group
+                                             ▼
+                          ┌──────────────────────────────────┐
+                          │ Hybrid confidence — per lead,    │
+                          │ NOT per group (§4.4)             │
+                          └──────────────────────────────────┘
+                                             ▼
+                          ┌──────────────────────────────────┐
+                          │ Holdout audit — 2% of REJECTS    │
+                          │ enriched anyway → gate miss rate │
+                          └──────────────────────────────────┘
+```
+
+---
+
+## 2. What never touches AI
+
+Enumerated so it is auditable, not aspirational. Each has a home in deterministic code.
+
+| Task | Mechanism | Module |
+|---|---|---|
+| Keyword matching | substring / compiled regex | `rules/keywords.py` |
+| Negative-term filtering | set membership | `rules/keywords.py` |
+| Structural noise (hiring, giveaway, megathread) | compiled regex | `rules/structural.py` |
+| Exact duplicate detection | `sha256` content hash | `dedupe/exact.py` |
+| Near-duplicate detection | MinHash + LSH | `dedupe/minhash.py` |
+| URL parsing / normalisation | `urllib.parse` | `net/urls.py` |
+| Website crawling | `ProxiedHTTPClient` | `ai/website_fetcher.py` |
+| HTML parsing | BeautifulSoup + trafilatura | `ai/website_fetcher.py` |
+| Subreddit filtering | set membership | `rules/subreddits.py` |
+| Age / recency calculation | `datetime` arithmetic | `scoring/features.py` |
+| Upvote / comment scoring | arithmetic | `scoring/features.py` |
+| Author normalisation, bot detection | regex + allowlist | `rules/authors.py` |
+| Sorting, filtering, ranking | SQL + Python | `db/repositories/` |
+| **Competitor mention detection** | dictionary from the business profile | `rules/competitors.py` |
+| **Tech-stack / pricing signals on a website** | regex + `schema.org` parse | `ai/site_signals.py` |
+| Rule-based pre-scoring | weighted arithmetic | `scoring/prescore.py` |
+| Similarity hashing | MinHash | `dedupe/minhash.py` |
+
+**Competitor detection deserves emphasis.** Once the business profile names competitors, finding
+them in a Reddit post is a dictionary lookup with alias and misspelling variants — not a reasoning
+task. Asking a model to do it would be paying for `in`.
+
+**Enforced by test:** `src/rules/`, `src/dedupe/`, and `src/scoring/` must contain no import of
+`src.ai` and no reference to any provider. Grep-verified in every phase's Part A.
+
+---
+
+## 3. The rule engine and pre-score
+
+### 3.1 Deterministic pre-score (0–100, no AI)
+
+```python
+def prescore(item, project) -> PreScore:
+    c = {
+        "keyword_tier":   TIER_VALUE[item.matched_keyword_tier],      # high/med/low
+        "keyword_density": min(1.0, item.keyword_hits / 3),
+        "pain_phrase":    phrase_overlap(item.text, project.pain_phrases),
+        "question_form":  1.0 if QUESTION_RE.search(item.title) else 0.0,
+        "competitor":     1.0 if competitor_mentions(item.text, project) else 0.0,
+        "recency":        recency_decay(item.created_utc),
+        "engagement":     engagement(item.score, item.num_comments),
+        "subreddit_fit":  project.subreddit_fit(item.subreddit),
+        "length":         length_plausibility(len(item.text)),
+    }
+    return PreScore(total=100 * sum(W[k] * v for k, v in c.items()), components=c)
+```
+
+Every component is stored. The pre-score is a **recall instrument, not a precision one** — it is
+tuned to cast wide and drop only items that are obviously not leads. Precision is the AI's job.
+
+### 3.2 `PreAIGate`
+
+```python
+class PreAIGate:
+    def evaluate(self, item, project, run) -> GateDecision:
+        """Returns ADMIT | REJECT(reason) | CACHED(analysis_id) | GROUPED(rep_id)."""
+```
+
+| Reason | Rule | Typical share |
+|---|---|---:|
+| `already_analyzed` | `(content_hash, prompt_version)` seen | 0–60% on re-runs |
+| `duplicate_exact` | content hash matches another item this run | 3–8% |
+| `duplicate_near` | MinHash Jaccard ≥ 0.85 with a chosen representative | 8–20% |
+| `negative_term` | project negative vocabulary | 10–20% |
+| `structural_noise` | hiring / giveaway / megathread / AMA regex | 5–12% |
+| `too_short` | `len(text) < min_chars` | 4–8% |
+| `bot_or_deleted` | `[deleted]`, AutoModerator, `*Bot` | 2–5% |
+| `out_of_window` | outside the run's time window | 0–10% |
+| `downvoted` | comment score < 0 | 1–3% |
+| `below_prescore` | pre-score under the admission threshold | **the tunable dial** |
+| `budget_exhausted` | run's AI budget consumed | 0% normally |
+
+Every reason is counted, persisted on the run, and rendered. A gate whose statistics are invisible
+is a gate nobody will ever tune.
+
+### 3.3 The admission threshold is adaptive, not fixed
+
+`below_prescore` is where the operator trades money for coverage — but **the cut point is derived
+from the pre-score distribution, not configured as a fixed threshold or percentage.** The full
+mechanism is [06f — Adaptive AI Budget](06f-adaptive-budget.md); the summary:
+
+> Sort the `n` candidates by pre-score, find the **knee** of the curve, bound it below by a
+> mode-derived **quality floor**, bound it above by a **marginal-value** cutoff once labelled
+> outcomes exist, then **clamp** to guard against degenerate distributions.
+
+The three presets survive, but as an *appetite bias* applied to that computation rather than as the
+rule itself:
+
+| Mode | Knee × | Quality floor | ω | Fixed threshold (fallback only) | Use |
+|---|---:|---:|---:|---:|---|
+| `thorough` | 1.6 | ≥ 15 | 0.05 | ≥ 20 | Small runs, first run on a new project |
+| `balanced` *(default)* | 1.0 | ≥ 25 | 0.15 | ≥ 35 | Normal operation |
+| `frugal` | 0.6 | ≥ 40 | 0.30 | ≥ 50 | Large exhaustive scrapes, monitoring |
+
+The `fixed_threshold` column is used only when adaptive budgeting cannot run — fewer than 200
+candidates, or a distribution with no detectable knee. Both cases are reported explicitly rather
+than silently substituted.
+
+**Why the earlier fixed thresholds were replaced.** A fixed cut assumes a distribution *shape*. On a
+run whose curve is still steep below 35 it discards real leads; on a flat curve it admits a large
+block the rules already judged mediocre. The shape is fully observable before any AI call, so the
+assumption was never necessary — see [06f §1](06f-adaptive-budget.md) and the five worked
+distributions in [06f §4](06f-adaptive-budget.md).
+
+The resulting count, the method that produced it, and **what the fixed cut would have admitted** are
+all shown on the options screen before the run commits, so the choice stays explicit rather than
+becoming an opaque automation.
+
+---
+
+## 4. Deduplication
+
+### 4.1 Tier 1 — exact
+
+`content_hash = sha256(normalise(title + "\n" + body))`, where `normalise` collapses whitespace,
+casefolds, and strips markdown emphasis and trailing edit markers. Catches crossposts, reposts, and
+quoted duplicates. One indexed lookup.
+
+### 4.2 Tier 2 — near-duplicate via MinHash + LSH
+
+```python
+SHINGLE_K   = 5        # character 5-grams
+NUM_PERM    = 128      # MinHash permutations
+LSH_THRESH  = 0.85     # Jaccard
+```
+
+Character n-grams rather than word n-grams because Reddit text is noisy — typos, punctuation, and
+casing vary far more than substance. LSH banding avoids the O(n²) comparison.
+
+**Performance is a design target, not a measured claim.** Phase 6 asserts that indexing and querying
+2,000 items completes in **< 2 s on CPU**; the surveyed literature covers different techniques at
+different scales, so this number is validated in testing rather than assumed here.
+
+**No embedding model, no vector database, no embeddings API.** That tier is deliberately excluded:
+it needs new infrastructure and new per-item cost to catch a tail Jaccard already largely covers.
+Recorded as a future enhancement.
+
+### 4.3 Group representative selection
+
+```python
+def choose_representative(group: list[Item]) -> Item:
+    return max(group, key=lambda i: (i.prescore.total, i.score or 0, i.created_utc))
+```
+
+The representative is enriched; **the analysis is linked to every member of the group.**
+
+### 4.4 The correctness rule: group for analysis, score individually
+
+This is the subtle part and getting it wrong would be a silent quality regression.
+
+Two near-identical "which CRM should I use" threads may have different authors, subreddits,
+recency, and engagement — and therefore genuinely different value as leads.
+
+```
+dedup group (3 leads)
+   └── ONE lead_analysis row          ← the AI judgement, shared
+         ├── lead A → confidence 84   ← own recency + engagement + subreddit fit
+         ├── lead B → confidence 71
+         └── lead C → confidence 52
+```
+
+**One shared `lead_analysis`; three different `confidence_score` values.** Collapsing the scores
+too would emit three identical numbers for three different-value leads, and the operator would
+correctly stop trusting the ranking.
+
+The UI shows a "similar discussions (3)" affordance on grouped leads so the grouping is visible
+rather than hidden.
+
+---
+
+## 5. Incremental enrichment
+
+Nothing is ever analysed twice at the same prompt version.
+
+```python
+key = (content_hash, prompt_version)
+if existing := repo.analysis_by_key(project_id, key):
+    repo.link_analysis(item, existing)     # zero calls, zero cost
+```
+
+| Scenario | Items enriched |
+|---|---|
+| First run | All admitted candidates |
+| Re-run, nothing changed | **0** |
+| Re-run, 50 new posts arrive | ≤ 50 (fewer after dedup) |
+| Post edited (content hash changed) | That post only |
+| Prompt version bumped | All admitted candidates, old rows retained |
+| Comments added to an analysed post | The comments only; the post is reused |
+
+**Scheduled monitoring is the case this exists for.** A project polled every 24 hours over a month
+performs one full enrichment and then thirty cheap deltas.
+
+---
+
+## 6. The holdout audit — proving the gate is honest
+
+A gate that discards a good lead is worse than no gate, because it fails silently. Cost
+optimisation that cannot be measured is indistinguishable from quality loss.
+
+```python
+HOLDOUT_RATE = 0.02        # 2% of REJECTED candidates
+
+def audit_sample(rejected: list[Item]) -> list[Item]:
+    """Deterministic sampling: hash-based, so the audit is reproducible per run."""
+    return [i for i in rejected if stable_hash(i.content_hash) % 50 == 0]
+```
+
+Sampled rejects are enriched anyway and compared against what the gate assumed:
+
+```
+Gate miss rate    3.1%   (4 of 128 sampled rejects would have qualified as leads)
+Target            < 5%
+Verdict           ✓ gate is not over-filtering
+```
+
+| Field | Meaning |
+|---|---|
+| `sampled` | Rejects re-admitted for audit |
+| `would_have_qualified` | Of those, how many the AI marked `is_lead` |
+| `gate_miss_rate` | The ratio — the headline number |
+| `worst_reason` | Which rejection reason produced the most misses |
+
+Surfaced on the run page and `/health/ai`. Above threshold → an explicit warning:
+*"Your filter rejected an estimated 7% of real leads. Consider switching to `thorough` mode."*
+
+**`worst_reason` is the actionable part** — it tells the operator *which* rule is too aggressive,
+usually an over-broad negative keyword.
+
+**Cost:** 2% of rejects on a typical run is ~8 extra items, roughly $0.001. A rounding error against
+the ~85% the gate saves, in exchange for the only real evidence that quality is intact.
+
+### 6.1 The audit is also the exploration channel
+
+**Audited items are persisted as real, labellable leads**, flagged `leads.source='holdout_audit'`
+and badged in the lead list. This is not a convenience — it is what stops the learning loop
+degenerating.
+
+The adaptive budget's yield curve is fitted from operator labels. Labels exist only for leads the
+operator sees; the operator sees only leads the gate **admitted**. Fitting on admitted leads alone
+would teach the curve the shape of the gate's own output, which would then narrow the gate, every
+cycle — and precision, also measured only on admitted leads, would never reveal it
+([02c §0](02c-research-final-review.md)).
+
+The 2% sample is random exploration of exactly the region no other signal reaches. Storing only the
+aggregate counts — as the original design did — produced a **metric with no learning signal**.
+
+Two requirements follow, both asserted in the test suite ([06i §8](06i-feedback-and-memory.md)):
+
+- Audit-sourced leads appear in the lead list and can be labelled like any other.
+- `YieldCurve` fitting **must not filter to admitted leads.** A test fails if the query contains
+  such a predicate.
+
+The audit keeps its measurement role unchanged and gains a second one it was always structurally
+capable of performing.
+
+**Exclusions from sampling:** `already_analyzed`, `duplicate_exact`, `duplicate_near`, and
+`budget_exhausted` are never sampled — those rejections are provably correct, and auditing them
+would waste calls proving arithmetic works.
+
+---
+
+## 7. Where each stage lives
+
+| Stage | Phase | Module |
+|---|---|---|
+| Local site signal extraction | 4 | `ai/site_signals.py` |
+| Website fingerprint + L1/L2 cache | 4 | `ai/website_fetcher.py`, `ai/cache.py` |
+| Exact dedup | 6 | `dedupe/exact.py` |
+| MinHash near-dedup | 6 | `dedupe/minhash.py` |
+| Rule engine + pre-score | 6 | `rules/`, `scoring/prescore.py` |
+| `PreAIGate` | 7 | `ai/gate.py` |
+| Group representative selection | 7 | `dedupe/groups.py` |
+| Candidate selection + budget | 7 | `ai/gate.py` |
+| Batched enrichment | 7 | `ai/service.py` |
+| Holdout audit | 7 | `ai/holdout.py` |
+| Per-lead confidence fan-out | 7 | `scoring/confidence.py` |
+
+---
+
+## 8. Worked example — 1,200 collected items, `balanced`
+
+```
+ 1,200  collected
+  −312  already analysed at this prompt version (re-run)
+  − 58  exact duplicates
+  − 95  near-duplicates removed
+          142 items formed 47 groups; the 47 representatives are KEPT,
+          so 142 − 47 = 95 are resolved by reusing a group's analysis
+  −186  negative term
+  − 94  structural noise
+  − 61  too short
+  − 38  bot or deleted
+  − 27  out of window
+  ──────
+   329  candidates passed the hard filters      ( n = 329, 27% of collected )
+  −115  below the adaptive admission cut
+          knee at rank 214 · floor(≥25) allows 268 · clamp [17, 296]
+          method = "knee"   (a fixed ≥35 cut would have admitted only 180)
+  ──────
+   214  admitted to AI                          (18% of collected)
+  +  3  holdout audit sample (2% of 115 rejects)
+  ──────
+   217  items enriched
+
+   214 ÷ 8 = 27 enrichment calls  +  1 holdout call  =  28 DeepSeek calls
+   cost ≈ $0.031
+
+   Against naive one-call-per-post over the same 1,200 items:
+     1,200 calls · $0.178 (cache working) or $0.672 (cold cache)
+
+   43× fewer calls · 83% lower cost vs. cache-working naive, 95% vs. cold
+   gate miss rate MEASURED at 2.8%
+```
+
+Note that adaptive budgeting made this run **more** expensive than the fixed ≥35 cut would have
+(214 admitted rather than 180, $0.031 rather than $0.026) — and that is the correct outcome. The
+knee shows the pre-score curve is still steep below 35, so those 34 extra candidates are on the
+slope, not the tail. **Minimising calls is the goal; minimising them below the point where real
+leads start being discarded is not.** The holdout audit is what tells the difference, and at 2.8% it
+confirms the wider cut is not leaking.
+
+**Read the near-duplicate line carefully.** Grouping does not discard 142 items — it discards 95 and
+keeps 47 representatives, whose single analysis is then reused by every member of their group. All
+142 leads still appear in the dashboard, each with its own confidence score
+([§4.4](#44-the-correctness-rule-group-for-analysis-score-individually)).

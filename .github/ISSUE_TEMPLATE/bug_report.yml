@@ -1,0 +1,60 @@
+name: Bug report
+description: Something behaves differently from what the docs or a testing guide say
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Never paste an API key, a proxy line, or the contents of `.env`.**
+        If you must show a credential's shape, redact everything after the first
+        four characters.
+
+  - type: input
+    id: phase
+    attributes:
+      label: Phase
+      description: Which phase does this concern? (P0, P1, ... or "legacy dashboard")
+      placeholder: P1
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+      description: >
+        If a manual testing guide states an expected result, quote the step —
+        for example "P01-testing.md T5 Step 1 says `OK — all 26 checks passed`".
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened instead
+      description: Paste the full command and its output.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: |
+        Output of:
+        `python --version`, `python -m alembic heads`,
+        and `python scripts/check_schema.py --db data/leads.db`
+      render: shell
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before filing
+      options:
+        - label: The full test suite was run (`python -m pytest`) and I have included the summary line
+          required: true
+        - label: No credentials appear anywhere in this report
+          required: true

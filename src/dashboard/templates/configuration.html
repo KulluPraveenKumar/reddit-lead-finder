@@ -1,0 +1,200 @@
+{% extends "_base_ai.html" %}
+{% block title %}Configuration{% endblock %}
+{% block nav_configuration %}active{% endblock %}
+
+{% block content %}
+<h1>Configuration</h1>
+<p class="sub">Scraper targets and scoring weights. These drive
+<code>python main.py scrape</code> and the <strong>Run Scrape</strong> button on the
+Dashboard. Moved here from the dashboard sidebar so the dashboard answers
+&ldquo;what is happening?&rdquo; rather than &ldquo;what is configured?&rdquo;</p>
+
+<div class="card">
+  <h2>Subreddits</h2>
+  <p class="note">Communities the subreddit scraper walks. Enter the name without
+  <code>r/</code>.</p>
+  <div style="display:flex;gap:9px;margin-top:10px">
+    <input type="text" id="subreddit-input" placeholder="e.g. SaaS" spellcheck="false">
+    <button id="add-subreddit">Add</button>
+  </div>
+  <div class="chips" id="subreddit-tags">
+    {% for sub in dash_subreddits %}
+      <span class="chip" data-id="{{ sub.id }}">r/{{ sub.name }}<b data-remove="subreddit" data-id="{{ sub.id }}">&times;</b></span>
+    {% else %}
+      <p class="empty">No subreddits yet. The scraper has nothing to walk until you add one.</p>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="card">
+  <h2>Keywords</h2>
+  <p class="note">Phrases that mark a post as interesting. <strong>High intent</strong>
+  scores roughly twice <strong>medium intent</strong> &mdash; the exact multiplier is
+  <code>high_intent_multiplier</code> below.</p>
+
+  <label for="high-kw-input">High intent &mdash; e.g. &ldquo;looking for&rdquo;, &ldquo;recommend me&rdquo;</label>
+  <div style="display:flex;gap:9px">
+    <input type="text" id="high-kw-input" placeholder="Add high-intent keyword" spellcheck="false">
+    <button id="add-high">Add</button>
+  </div>
+  <div class="chips" id="high-kw-tags">
+    {% for kw in high_keywords %}
+      <span class="chip" data-id="{{ kw.id }}">{{ kw.keyword.split(':')[1] if ':' in kw.keyword else kw.keyword }}<b data-remove="keyword" data-id="{{ kw.id }}">&times;</b></span>
+    {% else %}
+      <p class="empty">No high-intent keywords.</p>
+    {% endfor %}
+  </div>
+
+  <label for="med-kw-input" style="margin-top:18px">Medium intent &mdash; e.g. &ldquo;how do I&rdquo;, &ldquo;struggling with&rdquo;</label>
+  <div style="display:flex;gap:9px">
+    <input type="text" id="med-kw-input" placeholder="Add medium-intent keyword" spellcheck="false">
+    <button id="add-med">Add</button>
+  </div>
+  <div class="chips" id="med-kw-tags">
+    {% for kw in med_keywords %}
+      <span class="chip" data-id="{{ kw.id }}">{{ kw.keyword.split(':')[1] if ':' in kw.keyword else kw.keyword }}<b data-remove="keyword" data-id="{{ kw.id }}">&times;</b></span>
+    {% else %}
+      <p class="empty">No medium-intent keywords.</p>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="card">
+  <h2>Search queries</h2>
+  <p class="note">Full-text searches run against Reddit, independent of the subreddit
+  list.</p>
+  <div style="display:flex;gap:9px;margin-top:10px">
+    <input type="text" id="query-input" placeholder="e.g. best CRM for startups" spellcheck="false">
+    <button id="add-query">Add</button>
+  </div>
+  <div class="chips" id="query-tags">
+    {% for q in search_queries %}
+      <span class="chip" data-id="{{ q.id }}">{{ q.query }}<b data-remove="query" data-id="{{ q.id }}">&times;</b></span>
+    {% else %}
+      <p class="empty">No search queries.</p>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="card">
+  <h2>Scoring weights</h2>
+  <p class="note">Inputs to the deterministic keyword score (<code>intent_score</code>).
+  This is <em>not</em> the AI confidence score &mdash; that arrives in Phase 7. Changing a
+  weight affects <strong>newly scraped</strong> leads only; the 459 existing leads keep
+  the scores they were given.</p>
+
+  <div class="grid2">
+    <div><label for="setting-keyword_weight">Keyword weight</label>
+      <input type="number" id="setting-keyword_weight" value="{{ settings.keyword_weight }}" step="0.5" min="0"></div>
+    <div><label for="setting-upvote_weight">Upvote weight</label>
+      <input type="number" id="setting-upvote_weight" value="{{ settings.upvote_weight }}" step="0.5" min="0"></div>
+    <div><label for="setting-comment_weight">Comment weight</label>
+      <input type="number" id="setting-comment_weight" value="{{ settings.comment_weight }}" step="0.5" min="0"></div>
+    <div><label for="setting-recency_weight">Recency weight</label>
+      <input type="number" id="setting-recency_weight" value="{{ settings.recency_weight }}" step="0.5" min="0"></div>
+    <div><label for="setting-high_intent_multiplier">High-intent multiplier</label>
+      <input type="number" id="setting-high_intent_multiplier" value="{{ settings.high_intent_multiplier }}" step="0.5" min="0"></div>
+    <div><label for="setting-interval_minutes">Schedule interval (minutes)</label>
+      <input type="number" id="setting-interval_minutes" value="{{ settings.interval_minutes }}" step="5" min="5"></div>
+  </div>
+  <div class="actions"><button id="save-settings">Save weights</button></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+/* Uses the SAME legacy endpoints as the old dashboard sidebar. No new API. */
+
+function chip(id, text, kind){
+  const s = document.createElement('span');
+  s.className = 'chip'; s.dataset.id = id;
+  s.textContent = text;
+  const b = document.createElement('b');
+  b.textContent = '×';
+  b.dataset.remove = kind; b.dataset.id = id;
+  s.appendChild(b);
+  return s;
+}
+function clearEmpty(container){
+  const e = container.querySelector('.empty');
+  if (e) e.remove();
+}
+
+async function addSubreddit(){
+  const input = document.getElementById('subreddit-input');
+  const name = input.value.trim().replace(/^r\//i, '');
+  if(!name) return;
+  const d = await api('/api/subreddits', {method:'POST', headers:{'Content-Type':'application/json'},
+                                          body: JSON.stringify({name})});
+  const list = document.getElementById('subreddit-tags');
+  clearEmpty(list);
+  list.appendChild(chip(d.id, 'r/' + d.name, 'subreddit'));
+  input.value = '';
+  toast('Added r/' + d.name, 'ok');
+}
+
+async function addKeyword(level){
+  const input = document.getElementById(level === 'high' ? 'high-kw-input' : 'med-kw-input');
+  const keyword = input.value.trim();
+  if(!keyword) return;
+  const d = await api('/api/keywords', {method:'POST', headers:{'Content-Type':'application/json'},
+                                        body: JSON.stringify({keyword, intent_level: level})});
+  const list = document.getElementById(level === 'high' ? 'high-kw-tags' : 'med-kw-tags');
+  clearEmpty(list);
+  list.appendChild(chip(d.id, d.keyword.includes(':') ? d.keyword.split(':')[1] : d.keyword, 'keyword'));
+  input.value = '';
+  toast('Keyword added', 'ok');
+}
+
+async function addQuery(){
+  const input = document.getElementById('query-input');
+  const query = input.value.trim();
+  if(!query) return;
+  const d = await api('/api/queries', {method:'POST', headers:{'Content-Type':'application/json'},
+                                       body: JSON.stringify({query})});
+  const list = document.getElementById('query-tags');
+  clearEmpty(list);
+  list.appendChild(chip(d.id, d.query, 'query'));
+  input.value = '';
+  toast('Query added', 'ok');
+}
+
+const REMOVE_URL = {subreddit: '/api/subreddits/', keyword: '/api/keywords/', query: '/api/queries/'};
+
+document.addEventListener('click', async (event) => {
+  const b = event.target.closest('b[data-remove]');
+  if(!b) return;
+  const kind = b.dataset.remove;
+  await api(REMOVE_URL[kind] + b.dataset.id, {method:'DELETE'});
+  b.closest('.chip').remove();
+  toast('Removed', 'ok');
+});
+
+document.getElementById('add-subreddit').addEventListener('click', addSubreddit);
+document.getElementById('add-high').addEventListener('click', () => addKeyword('high'));
+document.getElementById('add-med').addEventListener('click', () => addKeyword('medium'));
+document.getElementById('add-query').addEventListener('click', addQuery);
+
+/* Enter submits the field it is typed in - these are add-many forms and
+   reaching for the mouse after every entry is the wrong ergonomics. */
+for(const [id, fn] of [['subreddit-input', addSubreddit],
+                       ['high-kw-input', () => addKeyword('high')],
+                       ['med-kw-input', () => addKeyword('medium')],
+                       ['query-input', addQuery]]){
+  document.getElementById(id).addEventListener('keydown', e => {
+    if(e.key === 'Enter'){ e.preventDefault(); fn(); }
+  });
+}
+
+document.getElementById('save-settings').addEventListener('click', async () => {
+  const payload = {};
+  for(const k of ['keyword_weight','upvote_weight','comment_weight','recency_weight',
+                  'high_intent_multiplier','interval_minutes']){
+    payload[k] = document.getElementById('setting-' + k).value;
+  }
+  await api('/api/settings', {method:'PUT', headers:{'Content-Type':'application/json'},
+                              body: JSON.stringify(payload)});
+  toast('Scoring weights saved. Applies to newly scraped leads.', 'ok');
+});
+</script>
+{% endblock %}

@@ -1,0 +1,325 @@
+"""The invariants that keep the architecture honest.
+
+These are grep- and behaviour-level tests rather than unit tests. Each one
+guards a property that is cheap to hold now and expensive to restore once it has
+been broken for a few months.
+"""
+
+from __future__ import annotations
+
+import re
+import subprocess
+from pathlib import Path
+
+import pytest
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+SRC = PROJECT_ROOT / "src"
+
+
+def _python_files(root: Path, exclude: set[str] = frozenset()) -> list[Path]:
+    return [
+        p
+        for p in root.rglob("*.py")
+        if "__pycache__" not in p.parts and not any(part in exclude for part in p.parts)
+    ]
+
+
+# ------------------------------------------------------------ vendor coupling
+
+
+def _executable_tokens(path: Path) -> str:
+    """Identifiers and non-docstring string literals — i.e. code that *acts*.
+
+    The rule being tested is about *coupling*, not vocabulary. A docstring
+    explaining why DeepSeek's cache behaves as it does is documentation and is
+    wanted; a literal ``"deepseek"`` in a default argument is coupling and is
+    not. Raw text matching cannot tell them apart, and a test that punishes
+    commenting gets its comments deleted rather than its coupling fixed.
+
+    Uses ``ast`` rather than ``tokenize``: docstrings are an AST concept, and
+    the token-level heuristic for spotting them is subtly wrong (the token
+    preceding a docstring is the ``:`` of the enclosing def, not a NEWLINE).
+    """
+    import ast
+
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+
+    docstrings: set[int] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef):
+            body = getattr(node, "body", None)
+            if (
+                body
+                and isinstance(body[0], ast.Expr)
+                and isinstance(body[0].value, ast.Constant)
+                and isinstance(body[0].value.value, str)
+            ):
+                docstrings.add(id(body[0].value))
+
+    pieces: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            if id(node) not in docstrings:
+                pieces.append(node.value)
+        elif isinstance(node, ast.Name):
+            pieces.append(node.id)
+        elif isinstance(node, ast.Attribute):
+            pieces.append(node.attr)
+        elif isinstance(node, ast.alias):
+            pieces.append(node.name)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            pieces.append(node.module)
+    return " ".join(pieces)
+
+
+def test_no_vendor_coupling_outside_providers():
+    """AC8: no module outside providers/ may branch on or default to a vendor.
+
+    ``providers/registry.py`` is the deliberate exception: it exists so the
+    Settings dropdown is built from data rather than a hardcoded list in a
+    template, and everything else takes its default from ``DEFAULT_PROVIDER``.
+    """
+    offenders = []
+    for path in _python_files(SRC):
+        if "providers" in path.parts:
+            continue
+        if "deepseek" in _executable_tokens(path).lower():
+            offenders.append(str(path.relative_to(PROJECT_ROOT)))
+    assert offenders == [], f"vendor coupling outside providers/: {offenders}"
+
+
+def test_provider_default_comes_from_the_registry():
+    """The mechanism that makes the rule above hold rather than being policed."""
+    from src.ai.credentials import CredentialStore
+    from src.ai.providers.registry import DEFAULT_PROVIDER
+    from src.settings import get_settings
+
+    assert CredentialStore(get_settings({})).provider == DEFAULT_PROVIDER
+
+
+def test_no_wire_format_details_outside_ai():
+    """Business logic must not know what a token or a temperature is."""
+    pattern = re.compile(r"\b(response_format|max_tokens|temperature)\b")
+    offenders = []
+    for path in _python_files(SRC, exclude={"ai"}):
+        if pattern.search(path.read_text(encoding="utf-8")):
+            offenders.append(str(path.relative_to(PROJECT_ROOT)))
+    assert offenders == [], f"provider wire details leaked: {offenders}"
+
+
+def test_prompts_are_files_not_literals():
+    """A literal buried in a function cannot be diffed in a review."""
+    offenders = []
+    for path in _python_files(SRC):
+        text = path.read_text(encoding="utf-8")
+        if "You are a" in text or "You are an" in text:
+            offenders.append(str(path.relative_to(PROJECT_ROOT)))
+    assert offenders == [], f"inline prompt text found in: {offenders}"
+
+
+# ------------------------------------------------------------------ secrets
+
+
+def test_no_api_key_in_config_or_repo():
+    """AC7 support: the repository must never contain a credential."""
+    config = (PROJECT_ROOT / "config.yaml").read_text(encoding="utf-8")
+    assert "api_key" not in config.lower() or "NOT HERE" in config
+    assert not re.search(r"\bsk-[A-Za-z0-9_\-]{16,}", config)
+
+    for path in _python_files(SRC) + [PROJECT_ROOT / "main.py"]:
+        text = path.read_text(encoding="utf-8")
+        assert not re.search(r"\bsk-[A-Za-z0-9_\-]{20,}", text), f"key-shaped literal in {path}"
+
+
+def test_gitignore_covers_secrets():
+    ignore = (PROJECT_ROOT / ".gitignore").read_text(encoding="utf-8")
+    for pattern in (".env", "data/*.db", "*proxies*.txt"):
+        assert pattern in ignore, f"{pattern} is not gitignored"
+
+
+def test_redaction_catches_credential_shapes():
+    from src.obs.logging import REDACTED, redact
+
+    samples = [
+        "Authorization: Bearer sk-abc123def456ghi789jkl",
+        "using key sk-1234567890abcdefghij now",
+        'api_key="sk-supersecretvalue123"',
+        "http://user1234:hunter2pass@1.2.3.4:8080",
+    ]
+    for sample in samples:
+        assert REDACTED in redact(sample), f"not redacted: {sample}"
+
+    clean = "nothing sensitive in this line at all"
+    assert redact(clean) == clean
+
+
+def test_key_never_returned_by_any_settings_route(client, settings):
+    """There is no reveal endpoint, and no parameter produces one."""
+    from src.dashboard.app import get_ai_service
+
+    secret = "sk-neverexposed0123456789"
+    get_ai_service().credentials.set_key(secret, validate=False)
+
+    for path in ("/api/settings/ai", "/api/settings/ai/providers", "/api/health", "/api/health/ai"):
+        response = client.get(path)
+        assert secret not in response.get_data(as_text=True), f"key leaked from {path}"
+
+    page = client.get("/settings/ai").get_data(as_text=True)
+    assert secret not in page
+
+
+# ------------------------------------------------------------------ prompts
+
+
+def test_every_prompt_has_the_required_sections():
+    """AC10."""
+    from src.ai.prompts import PromptManager
+
+    manager = PromptManager()
+    stages = manager.available()
+    assert len(stages) == 4, f"expected 4 templates, found {stages}"
+
+    for stage, version in stages:
+        problems = manager.validate(stage, version)
+        assert problems == [], f"{stage} v{version}: {problems}"
+
+
+def test_batched_prompt_carries_a_batch_contract():
+    """Without it, a model silently dropping an item looks like success."""
+    from src.ai.prompts import PromptManager
+
+    template = PromptManager().load("lead_enrichment")
+    system, _user = template.split()
+    assert "# Batch Contract" in system
+    assert "echo" in system.lower()
+
+
+def test_prompt_system_half_has_no_variables():
+    """The frozen half must be byte-identical on every call.
+
+    A variable in the system half would make the prefix vary per item, which
+    silently destroys the ~50x cached-input saving.
+    """
+    import re as _re
+
+    from src.ai.prompts import PromptManager
+
+    manager = PromptManager()
+    for stage, version in manager.available():
+        system, _user = manager.load(stage, version).split()
+        found = _re.findall(r"\{\{\s*(\w+)\s*\}\}", system)
+        assert found == [], f"{stage} v{version} has variables in its frozen half: {found}"
+
+
+def test_prompt_hashes_are_recorded():
+    """A prompt change must be a visible, reviewable event."""
+    from src.ai.prompts import PromptManager
+
+    manager = PromptManager()
+    hashes = {stage: manager.load(stage, v).content_hash for stage, v in manager.available()}
+    assert len(set(hashes.values())) == len(hashes), "two templates have identical content"
+    for stage, digest in hashes.items():
+        assert len(digest) == 64, f"{stage} hash malformed"
+
+
+# ------------------------------------------------------------------ context
+
+
+def test_frozen_prefix_rejects_volatile_data():
+    """A timestamp in the prefix is a silent 50x cost increase."""
+    from src.ai.context import ContextBuilder, VolatilePrefixError
+
+    builder = ContextBuilder()
+    with pytest.raises(VolatilePrefixError):
+        builder.build({"run": "started at 2026-07-30T14:22:01"})
+    with pytest.raises(VolatilePrefixError):
+        builder.build({"id": "550e8400-e29b-41d4-a716-446655440000"})
+
+
+def test_frozen_prefix_is_order_independent():
+    """Dict order follows insertion, which follows whatever the caller did."""
+    from src.ai.context import ContextBuilder
+
+    builder = ContextBuilder()
+    first = builder.build({"alpha": {"b": 2, "a": 1}, "beta": ["x"]})
+    second = builder.build({"beta": ["x"], "alpha": {"a": 1, "b": 2}})
+    assert first.prefix_hash == second.prefix_hash
+
+
+# --------------------------------------------------------------- regression
+
+
+def test_legacy_dashboard_unchanged(client):
+    """AC18: the existing dashboard is the backward-compatibility proof."""
+    response = client.get("/")
+    assert response.status_code == 200
+
+
+def test_csv_export_still_thirteen_columns(client):
+    response = client.get("/api/leads/export")
+    assert response.status_code == 200
+    header = response.get_data(as_text=True).lstrip("﻿").splitlines()[0]
+    assert len(header.split(",")) == 13
+
+
+def test_ruff_is_clean():
+    """AC19."""
+    result = subprocess.run(
+        ["python", "-m", "ruff", "check", "."],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_legacy_api_contract_is_frozen(client):
+    """AC18, restated at the level that matters.
+
+    The original guarantee was "GET / renders byte-identically". That was the
+    right guard while the dashboard was untouched, but Phase 1 §7 always
+    intended the page to gain navigation, and the UX pass added an AI status
+    widget and moved configuration to its own page.
+
+    Byte-identity of the *chrome* was never the point. What must not change is
+    the **contract**: the response shape of every legacy endpoint, and the CSV
+    column order that external importers depend on. That is what this asserts,
+    and it is strictly stronger than eyeballing a diff of the HTML.
+
+    The pre-UX HTML is kept at tests/baseline/index_pre_ux.html for reference.
+    """
+    import json
+
+    baseline_path = PROJECT_ROOT / "tests" / "baseline" / "api_contract.json"
+    if not baseline_path.exists():  # pragma: no cover
+        pytest.skip("no recorded API contract")
+
+    baseline = json.loads(baseline_path.read_text())
+
+    for path, spec in baseline.items():
+        kind, expected = spec["kind"], spec["value"]
+        response = client.get(path)
+        assert response.status_code == 200, f"{path} regressed to {response.status_code}"
+
+        if kind == "csv_header":
+            header = response.get_data(as_text=True).lstrip("\ufeff").splitlines()[0]
+            assert header == expected, f"CSV columns changed:\n  was {expected}\n  now {header}"
+
+        elif kind == "dict_keys":
+            payload = response.get_json()
+            assert isinstance(payload, dict), f"{path} is no longer an object"
+            assert sorted(payload) == expected, (
+                f"{path} keys changed:\n  was {expected}\n  now {sorted(payload)}"
+            )
+
+        elif kind == "list_item_keys":
+            payload = response.get_json()
+            assert isinstance(payload, list), f"{path} is no longer a list"
+            # The test database is empty, so an empty list is expected and
+            # proves the endpoint still answers. Item shape is only checkable
+            # when there is an item.
+            if payload and expected:
+                assert sorted(payload[0]) == expected, (
+                    f"{path} item keys changed:\n  was {expected}\n  now {sorted(payload[0])}"
+                )

@@ -1,0 +1,14 @@
+{
+  "tables": [
+    "dashboard_keywords",
+    "dashboard_search_queries",
+    "dashboard_subreddits",
+    "leads",
+    "scrape_runs",
+    "settings",
+    "subreddits",
+    "tracked_users"
+  ],
+  "lead_count": 459,
+  "intent_score_sha256": "52b2ebb2aeaf9165ba462296a56d6a3b196dc7a8ab327971eed1b67ac9017f8a"
+}

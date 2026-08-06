@@ -1,0 +1,243 @@
+{% extends "_base_ai.html" %}
+{% block title %}AI Provider · Settings{% endblock %}
+
+{% block content %}
+<h1>AI Provider</h1>
+<p class="sub">Nothing AI-powered works until a key is configured here. Scraping and the
+legacy dashboard work regardless.</p>
+
+<div id="banner" class="banner"></div>
+
+<div class="card">
+  <h2>Provider</h2>
+  <select id="provider"></select>
+  <p class="note" id="provider-blurb"></p>
+</div>
+
+<div class="card">
+  <h2>API key</h2>
+  <div id="key-configured" style="display:none">
+    <div class="row"><span class="k">Stored key</span><span class="v"><code id="fingerprint">—</code></span></div>
+    <p class="note">Stored encrypted. Never shown in full, never logged, never exported.</p>
+    <div class="actions">
+      <button class="ghost" id="replace-btn">Replace key</button>
+      <button class="ghost" id="delete-btn">Remove key</button>
+    </div>
+  </div>
+
+  <div id="key-entry">
+    <label for="api-key">Paste your API key</label>
+    <input type="password" id="api-key" placeholder="sk-..." autocomplete="off" spellcheck="false">
+    <p class="note" id="key-help"></p>
+    <div class="actions">
+      <button id="save-btn">Validate &amp; save</button>
+      <button class="ghost" id="cancel-btn" style="display:none">Cancel</button>
+    </div>
+    <p class="note">
+      The key is validated with the provider before it is stored, so a mistyped key never
+      gets saved. It is encrypted at rest with a key derived from <code>APP_SECRET_KEY</code>.
+      On a self-hosted install that key lives on this machine, so this protects a copied
+      database file or a backup &mdash; not an attacker with server access.
+    </p>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Status</h2>
+  <div id="status-line" class="row s-unconfigured">
+    <span class="k"><span class="dot"></span><span id="status-text">Not configured</span></span>
+    <span class="v"><button class="ghost" id="test-btn">Test connection</button></span>
+  </div>
+  <div class="row"><span class="k">Model</span><span class="v" id="model">—</span></div>
+  <div class="row"><span class="k">Context window</span><span class="v" id="context-window">—</span></div>
+  <div class="row"><span class="k">Last validated</span><span class="v" id="validated">—</span></div>
+  <div class="row"><span class="k">Pricing (per 1M tokens)</span><span class="v" id="pricing">—</span></div>
+  <p class="note" id="status-detail"></p>
+</div>
+
+<div class="card">
+  <h2>Usage</h2>
+  <div class="row"><span class="k">Today</span><span class="v" id="usage-today">—</span></div>
+  <div class="row"><span class="k">This month</span><span class="v" id="usage-month">—</span></div>
+  <div class="row"><span class="k">Caps</span><span class="v" id="caps">—</span></div>
+</div>
+
+<div class="card">
+  <h2>Advanced</h2>
+  <label for="cap-run">Cost cap per run (USD)</label>
+  <input type="number" id="cap-run" step="0.25" min="0.25">
+  <label for="cap-day">Cost cap per day (USD)</label>
+  <input type="number" id="cap-day" step="0.5" min="0.5">
+  <label for="concurrency">Concurrency</label>
+  <input type="number" id="concurrency" min="1" max="32">
+  <div class="actions"><button id="config-btn">Save settings</button></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const STATUS_TEXT = {
+  unconfigured:         ['Not configured', 'No API key configured. AI features are disabled; scraping still works.'],
+  valid:                ['Connected', ''],
+  invalid_key:          ['Invalid key', 'The provider rejected this key. Check it was copied completely.'],
+  insufficient_balance: ['Balance exhausted', 'The key is valid — the account needs credit. Nothing is broken; top up to resume AI features.'],
+  unreachable:          ['Unreachable', 'Could not reach the provider. This is usually a network issue or an outage. Scraping is unaffected.'],
+  undecryptable:        ['Key unreadable', 'The stored key could not be decrypted. This usually means APP_SECRET_KEY changed. Re-enter your API key.']
+};
+
+let state = null;
+
+function render(data){
+  state = data;
+  const key = data.key || {};
+  const status = key.status || 'unconfigured';
+  const [label, detail] = STATUS_TEXT[status] || [status, ''];
+
+  const line = document.getElementById('status-line');
+  line.className = 'row s-' + status;
+  document.getElementById('status-text').textContent = label;
+  document.getElementById('status-detail').textContent = key.last_error || detail;
+
+  // A stored-but-broken key still counts as configured: the operator needs to
+  // see which key is there before deciding to replace it.
+  const configured = !!key.configured;
+  document.getElementById('key-configured').style.display = configured ? '' : 'none';
+  document.getElementById('key-entry').style.display = configured ? 'none' : '';
+  document.getElementById('fingerprint').textContent = key.fingerprint || '(stored)';
+
+  document.getElementById('model').textContent = key.model_id || (data.advanced && data.advanced.model) || '—';
+  document.getElementById('context-window').textContent =
+    key.context_window ? key.context_window.toLocaleString() + ' tokens' : '—';
+  document.getElementById('validated').textContent = key.last_validated_at
+    ? new Date(key.last_validated_at).toLocaleString() + (key.last_validation_ms ? ' (' + key.last_validation_ms + ' ms)' : '')
+    : 'never';
+
+  const p = data.prices || {};
+  document.getElementById('pricing').textContent = p.input_uncached
+    ? '$' + p.input_uncached + ' in · $' + p.input_cached + ' cached · $' + p.output + ' out'
+      + (p.verified_on ? '  (verified ' + p.verified_on + ')' : '')
+    : '—';
+
+  const lim = data.limits || {};
+  document.getElementById('caps').textContent =
+    fmtUSD(lim.max_cost_per_run_usd) + ' / run · ' + fmtUSD(lim.max_cost_per_day_usd) + ' / day · '
+    + lim.max_calls_per_run + ' calls / run';
+  document.getElementById('cap-run').value = lim.max_cost_per_run_usd;
+  document.getElementById('cap-day').value = lim.max_cost_per_day_usd;
+  document.getElementById('concurrency').value = (data.advanced || {}).concurrency;
+
+  const banner = document.getElementById('banner');
+  if(status === 'insufficient_balance' || status === 'unreachable' || status === 'undecryptable'){
+    banner.className = 'banner warn show'; banner.textContent = detail;
+  } else if(status === 'invalid_key'){
+    banner.className = 'banner bad show'; banner.textContent = detail;
+  } else { banner.className = 'banner'; }
+}
+
+async function loadProviders(){
+  const data = await api('/api/settings/ai/providers');
+  const sel = document.getElementById('provider');
+  sel.innerHTML = '';
+  data.providers.forEach(p => {
+    const o = document.createElement('option');
+    o.value = p.name; o.textContent = p.display_name; o.dataset.blurb = p.blurb;
+    o.dataset.console = p.console_url || '';
+    sel.appendChild(o);
+  });
+  syncBlurb();
+}
+function syncBlurb(){
+  const sel = document.getElementById('provider');
+  const opt = sel.options[sel.selectedIndex];
+  if(!opt) return;
+  document.getElementById('provider-blurb').textContent = opt.dataset.blurb || '';
+  const help = document.getElementById('key-help');
+  help.innerHTML = opt.dataset.console
+    ? 'Get a key from <a href="' + opt.dataset.console + '" target="_blank" rel="noopener">the provider console</a>.'
+    : '';
+}
+
+async function refresh(){ render(await api('/api/settings/ai')); await refreshUsage(); }
+
+async function refreshUsage(){
+  try{
+    const [today, month] = await Promise.all([
+      fetch('/api/ai/usage?period=today').then(r => r.json()),
+      fetch('/api/ai/usage?period=month').then(r => r.json())
+    ]);
+    document.getElementById('usage-today').textContent =
+      fmtUSD(today.cost_usd) + ' · ' + today.calls + ' calls · cache ' + fmtPct(today.prefix_cache_ratio);
+    document.getElementById('usage-month').textContent =
+      fmtUSD(month.cost_usd) + ' · ' + month.calls + ' calls · cache ' + fmtPct(month.prefix_cache_ratio);
+  }catch(e){ /* usage is informational; a failure here must not blank the page */ }
+}
+
+document.getElementById('provider').addEventListener('change', syncBlurb);
+
+document.getElementById('save-btn').addEventListener('click', async () => {
+  const input = document.getElementById('api-key');
+  const key = input.value.trim();
+  if(!key){ toast('Enter an API key first.', 'bad'); return; }
+  const btn = document.getElementById('save-btn');
+  btn.disabled = true; btn.textContent = 'Validating…';
+  document.getElementById('status-line').className = 'row s-validating';
+  document.getElementById('status-text').textContent = 'Validating…';
+  try{
+    await api('/api/settings/ai/key', {
+      method:'PUT', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({api_key: key})
+    });
+    input.value = '';
+    toast('Key validated and stored.', 'ok');
+    await refresh();
+  }catch(e){ await refresh(); }
+  finally{ btn.disabled = false; btn.textContent = 'Validate & save'; }
+});
+
+document.getElementById('test-btn').addEventListener('click', async () => {
+  const btn = document.getElementById('test-btn');
+  btn.disabled = true; btn.textContent = 'Testing…';
+  try{
+    const r = await api('/api/settings/ai/test', {method:'POST'});
+    toast(r.ok ? ('Connected in ' + r.latency_ms + ' ms · ' + r.model) : (r.error || 'Test failed'),
+          r.ok ? 'ok' : 'bad');
+    await refresh();
+  }catch(e){ await refresh(); }
+  finally{ btn.disabled = false; btn.textContent = 'Test connection'; }
+});
+
+document.getElementById('replace-btn').addEventListener('click', () => {
+  document.getElementById('key-configured').style.display = 'none';
+  document.getElementById('key-entry').style.display = '';
+  document.getElementById('cancel-btn').style.display = '';
+  document.getElementById('api-key').focus();
+});
+document.getElementById('cancel-btn').addEventListener('click', () => {
+  document.getElementById('api-key').value = '';
+  document.getElementById('cancel-btn').style.display = 'none';
+  render(state);
+});
+
+document.getElementById('delete-btn').addEventListener('click', async () => {
+  if(!confirm('Remove the stored API key? AI features will be disabled until a new one is added.')) return;
+  await api('/api/settings/ai/key', {method:'DELETE'});
+  toast('Key removed.', 'ok');
+  await refresh();
+});
+
+document.getElementById('config-btn').addEventListener('click', async () => {
+  await api('/api/settings/ai/config', {
+    method:'PUT', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      max_cost_per_run_usd: parseFloat(document.getElementById('cap-run').value),
+      max_cost_per_day_usd: parseFloat(document.getElementById('cap-day').value),
+      concurrency: parseInt(document.getElementById('concurrency').value, 10)
+    })
+  });
+  toast('Settings saved.', 'ok');
+  await refresh();
+});
+
+loadProviders().then(refresh).catch(() => {});
+</script>
+{% endblock %}

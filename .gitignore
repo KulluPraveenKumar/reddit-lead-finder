@@ -1,0 +1,45 @@
+# Secrets — never commit
+.env
+*.pem
+*.key
+
+# Proxy credential files
+*proxies*.txt
+proxies/
+
+# Database and backups
+data/*.db
+data/*.db-wal
+data/*.db-shm
+data/backups/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+.ruff_cache/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Agent tooling. The skills under .claude/skills/ ARE committed — they encode
+# the project's own review and phase-gate process. Only the per-machine
+# permission list is ignored, because it records absolute local paths.
+.claude/settings.local.json
+
+# Archives dropped into the repo root
+*.zip
+
+# Local scratch and test artefacts
+*.log
+coverage.xml
+.mypy_cache/
+.tox/

@@ -1,0 +1,64 @@
+{
+  "/api/stats": {
+    "kind": "dict_keys",
+    "value": [
+      "total_leads",
+      "total_subreddits",
+      "total_users"
+    ]
+  },
+  "/api/settings": {
+    "kind": "dict_keys",
+    "value": [
+      "comment_weight",
+      "high_intent_multiplier",
+      "interval_minutes",
+      "keyword_weight",
+      "recency_weight",
+      "upvote_weight"
+    ]
+  },
+  "/api/subreddits": {
+    "kind": "list_item_keys",
+    "value": [
+      "id",
+      "name"
+    ]
+  },
+  "/api/keywords": {
+    "kind": "list_item_keys",
+    "value": [
+      "id",
+      "intent_level",
+      "keyword"
+    ]
+  },
+  "/api/queries": {
+    "kind": "list_item_keys",
+    "value": [
+      "id",
+      "query"
+    ]
+  },
+  "/api/leads": {
+    "kind": "list_item_keys",
+    "value": [
+      "author",
+      "created_utc",
+      "id",
+      "intent_score",
+      "matched_keywords",
+      "num_comments",
+      "reddit_id",
+      "score",
+      "status",
+      "subreddit",
+      "title",
+      "url"
+    ]
+  },
+  "/api/leads/export": {
+    "kind": "csv_header",
+    "value": "ID,Reddit ID,Subreddit,Author,Title,URL,Score,Comments,Intent Score,Keywords,Status,Created UTC,Scraped At"
+  }
+}

@@ -1,0 +1,224 @@
+{% extends "_base_ai.html" %}
+{% block title %}AI Health{% endblock %}
+
+{% block content %}
+<h1>AI Health</h1>
+<p class="sub">The metrics that predict a cost problem before the invoice does.</p>
+
+<div id="banner" class="banner"></div>
+
+<div class="card">
+  <h2>Provider</h2>
+  <div class="row" id="prov-row"><span class="k"><span class="dot"></span><span id="prov-status">—</span></span><span class="v" id="prov-model">—</span></div>
+  <div class="row"><span class="k">Cost today</span><span class="v" id="cost-today">—</span></div>
+  <div class="row"><span class="k">Cost this month</span><span class="v" id="cost-month">—</span></div>
+  <div class="row"><span class="k">Caps</span><span class="v" id="caps">—</span></div>
+</div>
+
+<div class="card">
+  <h2>Efficiency</h2>
+  <div id="efficiency"></div>
+  <p class="note">Cached input is priced roughly <strong>50&times;</strong> below uncached. A low
+  cache ratio is not a minor inefficiency &mdash; it is the single largest cost regression
+  available, and it has no other symptom.</p>
+</div>
+
+<div class="card">
+  <h2>Quality</h2>
+  <div id="quality"></div>
+  <p class="note">Efficiency without quality beside it would let the system be tuned down
+  until it quietly stopped working.</p>
+</div>
+
+<div class="card">
+  <h2>Throughput</h2>
+  <div class="row"><span class="k">Mean latency</span><span class="v" id="lat-mean">—</span></div>
+  <div class="row"><span class="k">p95 latency</span><span class="v" id="lat-p95">—</span></div>
+  <div class="row"><span class="k">Concurrency</span><span class="v" id="conc">—</span></div>
+</div>
+
+<div class="card">
+  <h2>Providers &amp; circuit breakers</h2>
+  <div class="scroll-x">
+    <table class="data" id="provider-table">
+      <thead><tr>
+        <th>Provider</th><th>Role</th><th>Key</th><th>Circuit</th>
+        <th>Calls</th><th>Failures</th><th>Mean</th><th>p95</th><th>Last error</th>
+      </tr></thead>
+      <tbody><tr><td colspan="9" class="empty">Loading&hellip;</td></tr></tbody>
+    </table>
+  </div>
+  <p class="note">The circuit opens after consecutive <em>transport</em> failures &mdash;
+  timeouts, 5xx, connection errors &mdash; and never on a rejected key or an empty
+  balance, which would fail identically on any provider. An open circuit is skipped
+  until its cooldown elapses, then probed.</p>
+  <div class="actions"><button class="ghost" id="test-btn">Test connection</button></div>
+</div>
+
+<div class="card">
+  <h2>Cost if the same workload ran on each provider</h2>
+  <div class="scroll-x">
+    <table class="data" id="cost-table">
+      <thead><tr>
+        <th>Provider</th><th>Model</th><th>Warm cache</th><th>Cold cache</th>
+        <th>Cache &times;</th><th>Schema</th><th>Batch</th><th>Prices verified</th>
+      </tr></thead>
+      <tbody><tr><td colspan="8" class="empty">Loading&hellip;</td></tr></tbody>
+    </table>
+  </div>
+  <p class="note">1,000 items at ~3.5k prefix + 500 item + 250 output tokens. Estimated
+  from published price tables, not measured &mdash; a row showing <em>unverified</em>
+  has never been confirmed against the provider.</p>
+</div>
+
+<div class="card">
+  <h2>Schema &amp; database</h2>
+  <div class="row"><span class="k">Migration</span><span class="v" id="schema">—</span></div>
+  <div class="row"><span class="k">Leads</span><span class="v" id="leads">—</span></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function metricRow(label, m, fmt){
+  const value = fmt ? fmt(m.value) : m.value;
+  const pct = typeof m.value === 'number' && m.target <= 1 ? Math.min(100, m.value * 100) : null;
+  const bar = pct === null ? '' :
+    '<div class="bar' + (m.ok ? '' : ' bad') + '"><i style="width:' + pct.toFixed(0) + '%"></i></div>';
+  return '<div class="metric"><span class="k">' + label +
+         '<div class="target">' + (m.note || '') + '</div></span>' +
+         '<span class="v">' + value + (m.ok ? ' ✓' : ' ✗') + bar + '</span></div>';
+}
+
+async function load(){
+  let d;
+  try { d = await api('/api/health/ai'); } catch(e){ return; }
+
+  const prov = d.provider || {};
+  document.getElementById('prov-row').className = 'row s-' + (prov.status || 'unconfigured');
+  document.getElementById('prov-status').textContent =
+    prov.name + ' · ' + (prov.status || 'unconfigured');
+  document.getElementById('prov-model').textContent = prov.model || '—';
+
+  const cost = d.cost || {};
+  document.getElementById('cost-today').textContent = fmtUSD(cost.today_usd);
+  document.getElementById('cost-month').textContent = fmtUSD(cost.month_usd);
+  const lim = cost.limits || {};
+  document.getElementById('caps').textContent =
+    fmtUSD(lim.per_run) + ' / run · ' + fmtUSD(lim.per_day) + ' / day · ' + lim.calls_per_run + ' calls';
+
+  const eff = d.efficiency || {};
+  document.getElementById('efficiency').innerHTML =
+    metricRow('Prefix cache ratio', eff.prefix_cache_ratio, fmtPct) +
+    '<div class="row"><span class="k">Calls today</span><span class="v">' + eff.calls_today + '</span></div>' +
+    '<div class="row"><span class="k">Response cache entries</span><span class="v">' + eff.response_cache_entries + '</span></div>' +
+    '<div class="row"><span class="k">Response cache hits</span><span class="v">' + eff.response_cache_hits + '</span></div>';
+
+  const q = d.quality || {};
+  const outcomes = Object.entries(q.outcomes || {})
+    .map(([k, v]) => k + ' ' + v).join(' · ') || 'no calls yet';
+  document.getElementById('quality').innerHTML =
+    metricRow('Repair rate', q.repair_rate, fmtPct) +
+    metricRow('Empty-content rate', q.empty_rate, fmtPct) +
+    metricRow('Distinct prefixes', q.prefix_stable, v => v) +
+    '<div class="row"><span class="k">Outcomes (7d)</span><span class="v">' + outcomes + '</span></div>';
+
+  const t = d.throughput || {};
+  document.getElementById('lat-mean').textContent = (t.mean_latency_ms || 0) + ' ms';
+  document.getElementById('lat-p95').textContent = (t.p95_latency_ms || 0) + ' ms';
+  document.getElementById('conc').textContent = t.concurrency + ' / ' + t.concurrency_ceiling;
+
+  const banner = document.getElementById('banner');
+  const cacheMetric = eff.prefix_cache_ratio || {};
+  if(cacheMetric.ok === false){
+    banner.className = 'banner warn show';
+    banner.textContent = 'Prefix cache ratio is below target. Uncached input costs ~50x more — '
+      + 'check that nothing time-varying has entered the frozen prompt prefix.';
+  } else if(q.prefix_stable && q.prefix_stable.ok === false){
+    banner.className = 'banner warn show';
+    banner.textContent = 'More than one distinct prompt prefix seen today. The frozen prefix is '
+      + 'not byte-stable, which defeats caching.';
+  } else { banner.className = 'banner'; }
+
+  try{
+    const h = await fetch('/api/health').then(r => r.json());
+    const s = h.schema || {};
+    document.getElementById('schema').textContent =
+      s.error ? s.error : (s.current + (s.up_to_date ? ' (up to date)' : ' → ' + s.head));
+    document.getElementById('leads').textContent = (h.database || {}).leads;
+  }catch(e){ /* the AI panel above is still useful without this */ }
+
+  await loadProviders();
+}
+
+const CIRCUIT_PILL = {closed:'ok', half_open:'warn', open:'bad'};
+
+function esc(s){
+  const d = document.createElement('div');
+  d.textContent = s == null ? '' : String(s);
+  return d.innerHTML;
+}
+
+async function loadProviders(){
+  let d;
+  try { d = await api('/api/health/providers'); }
+  catch(e){
+    document.querySelector('#provider-table tbody').innerHTML =
+      '<tr><td colspan="9" class="empty">Provider health unavailable.</td></tr>';
+    return;
+  }
+
+  const rows = (d.routing && d.routing.providers) || [];
+  document.querySelector('#provider-table tbody').innerHTML = rows.length ? rows.map(p => {
+    const wait = p.seconds_until_retry ? ' (' + p.seconds_until_retry + 's)' : '';
+    return '<tr>'
+      + '<td><strong>' + esc(p.provider) + '</strong></td>'
+      + '<td>' + esc(p.role) + '</td>'
+      + '<td>' + (p.configured ? '<span class="pill ok">configured</span>'
+                               : '<span class="pill">no key</span>') + '</td>'
+      + '<td><span class="pill ' + (CIRCUIT_PILL[p.state] || '') + '">'
+            + esc(p.state) + wait + '</span></td>'
+      + '<td>' + p.total_calls + '</td>'
+      + '<td>' + p.total_failures
+            + (p.total_calls ? ' (' + fmtPct(p.failure_rate) + ')' : '') + '</td>'
+      + '<td>' + (p.mean_latency_ms || 0) + ' ms</td>'
+      + '<td>' + (p.p95_latency_ms || 0) + ' ms</td>'
+      + '<td>' + (p.last_error ? esc(p.last_error).slice(0, 90) : '&mdash;') + '</td>'
+      + '</tr>';
+  }).join('') : '<tr><td colspan="9" class="empty">No providers registered.</td></tr>';
+
+  const cost = d.comparison || [];
+  document.querySelector('#cost-table tbody').innerHTML = cost.length ? cost.map(c => {
+    const verified = c.pricing_verified_on === 'unverified'
+      ? '<span class="pill warn">unverified</span>'
+      : esc(c.pricing_verified_on);
+    return '<tr' + (c.is_primary ? ' style="background:rgba(255,69,0,.05)"' : '') + '>'
+      + '<td><strong>' + esc(c.provider) + '</strong>'
+        + (c.is_primary ? ' <span class="pill ok">active</span>' : '') + '</td>'
+      + '<td>' + esc(c.model) + '</td>'
+      + '<td>' + fmtUSD(c.warm_cache_usd) + '</td>'
+      + '<td>' + fmtUSD(c.cold_cache_usd) + '</td>'
+      + '<td>' + (c.cache_differential != null ? c.cache_differential + '×' : '&mdash;') + '</td>'
+      + '<td>' + (c.supports_schema_enforcement ? 'yes' : 'no') + '</td>'
+      + '<td>' + (c.supports_batch_api ? 'yes' : 'no') + '</td>'
+      + '<td>' + verified + '</td>'
+      + '</tr>';
+  }).join('') : '<tr><td colspan="8" class="empty">No providers registered.</td></tr>';
+}
+
+document.getElementById('test-btn').addEventListener('click', async () => {
+  const btn = document.getElementById('test-btn');
+  btn.disabled = true; btn.textContent = 'Testing…';
+  try{
+    const r = await api('/api/settings/ai/test', {method:'POST'});
+    toast(r.ok ? ('Connected in ' + r.latency_ms + ' ms · ' + r.model)
+               : (r.error || 'Test failed'), r.ok ? 'ok' : 'bad');
+    await load();
+  }catch(e){ /* api() already surfaced it */ }
+  finally{ btn.disabled = false; btn.textContent = 'Test connection'; }
+});
+
+load();
+setInterval(load, 15000);
+</script>
+{% endblock %}

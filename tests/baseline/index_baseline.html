@@ -1,0 +1,1370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reddit Lead Finder Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f1117; color: #e0e0e0; }
+        .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+        h1 { color: #ff4500; margin-bottom: 20px; }
+        h2 { color: #ccc; margin-bottom: 10px; font-size: 1.1rem; }
+        h3 { color: #aaa; margin-bottom: 8px; font-size: 0.95rem; }
+
+        .stats-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 15px; margin-bottom: 25px; }
+        .stat-card { background: #1a1d27; border-radius: 10px; padding: 20px; text-align: center; }
+        .stat-card .value { font-size: 2rem; font-weight: bold; color: #ff4500; }
+        .stat-card .label { color: #888; font-size: 0.85rem; margin-top: 5px; }
+        .stat-card.green .value { color: #4ade80; }
+        .stat-card.blue .value { color: #60a5fa; }
+        .stat-card.yellow .value { color: #fbbf24; }
+
+        .charts-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; margin-bottom: 25px; }
+        .chart-card { background: #1a1d27; border-radius: 10px; padding: 15px; }
+        .chart-card h3 { color: #ccc; font-size: 0.9rem; margin-bottom: 10px; }
+        .chart-card canvas { max-height: 200px; }
+
+        .filters { background: #1a1d27; border-radius: 10px; padding: 15px; margin-bottom: 20px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+        .filters input, .filters select { background: #252830; border: 1px solid #333; color: #e0e0e0; padding: 8px 12px; border-radius: 6px; }
+        .btn { border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 0.9rem; }
+        .btn-primary { background: #ff4500; color: white; }
+        .btn-primary:hover { background: #e03d00; }
+        .btn-success { background: #16a34a; color: white; }
+        .btn-success:hover { background: #15803d; }
+        .btn-sm { padding: 4px 10px; font-size: 0.8rem; }
+        .btn-danger { background: #dc2626; color: white; padding: 4px 8px; font-size: 0.75rem; border-radius: 4px; cursor: pointer; border: none; }
+        .btn-danger:hover { background: #b91c1c; }
+        .btn-outline { background: transparent; border: 1px solid #555; color: #ccc; }
+        .btn-outline:hover { border-color: #ff4500; color: #ff4500; }
+
+        .main-grid { display: grid; grid-template-columns: 1fr 340px; gap: 20px; }
+        .leads-table { background: #1a1d27; border-radius: 10px; overflow: hidden; }
+        table { width: 100%; border-collapse: collapse; }
+        th { background: #252830; padding: 12px 15px; text-align: left; font-size: 0.8rem; text-transform: uppercase; color: #888; }
+        td { padding: 10px 15px; border-bottom: 1px solid #252830; font-size: 0.9rem; }
+        tr:hover { background: #252830; }
+        a { color: #ff4500; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        .score-badge { background: #2d333b; padding: 3px 8px; border-radius: 12px; font-size: 0.8rem; }
+        .score-high { background: #1a472a; color: #4ade80; }
+        .score-med { background: #4a3728; color: #fbbf24; }
+        .score-low { background: #3b2828; color: #f87171; }
+
+        .keyword-tag { display: inline-block; background: #2d333b; padding: 2px 6px; border-radius: 4px; font-size: 0.75rem; margin: 1px; }
+        .keyword-high { background: #1a3a2a; color: #4ade80; }
+
+        .status-select { background: #252830; border: 1px solid #333; color: #e0e0e0; padding: 4px 8px; border-radius: 4px; font-size: 0.8rem; cursor: pointer; }
+        .status-new { border-color: #60a5fa; }
+        .status-contacted { border-color: #fbbf24; }
+        .status-interested { border-color: #4ade80; }
+        .status-rejected { border-color: #f87171; }
+
+        .sidebar { display: flex; flex-direction: column; gap: 15px; }
+        .sidebar-card { background: #1a1d27; border-radius: 10px; padding: 15px; }
+        .sidebar-card ul { list-style: none; }
+        .sidebar-card li { padding: 5px 0; border-bottom: 1px solid #252830; font-size: 0.85rem; }
+        .sidebar-card li:last-child { border-bottom: none; }
+
+        .tag-input-wrap { display: flex; gap: 8px; margin-bottom: 10px; }
+        .tag-input-wrap input { flex: 1; }
+        .tags-list { display: flex; flex-wrap: wrap; gap: 6px; }
+        .tag-chip { display: inline-flex; align-items: center; gap: 4px; background: #252830; padding: 4px 10px; border-radius: 16px; font-size: 0.8rem; }
+        .tag-chip .remove { cursor: pointer; color: #f87171; font-weight: bold; margin-left: 2px; }
+        .tag-chip .remove:hover { color: #ef4444; }
+
+        .keyword-section { margin-bottom: 12px; }
+        .keyword-section label { display: block; font-size: 0.8rem; color: #888; margin-bottom: 4px; }
+
+        .settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .settings-grid label { font-size: 0.8rem; color: #888; }
+        .settings-grid input { background: #252830; border: 1px solid #333; color: #e0e0e0; padding: 6px 8px; border-radius: 4px; width: 100%; font-size: 0.85rem; }
+
+        .pagination { display: flex; gap: 5px; justify-content: center; margin-top: 15px; }
+        .pagination a { padding: 6px 12px; background: #252830; border-radius: 4px; color: #e0e0e0; }
+        .pagination a.active { background: #ff4500; }
+
+        .export-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .scrape-status { font-size: 0.85rem; padding: 8px; display: none; }
+        .scrape-status.active { display: block; color: #fbbf24; }
+        .scrape-status.done { display: block; color: #4ade80; }
+
+        .tabs { display: flex; gap: 0; margin-bottom: 0; }
+        .tab { padding: 8px 16px; background: #252830; border: none; color: #888; cursor: pointer; font-size: 0.85rem; border-radius: 6px 6px 0 0; }
+        .tab.active { background: #1a1d27; color: #ff4500; }
+        /* Page heading */
+        .page-head { margin: 4px 0 22px; }
+        .page-head h1 { margin: 0 0 4px; }
+        .page-sub { color: #8b949e; font-size: 0.88rem; margin: 0; }
+        /* Phase 1 AI status strip */
+        .ai-strip { background:#16191d; border:1px solid #272d34; border-radius:8px;
+                    padding:14px 18px; margin-bottom:22px; }
+        .ai-strip-head { display:flex; align-items:center; gap:11px; flex-wrap:wrap; }
+        .ai-strip-head strong { font-size:0.95rem; }
+        .ai-dot { width:9px; height:9px; border-radius:50%; background:#6e7681; flex:none; }
+        .ai-strip.s-valid .ai-dot { background:#3fb950; }
+        .ai-strip.s-invalid_key .ai-dot { background:#f85149; }
+        .ai-strip.s-insufficient_balance .ai-dot,
+        .ai-strip.s-unreachable .ai-dot,
+        .ai-strip.s-undecryptable .ai-dot { background:#d29922; }
+        .ai-status { color:#8b949e; font-size:0.85rem; }
+        .ai-links { margin-left:auto; display:flex; gap:14px; }
+        .ai-links a { color:#ff4500; font-size:0.82rem; text-decoration:none; }
+        .ai-links a:hover { text-decoration:underline; }
+        .ai-strip-metrics { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr));
+                            gap:10px 20px; margin-top:13px; }
+        .ai-strip-metrics .m-label { display:block; color:#6e7681; font-size:0.68rem;
+                                     text-transform:uppercase; letter-spacing:.05em; }
+        .ai-strip-metrics .m-value { display:block; color:#e6e9ec; font-size:0.9rem;
+                                     font-variant-numeric:tabular-nums; margin-top:2px; }
+        .ai-strip-note { color:#d29922; font-size:0.82rem; margin-top:11px; display:none; }
+        .ai-strip-note.show { display:block; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+    </style>
+</head>
+<body>
+    
+<style>
+  .appnav {
+    background: #12151a;
+    border-bottom: 1px solid #262d36;
+    font: 500 13px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    position: sticky; top: 0; z-index: 50;
+  }
+  .appnav-inner {
+    max-width: 1600px; margin: 0 auto; padding: 0 22px;
+    display: flex; align-items: center; gap: 28px; flex-wrap: wrap; min-height: 52px;
+  }
+  .appnav-brand {
+    color: #ff4500; font-weight: 700; font-size: 15px; text-decoration: none;
+    letter-spacing: -.01em; white-space: nowrap;
+  }
+  .appnav-brand:hover { text-decoration: none; opacity: .85; }
+  .appnav-links { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; flex: 1; }
+  .appnav-links a {
+    color: #8b949e; text-decoration: none; padding: 7px 11px; border-radius: 6px;
+    white-space: nowrap; transition: background .12s, color .12s;
+  }
+  .appnav-links a:hover { color: #e6e9ec; background: #1c2229; text-decoration: none; }
+  .appnav-links a.active { color: #fff; background: #23292f; }
+  .appnav-group {
+    margin-left: 8px; padding-left: 14px; border-left: 1px solid #262d36;
+    display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
+  }
+  .appnav-right { display: flex; align-items: center; gap: 12px; margin-left: auto; }
+  .appnav-phase {
+    color: #6e7681; font-size: 11px; letter-spacing: .04em; text-transform: uppercase;
+    white-space: nowrap;
+  }
+  /* Live AI pill. Rendered server-side so it is correct on first paint rather
+     than flashing "unknown" while JS runs. */
+  .appnav-ai {
+    display: inline-flex; align-items: center; gap: 7px; padding: 5px 11px;
+    border-radius: 999px; background: #1c2229; border: 1px solid #262d36;
+    color: #8b949e; font-size: 12px; text-decoration: none; white-space: nowrap;
+  }
+  .appnav-ai:hover { border-color: #3a434e; text-decoration: none; color: #e6e9ec; }
+  .appnav-ai .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .appnav-ai.s-valid .dot { background: #3fb950; }
+  .appnav-ai.s-unconfigured .dot { background: #6e7681; }
+  .appnav-ai.s-invalid_key .dot { background: #f85149; }
+  .appnav-ai.s-insufficient_balance .dot,
+  .appnav-ai.s-unreachable .dot,
+  .appnav-ai.s-undecryptable .dot { background: #d29922; }
+  @media (max-width: 760px) {
+    .appnav-inner { gap: 14px; padding: 8px 14px; }
+    .appnav-group { margin-left: 0; padding-left: 0; border-left: 0; }
+    .appnav-right { margin-left: 0; width: 100%; }
+  }
+</style>
+
+<nav class="appnav">
+  <div class="appnav-inner">
+    <a class="appnav-brand" href="/">Reddit Lead Finder</a>
+
+    <div class="appnav-links">
+      
+        
+        <a href="/"
+           class=""
+           title="Leads, activity and scraper status">Dashboard</a>
+        
+      
+        
+        <a href="/configuration"
+           class=""
+           title="Subreddits, keywords, search queries and scoring weights">Configuration</a>
+        
+      
+        <span class="appnav-group">
+        <a href="/settings/ai"
+           class=""
+           title="API key, provider selection, connection test, budget caps">AI Provider</a>
+        
+      
+        
+        <a href="/health/ai"
+           class=""
+           title="Cost, cache, latency, circuit breaker and provider health">AI Health</a>
+        
+      
+        
+        <a href="/about"
+           class=""
+           title="What is built, what is not, and how to verify it">About</a>
+        </span>
+      
+    </div>
+
+    <div class="appnav-right">
+      
+      <a class="appnav-ai s-valid" href="/health/ai"
+         title="Provider connected. Click for cost, cache and latency.">
+        <span class="dot"></span>AI ready
+      </a>
+      
+      <span class="appnav-phase">Phase 1 / 8</span>
+    </div>
+  </div>
+</nav>
+    <div class="container">
+        <div class="page-head">
+            <h1>Dashboard</h1>
+            <p class="page-sub">Lead volume, scoring activity and scraper status.
+               Scraper targets and weights live in <a href="/configuration">Configuration</a>.</p>
+        </div>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="value">459</div>
+                <div class="label">Total Leads</div>
+            </div>
+            <div class="stat-card blue">
+                <div class="value">459</div>
+                <div class="label">New Leads</div>
+            </div>
+            <div class="stat-card yellow">
+                <div class="value">0</div>
+                <div class="label">Contacted</div>
+            </div>
+            <div class="stat-card green">
+                <div class="value">0</div>
+                <div class="label">Interested</div>
+            </div>
+            <div class="stat-card">
+                <div class="value">42.3</div>
+                <div class="label">Avg Intent Score</div>
+            </div>
+        </div>
+
+        <!-- Phase 1 AI status. Summary only; detail lives on AI Health. -->
+        <div class="ai-strip" id="ai-strip">
+            <div class="ai-strip-head">
+                <span class="ai-dot" id="ai-dot"></span>
+                <strong id="ai-provider">AI provider</strong>
+                <span class="ai-status" id="ai-status">checking...</span>
+                <span class="ai-links">
+                    <a href="/settings/ai">Configure</a>
+                    <a href="/health/ai">Full health &rarr;</a>
+                </span>
+            </div>
+            <div class="ai-strip-metrics" id="ai-metrics">
+                <div><span class="m-label">Model</span><span class="m-value" id="ai-model">&mdash;</span></div>
+                <div><span class="m-label">Last validated</span><span class="m-value" id="ai-validated">&mdash;</span></div>
+                <div><span class="m-label">Latency</span><span class="m-value" id="ai-latency">&mdash;</span></div>
+                <div><span class="m-label">Cost today</span><span class="m-value" id="ai-cost">&mdash;</span></div>
+                <div><span class="m-label">Circuit</span><span class="m-value" id="ai-circuit">&mdash;</span></div>
+                <div><span class="m-label">Calls today</span><span class="m-value" id="ai-calls">&mdash;</span></div>
+            </div>
+            <div class="ai-strip-note" id="ai-note"></div>
+        </div>
+
+        <div class="charts-grid">
+            <div class="chart-card">
+                <h3>Leads Over Time</h3>
+                <canvas id="leadsOverTime"></canvas>
+            </div>
+            <div class="chart-card">
+                <h3>Top Subreddits</h3>
+                <canvas id="topSubreddits"></canvas>
+            </div>
+            <div class="chart-card">
+                <h3>Keyword Breakdown</h3>
+                <canvas id="keywordBreakdown"></canvas>
+            </div>
+        </div>
+
+        <form class="filters" method="GET" action="/">
+            <input type="text" name="search" placeholder="Search leads..." value="">
+            <select name="subreddit">
+                <option value="">All Subreddits</option>
+                
+                <option value="entrepreneur" >r/entrepreneur</option>
+                
+                <option value="saas" >r/saas</option>
+                
+                <option value="seo" >r/seo</option>
+                
+                <option value="startups" >r/startups</option>
+                
+            </select>
+            <select name="status">
+                <option value="">All Statuses</option>
+                <option value="new" >New</option>
+                <option value="contacted" >Contacted</option>
+                <option value="interested" >Interested</option>
+                <option value="rejected" >Rejected</option>
+            </select>
+            <select name="sort">
+                <option value="intent_score" selected>Intent Score</option>
+                <option value="score" >Upvotes</option>
+                <option value="num_comments" >Comments</option>
+                <option value="created_utc" >Newest</option>
+                <option value="scraped_at" >Recently Scraped</option>
+            </select>
+            <input type="number" name="min_score" placeholder="Min score" value="" step="0.5" min="0" style="width:100px">
+            <button type="submit" class="btn btn-primary">Filter</button>
+        </form>
+
+        <div class="main-grid">
+            <div class="leads-table">
+                <div class="export-bar">
+                    <span style="color:#888; font-size:0.85rem;">459 leads found</span>
+                    <a href="/api/leads/export?subreddit=&status=&search=" class="btn btn-success btn-sm">Export CSV</a>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Score</th>
+                            <th>Title</th>
+                            <th>Subreddit</th>
+                            <th>Author</th>
+                            <th>Upvotes</th>
+                            <th>Comments</th>
+                            <th>Keywords</th>
+                            <th>Status</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        
+                        <tr id="lead-row-288">
+                            <td>
+                                <span class="score-badge score-high">
+                                    164.28
+                                </span>
+                            </td>
+                            <td><a href="https://old.reddit.com/r/entrepreneur/comments/anonymised/post/" target="_blank" rel="noopener">Looking for advice - How/Where Should I Sell My Smaller (ish) Ecommerc...</a></td>
+                            <td>r/entrepreneur</td>
+                            <td>u/redditor_anon</td>
+                            <td>31</td>
+                            <td>47</td>
+                            <td>
+                                
+                                <span class="keyword-tag keyword-high">looking for</span>
+                                
+                            </td>
+                            <td>
+                                <select class="status-select status-new" onchange="updateStatus(288, this.value)" data-lead-id="288">
+                                    <option value="new" selected>New</option>
+                                    <option value="contacted" >Contacted</option>
+                                    <option value="interested" >Interested</option>
+                                    <option value="rejected" >Rejected</option>
+                                </select>
+                            </td>
+                            <td>
+                                <button class="btn-danger" onclick="deleteLead(288)" title="Delete lead">X</button>
+                            </td>
+                        </tr>
+                        
+                        <tr id="lead-row-328">
+                            <td>
+                                <span class="score-badge score-high">
+                                    116.0
+                                </span>
+                            </td>
+                            <td><a href="https://old.reddit.com/r/saas/comments/anonymised/post/" target="_blank" rel="noopener">Vibe coded app … smart or lazy ?</a></td>
+                            <td>r/saas</td>
+                            <td>u/redditor_anon</td>
+                            <td>0</td>
+                            <td>50</td>
+                            <td>
+                                
+                                <span class="keyword-tag keyword-high">any recommendations</span>
+                                
+                                <span class="keyword-tag keyword-high">looking for</span>
+                                
+                            </td>
+                            <td>
+                                <select class="status-select status-new" onchange="updateStatus(328, this.value)" data-lead-id="328">
+                                    <option value="new" selected>New</option>
+                                    <option value="contacted" >Contacted</option>
+                                    <option value="interested" >Interested</option>
+                                    <option value="rejected" >Rejected</option>
+                                </select>
+                            </td>
+                            <td>
+                                <button class="btn-danger" onclick="deleteLead(328)" title="Delete lead">X</button>
+                            </td>
+                        </tr>
+                        
+                        <tr id="lead-row-322">
+                            <td>
+                                <span class="score-badge score-high">
+                                    116.0
+                                </span>
+                            </td>
+                            <td><a href="https://old.reddit.com/r/saas/comments/anonymised/post/" target="_blank" rel="noopener">So I built an app and my company actually wants to use it. What happen...</a></td>
+                            <td>r/saas</td>
+                            <td>u/redditor_anon</td>
+                            <td>0</td>
+                            <td>50</td>
+                            <td>
+                                
+                                <span class="keyword-tag keyword-high">any recommendations</span>
+                                
+                                <span class="keyword-tag keyword-high">looking for</span>
+                                
+                            </td>
+                            <td>
+                                <select class="status-select status-new" onchange="updateStatus(322, this.value)" data-lead-id="322">
+                                    <option value="new" selected>New</option>
+                                    <option value="contacted" >Contacted</option>
+                                    <option value="interested" >Interested</option>
+                                    <option value="rejected" >Rejected</option>
+                                </select>
+                            </td>
+                            <td>
+                                <button class="btn-danger" onclick="deleteLead(322)" title="Delete lead">X</button>
+                            </td>
+                        </tr>
+                        
+                        <tr id="lead-row-306">
+                            <td>
+                                <span class="score-badge score-high">
+                                    116.0
+                                </span>
+                            </td>
+                            <td><a href="https://old.reddit.com/r/entrepreneur/comments/anonymised/post/" target="_blank" rel="noopener">How do you know when you’re ready to launch an app?</a></td>
+                            <td>r/entrepreneur</td>
+                            <td>u/redditor_anon</td>
+                            <td>0</td>
+                            <td>120</td>
+                            <td>
+                                
+                                <span class="keyword-tag keyword-high">looking for</span>
+                                
+                                <span class="keyword-tag ">how do i</span>
+                                
+                                <span class="keyword-tag ">struggling with</span>
+                                
+                            </td>
+                            <td>
+                                <select class="status-select status-new" onchange="updateStatus(306, this.value)" data-lead-id="306">
+                                    <option value="new" selected>New</option>
+                                    <option value="contacted" >Contacted</option>
+                                    <option value="interested" >Interested</option>
+                                    <option value="rejected" >Rejected</option>
+                                </select>
+                            </td>
+                            <td>
+                                <button class="btn-danger" onclick="deleteLead(306)" title="Delete lead">X</button>
+                            </td>
+                        </tr>
+                        
+                        <tr id="lead-row-303">
+                            <td>
+                                <span class="score-badge score-high">
+                                    116.0
+                                </span>
+                            </td>
+                            <td><a href="https://old.reddit.com/r/entrepreneur/comments/anonymised/post/" target="_blank" rel="noopener">Going through a pivot</a></td>
+                            <td>r/entrepreneur</td>
+                            <td>u/redditor_anon</td>
+                            <td>0</td>
+                            <td>67</td>
+                            <td>
+                                
+                                <span class="keyword-tag keyword-high">any recommendations</span>
+                                
+                                <span class="keyword-tag keyword-high">looking for</span>
+                                
+                            </td>
+                            <td>
+                                <select class="status-select status-new" onchange="updateStatus(303, this.value)" data-lead-id="303">
+                                    <option value="new" selected>New</option>
+                                    <option value="contacted" >Contacted</option>
+                                    <option value="interested" >Interested</option>
+                                    <option value="rejected" >Rejected</option>
+                                </select>
+                            </td>
+                            <td>
+                                <button class="btn-danger" onclick="deleteLead(303)" title="Delete lead">X</button>
+                            </td>
+                        </tr>
+                        
+                        <tr id="lead-row-38">
+                            <td>
+                                <span class="score-badge score-high">
+                                    115.0
+                                </span>
+                            </td>
+                            <td><a href="https://old.reddit.com/r/entrepreneur/comments/anonymised/post/" target="_blank" rel="noopener">Has anyone here worked with an MVP development agency? Worth it? Hey e...</a></td>
+                            <td>r/entrepreneur</td>
+                            <td>u/redditor_anon</td>
+                            <td>0</td>
+                            <td>61</td>
+                            <td>
+                                
+                                <span class="keyword-tag keyword-high">looking for</span>
+                                
+                                <span class="keyword-tag keyword-high">any recommendations</span>
+                                
+                                <span class="keyword-tag ">struggling with</span>
+                                
+                            </td>
+                            <td>
+                                <select class="status-select status-new" onchange="updateStatus(38, this.value)" data-lead-id="38">
+                                    <option value="new" selected>New</option>
+                                    <option value="contacted" >Contacted</option>
+                                    <option value="interested" >Interested</option>
+                                    <option value="rejected" >Rejected</option>
+                                </select>
+                            </td>
+                            <td>
+                                <button class="btn-danger" onclick="deleteLead(38)" title="Delete lead">X</button>
+                            </td>
+                        </tr>
+                        
+                        <tr id="lead-row-304">
+                            <td>
+                                <span class="score-badge score-high">
+                                    112.0
+                                </span>
+                            </td>
+                            <td><a href="https://old.reddit.com/r/entrepreneur/comments/anonymised/post/" target="_blank" rel="noopener">24M, profitable retail business (700k revenue), no debt, decent saving...</a></td>
+                            <td>r/entrepreneur</td>
+                            <td>u/redditor_anon</td>
+                            <td>0</td>
+                            <td>120</td>
+                            <td>
+                                
+                                <span class="keyword-tag keyword-high">looking for</span>
+                                
+                                <span class="keyword-tag ">how do i</span>
+                                
+                            </td>
+                            <td>
+                                <select class="status-select status-new" onchange="updateStatus(304, this.value)" data-lead-id="304">
+                                    <option value="new" selected>New</option>
+                                    <option value="contacted" >Contacted</option>
+                                    <option value="interested" >Interested</option>
+                                    <option value="rejected" >Rejected</option>
+                                </select>
+                            </td>
+                            <td>
+                                <button class="btn-danger" onclick="deleteLead(304)" title="Delete lead">X</button>
+                            </td>
+                        </tr>
+                        
+                        <tr id="lead-row-309">
+                            <td>
+                                <span class="score-badge score-high">
+                                    109.29
+                                </span>
+                            </td>
+                            <td><a href="https://old.reddit.com/r/entrepreneur/comments/anonymised/post/" target="_blank" rel="noopener">How do you stay motivated when nobody in your life believes in your pr...</a></td>
+                            <td>r/entrepreneur</td>
+                            <td>u/redditor_anon</td>
+                            <td>0</td>
+                            <td>77</td>
+                            <td>
+                                
+                                <span class="keyword-tag keyword-high">looking for</span>
+                                
+                            </td>
+                            <td>
+                                <select class="status-select status-new" onchange="updateStatus(309, this.value)" data-lead-id="309">
+                                    <option value="new" selected>New</option>
+                                    <option value="contacted" >Contacted</option>
+                                    <option value="interested" >Interested</option>
+                                    <option value="rejected" >Rejected</option>
+                                </select>
+                            </td>
+                            <td>
+                                <button class="btn-danger" onclick="deleteLead(309)" title="Delete lead">X</button>
+                            </td>
+                        </tr>
+                        
+                        <tr id="lead-row-258">
+                            <td>
+                                <span class="score-badge score-high">
+                                    109.0
+                                </span>
+                            </td>
+                            <td><a href="https://old.reddit.com/r/startups/comments/anonymised/post/" target="_blank" rel="noopener">Solo founder here ---&gt; how do you know when something is good enough t...</a></td>
+                            <td>r/startups</td>
+                            <td>u/redditor_anon</td>
+                            <td>0</td>
+                            <td>81</td>
+                            <td>
+                                
+                                <span class="keyword-tag keyword-high">looking for</span>
+                                
+                                <span class="keyword-tag ">struggling with</span>
+                                
+                            </td>
+                            <td>
+                                <select class="status-select status-new" onchange="updateStatus(258, this.value)" data-lead-id="258">
+                                    <option value="new" selected>New</option>
+                                    <option value="contacted" >Contacted</option>
+                                    <option value="interested" >Interested</option>
+                                    <option value="rejected" >Rejected</option>
+                                </select>
+                            </td>
+                            <td>
+                                <button class="btn-danger" onclick="deleteLead(258)" title="Delete lead">X</button>
+                            </td>
+                        </tr>
+                        
+                        <tr id="lead-row-189">
+                            <td>
+                                <span class="score-badge score-high">
+                                    109.0
+                                </span>
+                            </td>
+                            <td><a href="https://old.reddit.com/r/seo/comments/anonymised/post/" target="_blank" rel="noopener">I&#39;m burnt out on talking to clients about SEO metrics, anyone have adv...</a></td>
+                            <td>r/seo</td>
+                            <td>u/redditor_anon</td>
+                            <td>0</td>
+                            <td>77</td>
+                            <td>
+                                
+                                <span class="keyword-tag keyword-high">looking for</span>
+                                
+                                <span class="keyword-tag ">frustrated with</span>
+                                
+                            </td>
+                            <td>
+                                <select class="status-select status-new" onchange="updateStatus(189, this.value)" data-lead-id="189">
+                                    <option value="new" selected>New</option>
+                                    <option value="contacted" >Contacted</option>
+                                    <option value="interested" >Interested</option>
+                                    <option value="rejected" >Rejected</option>
+                                </select>
+                            </td>
+                            <td>
+                                <button class="btn-danger" onclick="deleteLead(189)" title="Delete lead">X</button>
+                            </td>
+                        </tr>
+                        
+                        <tr id="lead-row-186">
+                            <td>
+                                <span class="score-badge score-high">
+                                    109.0
+                                </span>
+                            </td>
+                            <td><a href="https://old.reddit.com/r/seo/comments/anonymised/post/" target="_blank" rel="noopener">AI SEO Advice Crashed One of My Sports Sites From 5,000 Impressions a ...</a></td>
+                            <td>r/seo</td>
+                            <td>u/redditor_anon</td>
+                            <td>0</td>
+                            <td>77</td>
+                            <td>
+                                
+                                <span class="keyword-tag keyword-high">looking for</span>
+                                
+                                <span class="keyword-tag ">is there a way to</span>
+                                
+                            </td>
+                            <td>
+                                <select class="status-select status-new" onchange="updateStatus(186, this.value)" data-lead-id="186">
+                                    <option value="new" selected>New</option>
+                                    <option value="contacted" >Contacted</option>
+                                    <option value="interested" >Interested</option>
+                                    <option value="rejected" >Rejected</option>
+                                </select>
+                            </td>
+                            <td>
+                                <button class="btn-danger" onclick="deleteLead(186)" title="Delete lead">X</button>
+                            </td>
+                        </tr>
+                        
+                        <tr id="lead-row-172">
+                            <td>
+                                <span class="score-badge score-high">
+                                    109.0
+                                </span>
+                            </td>
+                            <td><a href="https://old.reddit.com/r/seo/comments/anonymised/post/" target="_blank" rel="noopener">If this fails (which is a high likelihood), I am back to my 9-5</a></td>
+                            <td>r/seo</td>
+                            <td>u/redditor_anon</td>
+                            <td>0</td>
+                            <td>62</td>
+                            <td>
+                                
+                                <span class="keyword-tag keyword-high">looking for</span>
+                                
+                                <span class="keyword-tag ">struggling with</span>
+                                
+                            </td>
+                            <td>
+                                <select class="status-select status-new" onchange="updateStatus(172, this.value)" data-lead-id="172">
+                                    <option value="new" selected>New</option>
+                                    <option value="contacted" >Contacted</option>
+                                    <option value="interested" >Interested</option>
+                                    <option value="rejected" >Rejected</option>
+                                </select>
+                            </td>
+                            <td>
+                                <button class="btn-danger" onclick="deleteLead(172)" title="Delete lead">X</button>
+                            </td>
+                        </tr>
+                        
+                        <tr id="lead-row-23">
+                            <td>
+                                <span class="score-badge score-high">
+                                    109.0
+                                </span>
+                            </td>
+                            <td><a href="https://old.reddit.com/r/entrepreneur/comments/anonymised/post/" target="_blank" rel="noopener">Built the product myself. Now I need a partner, but afraid to give awa...</a></td>
+                            <td>r/entrepreneur</td>
+                            <td>u/redditor_anon</td>
+                            <td>0</td>
+                            <td>126</td>
+                            <td>
+                                
+                                <span class="keyword-tag keyword-high">looking for</span>
+                                
+                                <span class="keyword-tag ">struggling with</span>
+                                
+                            </td>
+                            <td>
+                                <select class="status-select status-new" onchange="updateStatus(23, this.value)" data-lead-id="23">
+                                    <option value="new" selected>New</option>
+                                    <option value="contacted" >Contacted</option>
+                                    <option value="interested" >Interested</option>
+                                    <option value="rejected" >Rejected</option>
+                                </select>
+                            </td>
+                            <td>
+                                <button class="btn-danger" onclick="deleteLead(23)" title="Delete lead">X</button>
+                            </td>
+                        </tr>
+                        
+                        <tr id="lead-row-20">
+                            <td>
+                                <span class="score-badge score-high">
+                                    109.0
+                                </span>
+                            </td>
+                            <td><a href="https://old.reddit.com/r/entrepreneur/comments/anonymised/post/" target="_blank" rel="noopener">Need 1-2 of the best books on getting the first 100 customers as a fou...</a></td>
+                            <td>r/entrepreneur</td>
+                            <td>u/redditor_anon</td>
+                            <td>0</td>
+                            <td>98</td>
+                            <td>
+                                
+                                <span class="keyword-tag keyword-high">looking for</span>
+                                
+                                <span class="keyword-tag ">how do i</span>
+                                
+                            </td>
+                            <td>
+                                <select class="status-select status-new" onchange="updateStatus(20, this.value)" data-lead-id="20">
+                                    <option value="new" selected>New</option>
+                                    <option value="contacted" >Contacted</option>
+                                    <option value="interested" >Interested</option>
+                                    <option value="rejected" >Rejected</option>
+                                </select>
+                            </td>
+                            <td>
+                                <button class="btn-danger" onclick="deleteLead(20)" title="Delete lead">X</button>
+                            </td>
+                        </tr>
+                        
+                        <tr id="lead-row-455">
+                            <td>
+                                <span class="score-badge score-high">
+                                    108.0
+                                </span>
+                            </td>
+                            <td><a href="https://old.reddit.com/r/seo/comments/anonymised/post/" target="_blank" rel="noopener">GEO Got Torched: THANK YOU</a></td>
+                            <td>r/seo</td>
+                            <td>u/redditor_anon</td>
+                            <td>0</td>
+                            <td>173</td>
+                            <td>
+                                
+                                <span class="keyword-tag keyword-high">ai seo</span>
+                                
+                            </td>
+                            <td>
+                                <select class="status-select status-new" onchange="updateStatus(455, this.value)" data-lead-id="455">
+                                    <option value="new" selected>New</option>
+                                    <option value="contacted" >Contacted</option>
+                                    <option value="interested" >Interested</option>
+                                    <option value="rejected" >Rejected</option>
+                                </select>
+                            </td>
+                            <td>
+                                <button class="btn-danger" onclick="deleteLead(455)" title="Delete lead">X</button>
+                            </td>
+                        </tr>
+                        
+                        <tr id="lead-row-454">
+                            <td>
+                                <span class="score-badge score-high">
+                                    108.0
+                                </span>
+                            </td>
+                            <td><a href="https://old.reddit.com/r/seo/comments/anonymised/post/" target="_blank" rel="noopener">{Sticky Discussion} Creative Link building techniques for SEO Provider...</a></td>
+                            <td>r/seo</td>
+                            <td>u/redditor_anon</td>
+                            <td>0</td>
+                            <td>137</td>
+                            <td>
+                                
+                                <span class="keyword-tag keyword-high">ai seo</span>
+                                
+                            </td>
+                            <td>
+                                <select class="status-select status-new" onchange="updateStatus(454, this.value)" data-lead-id="454">
+                                    <option value="new" selected>New</option>
+                                    <option value="contacted" >Contacted</option>
+                                    <option value="interested" >Interested</option>
+                                    <option value="rejected" >Rejected</option>
+                                </select>
+                            </td>
+                            <td>
+                                <button class="btn-danger" onclick="deleteLead(454)" title="Delete lead">X</button>
+                            </td>
+                        </tr>
+                        
+                        <tr id="lead-row-449">
+                            <td>
+                                <span class="score-badge score-high">
+                                    108.0
+                                </span>
+                            </td>
+                            <td><a href="https://old.reddit.com/r/saas/comments/anonymised/post/" target="_blank" rel="noopener">I started a solo SaaS in January and reached $10k MRR this month. It’s...</a></td>
+                            <td>r/saas</td>
+                            <td>u/redditor_anon</td>
+                            <td>0</td>
+                            <td>53</td>
+                            <td>
+                                
+                                <span class="keyword-tag keyword-high">looking for</span>
+                                
+                            </td>
+                            <td>
+                                <select class="status-select status-new" onchange="updateStatus(449, this.value)" data-lead-id="449">
+                                    <option value="new" selected>New</option>
+                                    <option value="contacted" >Contacted</option>
+                                    <option value="interested" >Interested</option>
+                                    <option value="rejected" >Rejected</option>
+                                </select>
+                            </td>
+                            <td>
+                                <button class="btn-danger" onclick="deleteLead(449)" title="Delete lead">X</button>
+                            </td>
+                        </tr>
+                        
+                        <tr id="lead-row-440">
+                            <td>
+                                <span class="score-badge score-high">
+                                    108.0
+                                </span>
+                            </td>
+                            <td><a href="https://old.reddit.com/r/entrepreneur/comments/anonymised/post/" target="_blank" rel="noopener">What’s the best way to advertise?</a></td>
+                            <td>r/entrepreneur</td>
+                            <td>u/redditor_anon</td>
+                            <td>0</td>
+                            <td>55</td>
+                            <td>
+                                
+                                <span class="keyword-tag keyword-high">ai seo</span>
+                                
+                            </td>
+                            <td>
+                                <select class="status-select status-new" onchange="updateStatus(440, this.value)" data-lead-id="440">
+                                    <option value="new" selected>New</option>
+                                    <option value="contacted" >Contacted</option>
+                                    <option value="interested" >Interested</option>
+                                    <option value="rejected" >Rejected</option>
+                                </select>
+                            </td>
+                            <td>
+                                <button class="btn-danger" onclick="deleteLead(440)" title="Delete lead">X</button>
+                            </td>
+                        </tr>
+                        
+                        <tr id="lead-row-433">
+                            <td>
+                                <span class="score-badge score-high">
+                                    108.0
+                                </span>
+                            </td>
+                            <td><a href="https://old.reddit.com/r/startups/comments/anonymised/post/" target="_blank" rel="noopener">Built something that demonstrably works. Nobody cares. What do I do? i...</a></td>
+                            <td>r/startups</td>
+                            <td>u/redditor_anon</td>
+                            <td>0</td>
+                            <td>283</td>
+                            <td>
+                                
+                                <span class="keyword-tag keyword-high">looking for</span>
+                                
+                            </td>
+                            <td>
+                                <select class="status-select status-new" onchange="updateStatus(433, this.value)" data-lead-id="433">
+                                    <option value="new" selected>New</option>
+                                    <option value="contacted" >Contacted</option>
+                                    <option value="interested" >Interested</option>
+                                    <option value="rejected" >Rejected</option>
+                                </select>
+                            </td>
+                            <td>
+                                <button class="btn-danger" onclick="deleteLead(433)" title="Delete lead">X</button>
+                            </td>
+                        </tr>
+                        
+                        <tr id="lead-row-428">
+                            <td>
+                                <span class="score-badge score-high">
+                                    108.0
+                                </span>
+                            </td>
+                            <td><a href="https://old.reddit.com/r/startups/comments/anonymised/post/" target="_blank" rel="noopener">What’s the biggest frustration you still have when using AI to build y...</a></td>
+                            <td>r/startups</td>
+                            <td>u/redditor_anon</td>
+                            <td>0</td>
+                            <td>65</td>
+                            <td>
+                                
+                                <span class="keyword-tag keyword-high">looking for</span>
+                                
+                            </td>
+                            <td>
+                                <select class="status-select status-new" onchange="updateStatus(428, this.value)" data-lead-id="428">
+                                    <option value="new" selected>New</option>
+                                    <option value="contacted" >Contacted</option>
+                                    <option value="interested" >Interested</option>
+                                    <option value="rejected" >Rejected</option>
+                                </select>
+                            </td>
+                            <td>
+                                <button class="btn-danger" onclick="deleteLead(428)" title="Delete lead">X</button>
+                            </td>
+                        </tr>
+                        
+                        <tr id="lead-row-407">
+                            <td>
+                                <span class="score-badge score-high">
+                                    108.0
+                                </span>
+                            </td>
+                            <td><a href="https://old.reddit.com/r/startups/comments/anonymised/post/" target="_blank" rel="noopener">70 users tried my product. Not one stuck around. What am I missing? I ...</a></td>
+                            <td>r/startups</td>
+                            <td>u/redditor_anon</td>
+                            <td>0</td>
+                            <td>54</td>
+                            <td>
+                                
+                                <span class="keyword-tag keyword-high">looking for</span>
+                                
+                            </td>
+                            <td>
+                                <select class="status-select status-new" onchange="updateStatus(407, this.value)" data-lead-id="407">
+                                    <option value="new" selected>New</option>
+                                    <option value="contacted" >Contacted</option>
+                                    <option value="interested" >Interested</option>
+                                    <option value="rejected" >Rejected</option>
+                                </select>
+                            </td>
+                            <td>
+                                <button class="btn-danger" onclick="deleteLead(407)" title="Delete lead">X</button>
+                            </td>
+                        </tr>
+                        
+                        <tr id="lead-row-402">
+                            <td>
+                                <span class="score-badge score-high">
+                                    108.0
+                                </span>
+                            </td>
+                            <td><a href="https://old.reddit.com/r/startups/comments/anonymised/post/" target="_blank" rel="noopener">Watch out for crap co-founders - i will not promote</a></td>
+                            <td>r/startups</td>
+                            <td>u/redditor_anon</td>
+                            <td>0</td>
+                            <td>57</td>
+                            <td>
+                                
+                                <span class="keyword-tag keyword-high">looking for</span>
+                                
+                            </td>
+                            <td>
+                                <select class="status-select status-new" onchange="updateStatus(402, this.value)" data-lead-id="402">
+                                    <option value="new" selected>New</option>
+                                    <option value="contacted" >Contacted</option>
+                                    <option value="interested" >Interested</option>
+                                    <option value="rejected" >Rejected</option>
+                                </select>
+                            </td>
+                            <td>
+                                <button class="btn-danger" onclick="deleteLead(402)" title="Delete lead">X</button>
+                            </td>
+                        </tr>
+                        
+                        <tr id="lead-row-318">
+                            <td>
+                                <span class="score-badge score-high">
+                                    108.0
+                                </span>
+                            </td>
+                            <td><a href="https://old.reddit.com/r/entrepreneur/comments/anonymised/post/" target="_blank" rel="noopener">I want to raise money to build an RV Park, is this possible?</a></td>
+                            <td>r/entrepreneur</td>
+                            <td>u/redditor_anon</td>
+                            <td>0</td>
+                            <td>60</td>
+                            <td>
+                                
+                                <span class="keyword-tag keyword-high">looking for</span>
+                                
+                            </td>
+                            <td>
+                                <select class="status-select status-new" onchange="updateStatus(318, this.value)" data-lead-id="318">
+                                    <option value="new" selected>New</option>
+                                    <option value="contacted" >Contacted</option>
+                                    <option value="interested" >Interested</option>
+                                    <option value="rejected" >Rejected</option>
+                                </select>
+                            </td>
+                            <td>
+                                <button class="btn-danger" onclick="deleteLead(318)" title="Delete lead">X</button>
+                            </td>
+                        </tr>
+                        
+                        <tr id="lead-row-316">
+                            <td>
+                                <span class="score-badge score-high">
+                                    108.0
+                                </span>
+                            </td>
+                            <td><a href="https://old.reddit.com/r/entrepreneur/comments/anonymised/post/" target="_blank" rel="noopener">2 years in entrepreneurship: progress, lessons and reflections</a></td>
+                            <td>r/entrepreneur</td>
+                            <td>u/redditor_anon</td>
+                            <td>0</td>
+                            <td>104</td>
+                            <td>
+                                
+                                <span class="keyword-tag keyword-high">looking for</span>
+                                
+                            </td>
+                            <td>
+                                <select class="status-select status-new" onchange="updateStatus(316, this.value)" data-lead-id="316">
+                                    <option value="new" selected>New</option>
+                                    <option value="contacted" >Contacted</option>
+                                    <option value="interested" >Interested</option>
+                                    <option value="rejected" >Rejected</option>
+                                </select>
+                            </td>
+                            <td>
+                                <button class="btn-danger" onclick="deleteLead(316)" title="Delete lead">X</button>
+                            </td>
+                        </tr>
+                        
+                        <tr id="lead-row-313">
+                            <td>
+                                <span class="score-badge score-high">
+                                    108.0
+                                </span>
+                            </td>
+                            <td><a href="https://old.reddit.com/r/entrepreneur/comments/anonymised/post/" target="_blank" rel="noopener">The truth is most of you shouldn’t be entrepreneurs..</a></td>
+                            <td>r/entrepreneur</td>
+                            <td>u/redditor_anon</td>
+                            <td>0</td>
+                            <td>233</td>
+                            <td>
+                                
+                                <span class="keyword-tag keyword-high">looking for</span>
+                                
+                            </td>
+                            <td>
+                                <select class="status-select status-new" onchange="updateStatus(313, this.value)" data-lead-id="313">
+                                    <option value="new" selected>New</option>
+                                    <option value="contacted" >Contacted</option>
+                                    <option value="interested" >Interested</option>
+                                    <option value="rejected" >Rejected</option>
+                                </select>
+                            </td>
+                            <td>
+                                <button class="btn-danger" onclick="deleteLead(313)" title="Delete lead">X</button>
+                            </td>
+                        </tr>
+                        
+                    </tbody>
+                </table>
+
+                
+                <div class="pagination">
+                    
+                    
+                    <a href="?page=1&subreddit=&sort=intent_score&search=&status=" class="active">1</a>
+                    
+                    <a href="?page=2&subreddit=&sort=intent_score&search=&status=" class="">2</a>
+                    
+                    <a href="?page=3&subreddit=&sort=intent_score&search=&status=" class="">3</a>
+                    
+                    <a href="?page=4&subreddit=&sort=intent_score&search=&status=" class="">4</a>
+                    
+                    <a href="?page=5&subreddit=&sort=intent_score&search=&status=" class="">5</a>
+                    
+                    <a href="?page=6&subreddit=&sort=intent_score&search=&status=" class="">6</a>
+                    
+                    <a href="?page=7&subreddit=&sort=intent_score&search=&status=" class="">7</a>
+                    
+                    <a href="?page=8&subreddit=&sort=intent_score&search=&status=" class="">8</a>
+                    
+                    <a href="?page=9&subreddit=&sort=intent_score&search=&status=" class="">9</a>
+                    
+                    <a href="?page=10&subreddit=&sort=intent_score&search=&status=" class="">10</a>
+                    
+                    <a href="?page=11&subreddit=&sort=intent_score&search=&status=" class="">11</a>
+                    
+                    <a href="?page=12&subreddit=&sort=intent_score&search=&status=" class="">12</a>
+                    
+                    <a href="?page=13&subreddit=&sort=intent_score&search=&status=" class="">13</a>
+                    
+                    <a href="?page=14&subreddit=&sort=intent_score&search=&status=" class="">14</a>
+                    
+                    <a href="?page=15&subreddit=&sort=intent_score&search=&status=" class="">15</a>
+                    
+                    <a href="?page=16&subreddit=&sort=intent_score&search=&status=" class="">16</a>
+                    
+                    <a href="?page=17&subreddit=&sort=intent_score&search=&status=" class="">17</a>
+                    
+                    <a href="?page=18&subreddit=&sort=intent_score&search=&status=" class="">18</a>
+                    
+                    <a href="?page=19&subreddit=&sort=intent_score&search=&status=" class="">19</a>
+                    
+                    <a href="?page=2&subreddit=&sort=intent_score&search=&status=">Next</a>
+                </div>
+                
+            </div>
+
+            <div class="sidebar">
+                <!-- Subreddits, Keywords, Search Queries and Scoring Settings moved to
+                     /configuration. The dashboard answers "what is happening?"; the
+                     Configuration page answers "what is configured?". Both drive the
+                     same legacy endpoints - no API changed. -->
+                <div class="sidebar-card">
+                    <h2>Configuration</h2>
+                    <p style="color:#8b949e;font-size:0.85rem;margin:0 0 10px">
+                        Subreddits, keywords, search queries and scoring weights.
+                    </p>
+                    <a class="btn btn-primary btn-sm" href="/configuration"
+                       style="display:block;text-align:center;text-decoration:none">Open Configuration</a>
+                </div>
+
+                <!-- Run Scraper -->
+                <div class="sidebar-card">
+                    <h2>Run Scraper</h2>
+                    <button class="btn btn-success" onclick="runScrape()" id="scrape-btn" style="width:100%;">Run Scrape Now</button>
+                    <div class="scrape-status" id="scrape-status"></div>
+                </div>
+
+                <!-- Recent Runs -->
+                <div class="sidebar-card">
+                    <h2>Recent Scrape Runs</h2>
+                    <ul>
+                        
+                        <li>keyword — 20 leads <span style="color:#888">(07/28 12:16)</span></li>
+                        
+                        <li>subreddit — 0 leads <span style="color:#888">(07/28 12:14)</span></li>
+                        
+                        <li>keyword — 137 leads <span style="color:#888">(07/28 12:05)</span></li>
+                        
+                        <li>subreddit — 15 leads <span style="color:#888">(07/28 12:02)</span></li>
+                        
+                        <li>keyword — 23 leads <span style="color:#888">(06/29 15:56)</span></li>
+                        
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const chartData = {"keyword_breakdown": [{"count": 290, "keyword": "looking for"}, {"count": 66, "keyword": "struggling with"}, {"count": 54, "keyword": "how do i"}, {"count": 41, "keyword": "any recommendations"}, {"count": 14, "keyword": "frustrated with"}, {"count": 12, "keyword": "need help with"}, {"count": 10, "keyword": "ai seo"}, {"count": 7, "keyword": "is there a way to"}, {"count": 5, "keyword": "recommend me"}, {"count": 4, "keyword": "best alternative to"}], "leads_by_day": [{"count": 287, "day": "2026-06-29"}, {"count": 172, "day": "2026-07-28"}], "top_subreddits": [{"count": 139, "subreddit": "saas"}, {"count": 137, "subreddit": "startups"}, {"count": 97, "subreddit": "seo"}, {"count": 86, "subreddit": "entrepreneur"}]};
+
+        /* AI status strip. Summary only - detail belongs on AI Health.
+           Fails silently: an AI outage must never break the lead dashboard. */
+        const AI_LABEL = {
+            valid: 'Connected', unconfigured: 'Not configured',
+            invalid_key: 'Key rejected', insufficient_balance: 'Needs credit',
+            unreachable: 'Unreachable', undecryptable: 'Key unreadable'
+        };
+        const AI_NOTE = {
+            unconfigured: 'No API key yet. AI features are disabled; scraping is unaffected. Open Configure to add one.',
+            invalid_key: 'The provider rejected the stored key. Open Configure to replace it.',
+            insufficient_balance: 'The key is valid but the account needs credit. Nothing is broken.',
+            unreachable: 'Could not reach the provider. Usually a network issue; scraping is unaffected.',
+            undecryptable: 'APP_SECRET_KEY changed, so the stored key cannot be read. Re-enter it.'
+        };
+        async function loadAiStrip(){
+            const strip = document.getElementById('ai-strip');
+            try {
+                const [settings, usage, providers] = await Promise.all([
+                    fetch('/api/settings/ai').then(r => r.json()),
+                    fetch('/api/ai/usage?period=today').then(r => r.json()),
+                    fetch('/api/health/providers').then(r => r.json()).catch(() => null)
+                ]);
+                const key = settings.key || {};
+                const status = key.status || 'unconfigured';
+                strip.className = 'ai-strip s-' + status;
+                document.getElementById('ai-provider').textContent = settings.provider || 'AI provider';
+                document.getElementById('ai-status').textContent = AI_LABEL[status] || status;
+                document.getElementById('ai-model').textContent =
+                    key.model_id || (settings.advanced && settings.advanced.model) || '\u2014';
+                document.getElementById('ai-validated').textContent = key.last_validated_at
+                    ? new Date(key.last_validated_at).toLocaleString() : 'never';
+                document.getElementById('ai-latency').textContent =
+                    key.last_validation_ms ? key.last_validation_ms + ' ms' : '\u2014';
+                document.getElementById('ai-cost').textContent =
+                    '$' + (Number(usage.cost_usd) || 0).toFixed(4);
+                document.getElementById('ai-calls').textContent = usage.calls != null ? usage.calls : '\u2014';
+
+                let circuit = '\u2014';
+                if (providers && providers.routing) {
+                    const me = (providers.routing.providers || [])
+                        .find(p => p.provider === settings.provider);
+                    if (me) circuit = me.state + (me.total_failures ? ' (' + me.total_failures + ' fail)' : '');
+                }
+                document.getElementById('ai-circuit').textContent = circuit;
+
+                const note = document.getElementById('ai-note');
+                const text = key.last_error || AI_NOTE[status] || '';
+                note.textContent = text;
+                note.className = text ? 'ai-strip-note show' : 'ai-strip-note';
+            } catch (e) {
+                document.getElementById('ai-status').textContent = 'status unavailable';
+                const note = document.getElementById('ai-note');
+                note.textContent = 'Could not read AI status. Scraping and leads are unaffected.';
+                note.className = 'ai-strip-note show';
+            }
+        }
+        loadAiStrip();
+        setInterval(loadAiStrip, 30000);
+
+        // Charts
+        new Chart(document.getElementById('leadsOverTime'), {
+            type: 'line',
+            data: {
+                labels: chartData.leads_by_day.map(d => d.day),
+                datasets: [{
+                    label: 'Leads',
+                    data: chartData.leads_by_day.map(d => d.count),
+                    borderColor: '#ff4500',
+                    backgroundColor: 'rgba(255,69,0,0.1)',
+                    fill: true,
+                    tension: 0.3,
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { ticks: { color: '#888', maxTicksLimit: 7 }, grid: { color: '#252830' } },
+                    y: { ticks: { color: '#888' }, grid: { color: '#252830' } }
+                }
+            }
+        });
+
+        new Chart(document.getElementById('topSubreddits'), {
+            type: 'bar',
+            data: {
+                labels: chartData.top_subreddits.map(d => 'r/' + d.subreddit),
+                datasets: [{
+                    label: 'Leads',
+                    data: chartData.top_subreddits.map(d => d.count),
+                    backgroundColor: '#ff4500',
+                }]
+            },
+            options: {
+                responsive: true,
+                indexAxis: 'y',
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { ticks: { color: '#888' }, grid: { color: '#252830' } },
+                    y: { ticks: { color: '#888' }, grid: { display: false } }
+                }
+            }
+        });
+
+        new Chart(document.getElementById('keywordBreakdown'), {
+            type: 'doughnut',
+            data: {
+                labels: chartData.keyword_breakdown.map(d => d.keyword),
+                datasets: [{
+                    data: chartData.keyword_breakdown.map(d => d.count),
+                    backgroundColor: ['#ff4500','#ff6b35','#ff8c5a','#ffa97a','#ffc49a','#60a5fa','#3b82f6','#2563eb','#1d4ed8','#1e40af'],
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: { legend: { position: 'right', labels: { color: '#888', font: { size: 11 } } } }
+            }
+        });
+
+        // Subreddit, keyword and query managers moved to /configuration along
+        // with their Enter-key handlers. Left behind, these bound to elements
+        // that no longer exist and threw on every page load.
+
+        // Run scrape
+        function runScrape() {
+            const btn = document.getElementById('scrape-btn');
+            const status = document.getElementById('scrape-status');
+            btn.disabled = true;
+            btn.textContent = 'Scraping...';
+            status.className = 'scrape-status active';
+            status.textContent = 'Scrape running in background...';
+            fetch('/api/scrape', { method: 'POST' })
+            .then(r => r.json())
+            .then(data => {
+                setTimeout(() => {
+                    btn.disabled = false;
+                    btn.textContent = 'Run Scrape Now';
+                    status.className = 'scrape-status done';
+                    status.textContent = 'Scrape complete! Refresh to see new leads.';
+                }, 5000);
+            });
+        }
+
+        // Lead status
+        function updateStatus(leadId, status) {
+            fetch('/api/leads/' + leadId + '/status', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: status })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.ok) {
+                    const select = document.querySelector('select[data-lead-id="' + leadId + '"]');
+                    select.className = 'status-select status-' + status;
+                }
+            });
+        }
+
+        // Delete lead
+        function deleteLead(leadId) {
+            if (!confirm('Delete this lead?')) return;
+            fetch('/api/leads/' + leadId, { method: 'DELETE' })
+            .then(r => r.json())
+            .then(data => { if (data.ok) document.getElementById('lead-row-' + leadId).remove(); });
+        }
+    </script>
+</body>
+</html>

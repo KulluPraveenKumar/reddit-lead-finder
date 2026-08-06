@@ -1,0 +1,122 @@
+subreddits:
+  - startups
+  - SaaS
+  - entrepreneur
+
+keywords:
+  high_intent:
+    - "looking for"
+    - "any recommendations"
+    - "what tool do you use"
+    - "best alternative to"
+    - "recommend me"
+    - "anyone know a good"
+  medium_intent:
+    - "how do I"
+    - "struggling with"
+    - "need help with"
+    - "is there a way to"
+    - "frustrated with"
+
+scoring:
+  keyword_weight: 3
+  upvote_weight: 1
+  comment_weight: 2
+  recency_weight: 1.5
+  high_intent_multiplier: 2
+
+schedule:
+  interval_minutes: 60
+
+dashboard:
+  host: "127.0.0.1"
+  port: 5000
+
+# ---------------------------------------------------------------------------
+# AI Service Layer
+#
+# THE API KEY IS NOT HERE AND MUST NEVER BE.
+# It is entered at runtime on /settings/ai and stored encrypted in the database.
+# A key in this file gets committed, pasted into tickets, and shared with the file.
+# ---------------------------------------------------------------------------
+ai:
+  provider: deepseek
+  model: deepseek-v4-flash
+
+  # Two independent ceilings: cost and call count can diverge. A prompt-size
+  # regression raises cost without raising calls; a batching regression raises
+  # calls without raising cost much. One dial would miss half the failures.
+  limits:
+    max_cost_per_run_usd: 2.00
+    max_cost_per_day_usd: 5.00
+    max_calls_per_run: 500
+    max_items_per_run: 2000
+
+  # Adaptive: halves on 429/503, steps up after a sustained clean window.
+  concurrency: 8
+  concurrency_floor: 1
+  concurrency_ceiling: 16
+  rate_limit_per_second: 8.0
+
+  timeout:
+    connect: 10.0
+    read: 60.0
+
+  retry:
+    max_attempts: 3
+    base_delay: 1.0
+
+# Prices per 1M tokens, verified 2026-07-30. Displayed alongside this date so
+# staleness is visible rather than assumed.
+pricing:
+  deepseek:
+    input_cached: 0.0028
+    input_uncached: 0.14
+    output: 0.28
+    verified_on: "2026-07-30"
+    # DeepSeek announced a 2x peak-hour surcharge that is not currently active.
+    # Shipping it disabled means enabling it is a config change, not a code
+    # change made under time pressure.
+    surcharge_multiplier: 1.0
+
+logging:
+  level: INFO
+  format: console
+
+# ---------------------------------------------------------------------------
+# Proxy / transport (Phase 2)
+#
+# The proxy FILE path is here; the credentials are only ever in that file, which
+# is gitignored. Nothing writes them to the database or a log.
+# ---------------------------------------------------------------------------
+proxy:
+  enabled: true
+  # Left empty on purpose. This file is committed, and a path here names a
+  # location on one person's machine — so the proxy file is configured per
+  # machine via the PROXY_FILE environment variable (see .env.example) and
+  # `build_from_settings` falls back to it when this is blank. An absent proxy
+  # file is tolerated: the pool comes up empty and egress goes direct.
+  #
+  # If you do set a path here, single-quote it. In a DOUBLE-quoted YAML scalar
+  # a backslash starts an escape sequence, so a Windows path beginning C:\Users
+  # is a parse error ("expected escape sequence of 8 hexadecimal numbers").
+  # Single quotes make backslashes literal.
+  file: ''
+
+  # Per-proxy pacing, randomised. A fixed delay is itself a fingerprint.
+  delay_min: 3.0
+  delay_max: 7.0
+
+  # Consecutive failures before a proxy leaves rotation, and how long for.
+  # Per-run only: a proxy blocked this hour is usually fine tomorrow.
+  blacklist_threshold: 3
+  blacklist_cooldown: 900
+
+  # With no healthy proxy: stop rather than fall back to the local IP. A silent
+  # fallback would leak the real address to the target, which is the one thing
+  # the pool exists to prevent.
+  fail_closed: true
+
+  connect_timeout: 10.0
+  read_timeout: 30.0
+  cache_ttl: 900
