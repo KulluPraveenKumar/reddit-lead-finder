@@ -104,7 +104,7 @@ first edit under `src/`.
 | 8 | **Generate / update the manual guide** | `docs/testing/PNN-testing.md`, with a sign-off table |
 | 9 | **Generate the Phase Completion Report** | `docs/PHASE-NN-COMPLETION-REPORT.md` |
 | 10 | **Generate the Phase Handover** | `docs/PHASE-NN-HANDOVER.md` |
-| 11 | **Update progress** | `docs/progress/PNN-COMPLETE.md`, ending in a resume point; `docs/README.md` execution table |
+| 11 | **Update documentation and progress** | The phase's **Docs** field landed; `docs/progress/PNN-COMPLETE.md`, ending in a resume point; `docs/README.md` execution table |
 | 12 | **Repository Hygiene Review** — §5 | Every staged file reviewed and justified |
 | 13 | **Commit** | §6 |
 | 14 | **Push** | `git push origin main` |
@@ -197,12 +197,15 @@ ordinary for a public repository.
 
 ### 6.2 Tags
 
-Tag when a phase is **signed off**, using `v<pyproject version>-pNN` — the existing convention, set by
-`v0.1.0-p1`. The tag is the labelled rollback point the next phase falls back to.
+Tag when a phase is **signed off**, using `v<the version currently in pyproject.toml>-pNN` — the
+existing convention, set by `v0.1.0-p1`. The `-pNN` suffix makes the tag unique, so **bumping the
+version is not part of the phase workflow**; it is an operator action, and the tag simply follows
+whatever `pyproject.toml` says at that commit. The tag is the labelled rollback point the next phase
+falls back to.
 
 ```bash
-git tag -a v0.2.0-p2 -m "P2 complete: job queue, worker, structured logging"
-git push origin v0.2.0-p2
+git tag -a v0.1.0-p2 -m "P2 complete: job queue, worker, structured logging"
+git push origin v0.1.0-p2
 ```
 
 **Do not tag** a phase whose manual sign-off table is unsigned — the tag would claim a verification

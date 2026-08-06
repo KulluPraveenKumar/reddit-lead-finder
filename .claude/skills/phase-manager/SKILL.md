@@ -22,9 +22,11 @@ A better idea goes to `docs/DEFERRED-IMPROVEMENTS.md` with its trigger; the curr
 
 ## Procedure
 
-Sixteen steps, in this order. None is optional.
+Sixteen steps, in this order. **They are the sixteen in `docs/EXECUTION_MODE_LOCK.md` §3, numbered
+identically** — if the two ever disagree, that is a defect in one of them, not a choice. None is
+optional.
 
-### 1. Establish where we are
+### 1. Read the current phase
 
 Read, in this order:
 1. `docs/ARCHITECTURE_FREEZE.md` — the binding constraints
@@ -42,6 +44,13 @@ Then determine the current phase:
 - The user asks for a phase that is not `previous + 1` → say which phase is next and why.
 
 State plainly: *"Phase PNN is next. Phase PNN-1 was signed off on <date>."*
+
+Then read that phase's specification in `docs/34-implementation-plan.md` and **extract all thirteen
+fields**. Restate to the user, in under ten lines: the Objective, the Deliverables, the migration (if
+any), the Risk level, and the Estimated Time.
+
+**Do not go further until you have read every field.** The Acceptance Criteria in particular
+determine what you build; discovering them after implementation causes rework.
 
 ### 2. Review the previous handover
 
@@ -69,63 +78,52 @@ git status --short                                  # clean
 A dirty tree, a red suite or two heads is fixed **before** the phase starts, never during it —
 otherwise you cannot tell which failure this phase caused.
 
-### 4. Read the phase specification
+### 4. Implement ONE phase only
 
-From `docs/34-implementation-plan.md`, extract all thirteen fields. Restate to the user, in under
-ten lines: the Objective, the Deliverables, the migration (if any), the Risk level, and the
-Estimated Time.
-
-**Do not begin until you have read every field.** The Acceptance Criteria in particular determine
-what you build; discovering them after implementation causes rework.
-
-### 5. Plan before editing
-
-Produce an ordered file-by-file plan covering every file in the phase's **Files** row. If a file is
-needed that the row does not name, say so — the plan may be incomplete, or the phase may be creeping.
-
-### 6. Implement
-
+- **Plan before editing.** Produce an ordered file-by-file plan covering every file in the phase's
+  **Files** row. If a file is needed that the row does not name, say so — the plan may be
+  incomplete, or the phase may be creeping.
 - **One phase only.** Never start the next one, even if it is small, even if it is obviously next.
 - Every new module is created with its tests in the same change.
 - Follow the surrounding code's idiom: match its comment density, naming, and structure.
 - Configuration goes in `config.yaml`; secrets go in `.env`; **never the reverse**.
 
-### 7. Run automated testing
+### 5. Run automated testing
 
 Invoke the `test-gate` skill. It runs `docs/35-testing-strategy.md` §2 and repeats until clean.
 
 Then invoke the `architecture-reviewer` skill against the phase's diff. **A freeze violation blocks
 the phase** — it is not a finding to note and move past.
 
-### 8. Fix issues
+### 6. Fix issues
 
 Fix the **root cause**. Do not weaken an assertion to make it pass — if an assertion was genuinely
 wrong, say so explicitly and record why it was wrong.
 
-### 9. Run automated testing again
+### 7. Run automated testing again
 
 The gate has passed only on a **single uninterrupted clean run**. Fixes break other checks; a gate
 run before the last fix proves nothing.
 
-### 10. Generate the manual testing guide
+### 8. Generate the manual testing guide
 
 Invoke the `manual-test-generator` skill. Output goes to `docs/testing/PNN-testing.md`, including a
 sign-off table.
 
-### 11. Generate the Phase Completion Report
+### 9. Generate the Phase Completion Report
 
 `docs/PHASE-NN-COMPLETION-REPORT.md` (`NN` zero-padded — `P2` → `02`). Backward-looking: what was
 built, and the evidence. Follow the exemplar `docs/PHASE-01-COMPLETION-REPORT.md`. **There is no
 template file** — a template drifts from the exemplar and becomes a second source of truth.
 
-### 12. Generate the Phase Handover
+### 10. Generate the Phase Handover
 
 `docs/PHASE-NN-HANDOVER.md`. Forward-looking, per the exemplar `docs/PHASE-01-HANDOVER.md`: what now
 exists · the guarantees the next phase must not break · what this phase deliberately did **not** do ·
 the traps waiting in the next phase · a verification snapshot · blockers carried forward · the next
 phase's entry conditions.
 
-### 13. Land the documentation and the progress record
+### 11. Update documentation and progress
 
 - Apply the documentation edits the phase's **Docs** field owns.
 - Write `docs/progress/PNN-COMPLETE.md`, ending in a **resume point** — it is what an interrupted
@@ -134,7 +132,7 @@ phase's entry conditions.
 
 A phase whose documentation has not landed is not complete.
 
-### 14. Repository Hygiene Review — this repository is public
+### 12. Repository Hygiene Review — this repository is public
 
 Stage the changes, then work `docs/EXECUTION_MODE_LOCK.md` §5 (H1–H8) against the **staged diff**:
 
@@ -149,13 +147,20 @@ git check-ignore -v .env data/leads.db   # must print the rule that ignores each
 **Remove anything sensitive or unnecessary before committing.** A secret that reaches a public commit
 is not fixed by a later commit — it is fixed by rotating the credential.
 
-### 15. Commit, push, tag
+### 13. Commit
 
-- Commit: `<type>(PNN): <what changed>` — e.g. `feat(P2): job queue, worker, structured logging`.
-  Never `--no-verify`.
-- Push: `git push origin main`.
-- Tag **only when the phase's manual sign-off table is signed**: `v<pyproject version>-pNN`, per
-  `docs/EXECUTION_MODE_LOCK.md` §6.2. Push the tag.
+`<type>(PNN): <what changed>` — e.g. `feat(P2): job queue, worker, structured logging`. Types:
+`feat`, `fix`, `test`, `docs`, `chore`, `refactor`. Never `--no-verify`.
+
+### 14. Push
+
+`git push origin main`. Confirm the push landed — `git status -sb` shows no ahead count.
+
+### 15. Tag, when applicable
+
+**Only when the phase's manual sign-off table is signed**: `v<the version in pyproject.toml>-pNN`,
+per `docs/EXECUTION_MODE_LOCK.md` §6.2. Push the tag. Tagging an unsigned phase would claim a
+verification that did not happen — if it is unsigned, say so and do not tag.
 
 ### 16. Stop
 
@@ -201,6 +206,8 @@ Before reporting a phase complete, confirm every line of `docs/EXECUTION_MODE_LO
 - [ ] Mutation discipline applied to every **bold** acceptance criterion
 - [ ] Documentation edits landed
 - [ ] `docs/testing/PNN-testing.md` generated, with a sign-off table
+- [ ] **Manual testing completed and signed off by a human** — a generated sign-off table is not a
+      signed one, and this is the gate that stands between a finished phase and the next
 - [ ] `docs/PHASE-NN-COMPLETION-REPORT.md` written
 - [ ] `docs/PHASE-NN-HANDOVER.md` written
 - [ ] `docs/progress/PNN-COMPLETE.md` written, ending in a resume point
