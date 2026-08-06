@@ -13,6 +13,13 @@ pydantic>=2.7
 cryptography>=42.0
 python-dotenv>=1.0
 
+# P2 — structured logging (docs/33 §3.2, ARCHITECTURE_FREEZE §5).
+# Floor is 3.1, not the 2.0 doc 33 proposed: the `pythonjsonlogger.jsonlogger`
+# import path 2.x offers emits a DeprecationWarning from 3.0 onward, and the
+# replacement `pythonjsonlogger.json` does not exist before 3.1. A floor that
+# spans both would make the warning depend on which version CI resolved.
+python-json-logger>=3.1
+
 # Phase 1 — tooling
 pytest>=8.0
 pytest-cov>=5.0

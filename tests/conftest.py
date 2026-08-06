@@ -22,6 +22,51 @@ sys.path.insert(0, str(PROJECT_ROOT))
 os.environ.setdefault("APP_SECRET_KEY", "test-secret-key-for-the-suite-only-0123456789")
 
 
+class NetworkCallBlocked(RuntimeError):
+    """A test tried to open a socket. See ``block_network`` below."""
+
+
+@pytest.fixture(autouse=True)
+def block_network(monkeypatch):
+    """Machine-enforce the offline guarantee — ``docs/35`` §2.3 check 6.
+
+    Until P2 this was a convention: the suite made no network calls because
+    nobody wrote one. A convention is not a guarantee, and the failure it
+    permits is silent — a test that quietly reaches Reddit passes on the
+    developer's machine and fails in CI for reasons nobody connects to it.
+
+    ``connect`` is patched rather than the ``socket`` constructor: ``responses``,
+    ``requests`` and ``urllib3`` all *build* sockets and sessions while doing
+    nothing over the wire, and a fixture that broke object construction would be
+    telling correct tests they are wrong.
+
+    Loopback stays open. It carries no traffic off the machine, and closing it
+    would break any future test that binds a local port.
+    """
+    import socket
+
+    real_connect = socket.socket.connect
+    real_connect_ex = socket.socket.connect_ex
+
+    def guard(original):
+        def wrapper(self, address, *args, **kwargs):
+            host = address[0] if isinstance(address, tuple) else address
+            if isinstance(host, str) and host in _LOOPBACK:
+                return original(self, address, *args, **kwargs)
+            raise NetworkCallBlocked(
+                f"the test suite runs offline; a socket to {address!r} was blocked. "
+                "Use a fixture or a fake instead of a live call."
+            )
+
+        return wrapper
+
+    monkeypatch.setattr(socket.socket, "connect", guard(real_connect))
+    monkeypatch.setattr(socket.socket, "connect_ex", guard(real_connect_ex))
+
+
+_LOOPBACK = {"127.0.0.1", "::1", "localhost"}
+
+
 @pytest.fixture
 def temp_db(tmp_path, monkeypatch):
     """A migrated, empty database, isolated per test."""

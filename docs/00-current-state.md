@@ -252,6 +252,7 @@ Notably absent and required by the plan:
 | Migrations | `alembic` | 2 |
 | Tests | `pytest`, `pytest-cov`, `responses` | 1 |
 | Lint / format | `ruff` | 1 |
+| Structured JSON logging | `python-json-logger` — **added in P2**; stdlib `logging` does the rest | P2 |
 | HTML fetch for website analysis | `requests` (already present) + `trafilatura` or `readability-lxml` | 4 |
 
 No async framework, no Redis, no Celery, no Postgres. The plan deliberately keeps the deployment a

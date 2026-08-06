@@ -111,6 +111,23 @@ def cmd_schedule(config):
         console.print("\n[yellow]Scheduler stopped.[/yellow]")
 
 
+def cmd_worker(config):
+    """Run the job worker in the foreground until Ctrl+C or SIGTERM.
+
+    Deliberately separate from ``dashboard``: an operator debugging a stuck queue
+    needs to watch the worker's output without the web server's in it, and a
+    worker that dies must not take the dashboard with it.
+    """
+    from src.orchestration.worker import DEFAULT_POLL_INTERVAL, run_standalone
+
+    init_db()
+    interval = config.get("worker", {}).get("poll_interval_seconds", DEFAULT_POLL_INTERVAL)
+    console.print(Panel("[bold green]Worker started. Press Ctrl+C to stop.[/bold green]"))
+    _startup_banner(config)
+    run_standalone(poll_interval=float(interval))
+    console.print("[yellow]Worker stopped.[/yellow]")
+
+
 def cmd_add_user(config, username):
     init_db()
     session = get_session()
@@ -208,6 +225,7 @@ def print_help():
 [bold cyan]Usage:[/bold cyan]
   python main.py scrape \[--scraper TYPE]   Run scrapers (keyword|subreddit|user|all)
   python main.py dashboard                 Start web dashboard
+  python main.py worker                    Run the job worker in the foreground
   python main.py schedule                  Run scrapers on a schedule
   python main.py add-user USERNAME         Track a Reddit user
   python main.py migrate \[status|upgrade|stamp REV|downgrade REV]
@@ -216,6 +234,7 @@ def print_help():
 [bold cyan]Examples:[/bold cyan]
   python main.py scrape                    Run all scrapers
   python main.py scrape --scraper keyword  Run keyword scraper only
+  python main.py worker                    Process queued jobs until stopped
   python main.py schedule                  Auto-scrape every 60 min
   python main.py add-user some_redditor    Track a specific user
   python main.py migrate status            Show schema version
@@ -241,6 +260,7 @@ def main():
     configure_logging(
         level=log_config.get("level", "INFO"),
         fmt=log_config.get("format", "console"),
+        log_file=log_config.get("file") or None,
     )
 
     command = args[0]
@@ -255,6 +275,9 @@ def main():
 
     elif command == "dashboard":
         cmd_dashboard(config)
+
+    elif command == "worker":
+        cmd_worker(config)
 
     elif command == "schedule":
         cmd_schedule(config)

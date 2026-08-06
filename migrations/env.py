@@ -21,7 +21,18 @@ from src.db.models import Base  # noqa: E402
 config = context.config
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # `disable_existing_loggers=False` is load-bearing, and was found in P2.
+    #
+    # `init_db()` runs migrations in-process on every start, so this line runs
+    # inside the live application — and `fileConfig`'s default is to DISABLE
+    # every logger that already exists. That silently switched off the whole
+    # application's logging from the first request onward: the loggers are all
+    # created at import time, which is before this runs.
+    #
+    # The symptom is the worst kind — no error, no warning, just a log file that
+    # stops after the migration banner. P2's structured logging is unobservable
+    # without this, and `docs/35` check 17 cannot be satisfied.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 
 def _database_url() -> str:

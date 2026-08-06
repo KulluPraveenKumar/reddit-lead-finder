@@ -599,7 +599,7 @@ Three constraints keep it safe to depend on:
 |---|---|
 | **Configuration** | Precedence: env var → DB `settings` row → `config.yaml` → hardcoded default. Resolved once in `src/settings.py`; nothing reads `os.environ` directly. |
 | **Secrets** | `.env` via `python-dotenv`, never in YAML, never in the DB, never in a log. `.env` and the proxy file are gitignored. A `redact()` filter strips anything matching a credential pattern from log records. |
-| **Logging** | Structured JSON to file + `rich` to console. Every line carries `run_id`, `job_id`, `project_id` when in scope. Proxy identity is always `ip:port`, never with credentials. |
+| **Logging** | **stdlib `logging` + `python-json-logger`** (`ARCHITECTURE_FREEZE` §5, [33 §3.2](33-final-review.md)) — *not* `structlog` or `loguru`. Structured JSON to file, human-readable to console. Every line carries `run_id`, `job_id`, `project_id` when in scope, injected by a `ContextFilter` from a `ContextVar` so third-party libraries are correlated too. Proxy identity is always `ip:port`, never with credentials. Shipped in P2: `src/obs/logging.py`. |
 | **Metrics** | In-process counters flushed to a `metrics` table each minute: requests, successes, failures by class, latency percentiles, per-proxy stats, LLM tokens and USD, leads created. Rendered on a `/health` page. |
 | **Errors** | Typed exception hierarchy: `ScraperError` → {`ProxyExhaustedError`, `RateLimitedError`, `ParseError`}, `LLMError` → {`SchemaValidationError`, `BudgetExceededError`}. Handlers map these to job outcomes. |
 | **Idempotency** | Every job handler is safe to re-run: dedup on `reddit_id`, upsert on artefacts, LLM cache on analysis. A lease expiry that re-runs a job must not double-insert. |

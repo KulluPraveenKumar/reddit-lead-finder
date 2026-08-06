@@ -81,7 +81,27 @@ pricing:
 
 logging:
   level: INFO
+  # `console` for a human at a terminal, `json` for anything that will be
+  # grepped or shipped. The worker in production runs with `json`.
   format: console
+  # Empty means stderr only. A path here adds a second handler that always
+  # writes JSON — a log file exists to be searched, and pretty-printing it
+  # would make that harder for no reader's benefit. Both handlers carry the
+  # redaction filter; see src/obs/logging.py.
+  file: ''
+
+# ---------------------------------------------------------------------------
+# Worker (P2)
+#
+# WORKER_INPROCESS (environment, default true) decides whether a host process
+# starts a worker thread of its own. It is deliberately an environment variable
+# rather than a key here: it is the phase's rollback switch, and a rollback you
+# perform by editing a committed file is one you cannot perform quickly.
+# ---------------------------------------------------------------------------
+worker:
+  # How long to wait before re-polling an empty queue. Lower burns CPU on
+  # SELECTs that find nothing; higher is latency an operator can feel.
+  poll_interval_seconds: 2.0
 
 # ---------------------------------------------------------------------------
 # Proxy / transport (Phase 2)

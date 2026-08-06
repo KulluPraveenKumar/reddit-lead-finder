@@ -6,7 +6,7 @@
 > | Phase | Scope | Status |
 > |---|---|---|
 > | **P1** | `0004` migration, `Run`/`Job`/`RunEvent` models, `RunState`/`JobState`, transition table | ✅ **shipped 2026-08-05** — [PHASE-01-HANDOVER.md](PHASE-01-HANDOVER.md) |
-> | **P2** | `JobQueue`, `Worker`, handler registry, `maintenance`, structured logging | pending |
+> | **P2** | `JobQueue`, `Worker`, handler registry, `maintenance`, structured logging | ✅ **shipped 2026-08-06** — [PHASE-02-HANDOVER.md](PHASE-02-HANDOVER.md) |
 > | **P3** | `RunService`, run API, `/runs` pages, `POST /api/scrape` shim | pending |
 >
 > **Scheduling is deferred to P24** (`hermes cron` replaces the `schedule` library);

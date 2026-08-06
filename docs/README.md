@@ -46,7 +46,8 @@ the ones to read when you want to know what exists rather than what is intended.
 |---|---|---|---|
 | **P0** — Validation sprint | ✅ complete 2026-08-05 | [SPRINT-0-MEASUREMENTS.md](SPRINT-0-MEASUREMENTS.md) · [progress/P00-COMPLETE.md](progress/P00-COMPLETE.md) | [testing/P00-testing.md](testing/P00-testing.md) |
 | **P1** — Run & job schema | ✅ complete 2026-08-05 | [PHASE-01-COMPLETION-REPORT.md](PHASE-01-COMPLETION-REPORT.md) · [PHASE-01-HANDOVER.md](PHASE-01-HANDOVER.md) · [progress/P01-COMPLETE.md](progress/P01-COMPLETE.md) | [testing/P01-testing.md](testing/P01-testing.md) |
-| **P2** — Job queue, worker, logging | ⬜ not started | — | — |
+| **P2** — Job queue, worker, logging | ✅ complete 2026-08-06 | [PHASE-02-COMPLETION-REPORT.md](PHASE-02-COMPLETION-REPORT.md) · [PHASE-02-HANDOVER.md](PHASE-02-HANDOVER.md) · [progress/P02-COMPLETE.md](progress/P02-COMPLETE.md) | [testing/P02-testing.md](testing/P02-testing.md) |
+| **P3** — Run service, API, run pages | ⬜ not started | — | — |
 
 **Operational records** — verification passes between phases, not phases themselves:
 [PRE-P2-VERIFICATION-REPORT.md](PRE-P2-VERIFICATION-REPORT.md) ·

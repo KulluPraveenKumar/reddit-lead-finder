@@ -14,7 +14,52 @@ under the process in [docs/EXECUTION_MODE_LOCK.md](docs/EXECUTION_MODE_LOCK.md).
 
 ## [Unreleased]
 
-Work completed after `v0.1.0-p1` and before P2 begins. **No P2 implementation.**
+**P2 — job queue, worker, structured logging** ([docs/PHASE-02-COMPLETION-REPORT.md](docs/PHASE-02-COMPLETION-REPORT.md)),
+plus the process and hygiene work completed after `v0.1.0-p1`.
+
+> Not yet tagged. [EXECUTION_MODE_LOCK §6.2](docs/EXECUTION_MODE_LOCK.md) forbids tagging a phase
+> whose manual sign-off table is unsigned.
+
+### Added — P2
+
+- `src/orchestration/job_queue.py` — `JobQueue` with an atomic claim-and-lease (`BEGIN IMMEDIATE`
+  plus an `AND state='queued'` guard), per-type attempt budgets, jittered exponential backoff capped
+  at 600 s, lease reclamation, and `RetryableError`.
+- `src/orchestration/worker.py` — the worker loop, a heartbeat thread extending the lease every
+  `lease/3`, graceful `SIGTERM`/`SIGINT` shutdown, `WORKER_INPROCESS`, and `start_inprocess_worker()`.
+- `src/orchestration/handlers/` — the handler registry and the `maintenance` handler: four retention
+  purges (`jobs` > 30 d, `run_events` for runs finished > 90 d, expired `http_cache`, `metrics`
+  > 14 d) plus a `VACUUM` guarded by a free-page threshold. **`ai_cache` is never purged** — it is
+  the cost saving, and a test asserts it.
+- `src/obs/events.py` — `emit_event()`, writing one `run_events` row in the caller's transaction and
+  logging the same fact.
+- `src/db/repositories/runs.py` — `RunRepository` and `JobRepository`, including the single
+  `GROUP BY` that P3's progress endpoint is built on.
+- `python main.py worker` — the standalone foreground worker.
+- A socket-blocking autouse fixture in `tests/conftest.py`: the offline guarantee is now
+  machine-enforced rather than a convention. Loopback stays open.
+- 119 tests, including a 1,000-job / 4-thread claim race, a duration-parameterised concurrency soak
+  (`SOAK_SECONDS=600` runs the real 10 minutes) and a 10 MB log capture grepped for credentials.
+
+### Changed — P2
+
+- `src/obs/logging.py` now formats with **`python-json-logger`** rather than a hand-rolled
+  `json.dumps` formatter, and gains a `ContextFilter` + `log_context()` so every record carries
+  `run_id`/`job_id`/`project_id` — including records from third-party libraries. Both formatters now
+  redact the **rendered traceback**: a credential in an exception message previously reached the log,
+  because a traceback does not exist until a formatter renders it, so the filter had nothing to
+  redact.
+- `migrations/env.py` — `fileConfig(..., disable_existing_loggers=False)`. Migrations run in-process
+  on every start, and `fileConfig`'s default had been silently disabling **every** application logger
+  from the first line of the application onward.
+- `config.yaml` — `logging.file` and `worker.poll_interval_seconds`.
+
+### Dependencies
+
+- `python-json-logger>=3.1` — the one dependency P2 adds, named by
+  [ARCHITECTURE_FREEZE §5](docs/ARCHITECTURE_FREEZE.md). The floor is 3.1 rather than the 2.0 doc 33
+  proposed: the 2.x import path emits a `DeprecationWarning` from 3.0, and its replacement does not
+  exist before 3.1.
 
 ### Added
 - `docs/EXECUTION_MODE_LOCK.md` — the binding process: the 16-step session workflow, phase

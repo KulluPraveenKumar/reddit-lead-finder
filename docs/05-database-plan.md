@@ -1321,6 +1321,11 @@ unchanged answer; expiring it would only cost money. Its growth is bounded by di
 A `maintenance` job type runs these purges nightly. Without it, `http_cache` alone would grow
 without bound and eventually dominate the database file.
 
+> ✅ **Shipped in P2** — `src/orchestration/handlers/maintenance.py`. All four purges plus a
+> `VACUUM` guarded by a free-page threshold; `ai_cache` is deliberately untouched, and a test asserts
+> that. **Nothing schedules it yet:** scheduling arrives with `hermes cron` in P24, so until then the
+> job is enqueued by hand.
+
 ---
 
 ## 11. Backward-compatibility verification

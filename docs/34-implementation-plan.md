@@ -153,6 +153,15 @@ predecessor has not been approved. The `.claude/skills/phase-manager` skill enfo
 | **Config** | `WORKER_INPROCESS=true`; `logging.format: json`, `logging.file`, `logging.level` |
 | **Depends on** | P1 |
 | **Tasks** | 1. `claim()` with `BEGIN IMMEDIATE` + `AND state='queued'` guard<br>2. Per-type `MAX_ATTEMPTS`; jittered exponential backoff capped at 600 s<br>3. `reclaim_expired()` each tick; heartbeat thread at `lease/3`<br>4. `Worker.run_forever` + SIGTERM/SIGINT graceful stop<br>5. **stdlib `logging` + `python-json-logger`** ([33 §3.2](33-final-review.md)); `RedactingFilter`; every record carries `run_id`/`job_id`/`project_id` when in scope<br>6. `emit_event()` → `run_events`<br>7. `maintenance` handler: four purges |
+
+> ✅ **DELIVERED 2026-08-06.** Report: [PHASE-02-COMPLETION-REPORT.md](PHASE-02-COMPLETION-REPORT.md) ·
+> Handover: [PHASE-02-HANDOVER.md](PHASE-02-HANDOVER.md).
+> **Measured during implementation:** the 10-minute soak recorded *27,931 claims, 27,931 events,
+> 62,168 reads, 0 errors*, and mutation testing showed that the `AND state='queued'` guard is **not**
+> independently observable while `BEGIN IMMEDIATE` holds the write lock — task 1's two halves are
+> lock + backstop, not two independent halves of one lock (completion report §7 F1).
+> The `python-json-logger` floor is **`>=3.1`**, not the `>=2.0` [33 §3.2](33-final-review.md)
+> proposed; the reason is in the completion report §3.3.
 | **Acceptance** | Two workers racing claim the same job **once** · a retryable failure retries with growing backoff to `max_attempts` · lease expiry re-runs without duplicate rows · SIGTERM finishes the in-flight job and exits < 30 s · **10-minute concurrent read/write soak with zero `database is locked`** · a full log capture contains **no credential** · `main.py worker` runs standalone |
 | **Metrics** | Claim contention 0 lost updates over 1,000 attempts · soak: 0 lock errors · redaction: 0 secret tokens in 10 MB of captured log |
 | **Time / Risk** | **3 days · High** — SQLite writer contention is K13 |
