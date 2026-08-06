@@ -67,14 +67,15 @@ Throughout, `>` marks a command to run and `→` marks what you should see.
 
 > .\.venv\Scripts\python.exe -m pytest
 
-→ **Expected:** `427 passed, 2 skipped, 11 warnings`
+→ **Expected:** `428 passed, 2 skipped, 11 warnings` (in roughly 2–3 minutes — the claim race and
+the soak are wall-clock bound)
 
 **Possible failure**
 
 | You see | Meaning | Troubleshooting |
 |---|---|---|
-| `424 passed, 5 skipped` | You are on a checkout with no `data\leads.db` | Correct for a fresh clone — the three live-database tests skip. Not a failure |
-| `429 passed, 0 skipped` | You have `PROXY_FILE` set | Also correct — the two proxy tests can run |
+| `425 passed, 5 skipped` | You are on a checkout with no `data\leads.db` | Correct for a fresh clone — the three live-database tests skip. Not a failure |
+| `430 passed, 0 skipped` | You have `PROXY_FILE` set | Also correct — the two proxy tests can run |
 | Any number **failed** | A real failure | Read the first failure only; the rest are usually consequences |
 | `NetworkCallBlocked` | A test tried to reach the internet | **This is the guard working.** Report it — no test may make a network call |
 
@@ -113,7 +114,7 @@ AI provider     ...
 followed by one log line naming this worker:
 
 ```
-23:42:13 INFO  src.orchestration.worker: worker started  [provider=<your-machine>-<pid>-<id>]
+23:42:13 INFO  src.orchestration.worker: worker started  [worker_id=<your-machine>-<pid>-<id>]
 ```
 
 Then it sits there quietly. **Silence is correct** — nothing enqueues work until P3, so the worker
@@ -137,9 +138,17 @@ Press **Ctrl+C**.
 Worker stopped.
 ```
 
-It must not need a second Ctrl+C, and it must not print a `KeyboardInterrupt` traceback.
+It must not need a second Ctrl+C.
 
-**Acceptance:** ✅ The worker starts, stays quiet, and stops on the first Ctrl+C.
+**Possible failure**
+
+| You see | Meaning | Troubleshooting |
+|---|---|---|
+| A `KeyboardInterrupt` traceback | You pressed Ctrl+C during the first second or two, **before** the signal handler was installed | Not a defect. Start it again and wait for the banner before stopping it |
+| It needs a second Ctrl+C | Graceful shutdown is broken | Report it; a deployment would need `kill -9`, which loses the job in flight |
+| Nothing happens for 30+ seconds | The worker is stuck inside a job | There are no jobs to be stuck in at P2 — report it |
+
+**Acceptance:** ✅ The worker starts, stays quiet, and stops on the first Ctrl+C after the banner.
 
 ---
 
@@ -367,9 +376,11 @@ key [REDACTED] via http://user1234:[REDACTED]@198.51.100.7:8080
 
 ### Step 1
 
-> .\.venv\Scripts\python.exe -m pytest tests/test_obs.py -v -k "context or json_output"
+> .\.venv\Scripts\python.exe -m pytest tests/test_obs.py -v -k "context or json_output or separate_keys"
 
-→ **Expected:** `7 passed`, including `test_third_party_loggers_inherit_the_context`.
+→ **Expected:** `8 passed`, including `test_third_party_loggers_inherit_the_context` — the one that
+proves a library like `urllib3`, which knows nothing about this project, still gets its log lines
+tagged with the run they belong to.
 
 ### Step 2 — Read a real JSON line
 
@@ -530,7 +541,7 @@ Every acceptance criterion in [34 §P2](../34-implementation-plan.md), and where
 
 | Check | Pass |
 |---|---|
-| T1 — lint, format and 427 tests pass, 0 failed | ☐ |
+| T1 — lint, format and 428 tests pass, 0 failed | ☐ |
 | T2 — `main.py worker` starts and stops on one Ctrl+C | ☐ |
 | T3 — two workers claim one job exactly once; 1,000 attempts, 0 lost | ☐ |
 | T4 — backoff grows, is capped, and stops at `max_attempts` | ☐ |

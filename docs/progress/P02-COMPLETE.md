@@ -45,9 +45,9 @@ worker runs it, heartbeats it, and stops gracefully.
 | `migrations/env.py` | modified — **one line**; a blocking earlier-phase defect (report §6) |
 | `tests/conftest.py` | modified — socket-blocking fixture |
 
-**Tests:** `test_job_queue.py` (29) · `test_worker.py` (22) · `test_obs.py` (35) ·
+**Tests:** `test_job_queue.py` (29) · `test_worker.py` (22) · `test_obs.py` (36) ·
 `test_maintenance.py` (13) · `test_repositories_runs.py` (13) · `test_worker_cli.py` (4) ·
-`test_concurrency_soak.py` (3) = **119**.
+`test_concurrency_soak.py` (3) = **120**.
 
 ### Database changes
 
@@ -65,7 +65,7 @@ One new dependency: **`python-json-logger>=3.1`**, named by the freeze. No amend
 
 | Gate | Result |
 |---|---|
-| Full suite | ✅ **427 passed, 2 skipped**, 11 warnings, 95 s |
+| Full suite | ✅ **428 passed, 2 skipped**, 11 warnings, 95–170 s |
 | `ruff check .` | ✅ All checks passed! |
 | `ruff format --check .` | ✅ 80 files already formatted |
 | Coverage, `src/orchestration/` | ✅ **97%** (target ≥80%) |
@@ -77,7 +77,7 @@ One new dependency: **`python-json-logger>=3.1`**, named by the freeze. No amend
 | **10-minute soak** | ✅ `27931 claims, 27931 events, 62168 reads, 0 errors` |
 | 10 MB log secret grep | ✅ 0 credentials |
 | 1,000-attempt claim race, 4 threads | ✅ 0 lost updates |
-| Clean-environment CI simulation | ✅ **427 passed, 2 skipped** |
+| Clean-environment CI simulation | ✅ **428 passed, 2 skipped** |
 | Mutation testing | ✅ **10 mutations, 10 detected** |
 | `mypy` | ⚠️ not runnable — not installed (**O2**) |
 

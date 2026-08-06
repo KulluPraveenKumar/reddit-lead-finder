@@ -39,8 +39,14 @@ def test_main_dispatches_worker_to_cmd_worker(monkeypatch):
     assert len(called) == 1
 
 
-def test_cmd_worker_runs_a_queued_job_then_stops(engine, monkeypatch):
-    """The full path: CLI → run_standalone → Worker → handler → done."""
+def test_cmd_worker_runs_a_queued_job_then_stops(engine, monkeypatch, capsys):
+    """The full path: CLI → run_standalone → Worker → handler → done.
+
+    Asserts the two lines the manual guide tells a tester to look for. A guide
+    that quotes output nobody has ever captured is how a healthy repository gets
+    recorded as a failure — the exact defect
+    ``docs/FINAL_PRE_P2_REVIEW.md`` §7.1 found in the P00 and P01 guides.
+    """
     queue = JobQueue(engine=engine)
     job = queue.enqueue("maintenance", payload={"vacuum": False})
     started = threading.Event()
@@ -61,6 +67,10 @@ def test_cmd_worker_runs_a_queued_job_then_stops(engine, monkeypatch):
 
     assert started.is_set()
     assert queue.get(job.id).state == "done"
+
+    printed = capsys.readouterr().out
+    assert "Worker started" in printed
+    assert "Worker stopped." in printed
 
 
 def test_run_standalone_installs_signal_handlers_and_exits_on_stop(engine, monkeypatch):

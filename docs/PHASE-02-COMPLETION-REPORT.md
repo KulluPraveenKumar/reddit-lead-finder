@@ -77,7 +77,7 @@ with one exception justified in §6.
 | `tests/conftest.py` | modified — socket-blocking fixture |
 
 **Test files (new):** `test_job_queue.py`, `test_worker.py`, `test_worker_cli.py`, `test_obs.py`,
-`test_maintenance.py`, `test_concurrency_soak.py`, `test_repositories_runs.py` — **119 tests**.
+`test_maintenance.py`, `test_concurrency_soak.py`, `test_repositories_runs.py` — **120 tests**.
 
 ### 3.1 Database changes
 
@@ -140,8 +140,8 @@ Every criterion from [34 §P2](34-implementation-plan.md), with the evidence.
 |---|---|
 | `ruff check .` | ✅ All checks passed! |
 | `ruff format --check .` | ✅ 80 files already formatted |
-| Full suite | ✅ **427 passed, 2 skipped**, 11 warnings, 95 s |
-| New P2 tests | ✅ **119 passed** |
+| Full suite | ✅ **428 passed, 2 skipped**, 11 warnings. Wall clock **95–170 s** across runs — the spread is real and is P2's own doing: the 1,000-job claim race and the 20-second default soak are wall-clock bound, not CPU bound, so they move with disk contention |
+| New P2 tests | ✅ **120 passed** |
 | Boundaries / migrations / navigation / orchestration | ✅ 102 passed |
 | Fence 2 (`src.ai` imports) | ✅ 0 matches |
 | Fence 3 (`hermes` imports) | ✅ 0 matches |
@@ -149,7 +149,7 @@ Every criterion from [34 §P2](34-implementation-plan.md), with the evidence.
 | Schema verification | ✅ **OK — all 25 checks passed** |
 | Migration round-trip on a **copy** | ✅ `0004 → 0003 → 0004`; 459 leads at every stage; one head |
 | Live database | ✅ 459 leads · 164.28 / 42.29 · untouched |
-| Clean-environment CI simulation | ✅ fresh venv from `requirements.txt`: install, lint, format, **427 passed, 2 skipped** |
+| Clean-environment CI simulation | ✅ fresh venv from `requirements.txt`: install, lint, format, **428 passed, 2 skipped** |
 | Offline guarantee | ✅ verified by probe — internet blocked, loopback allowed |
 | `mypy` | ⚠️ **not run** — still not installed (**O2**, operator's decision) |
 
@@ -158,8 +158,8 @@ Every criterion from [34 §P2](34-implementation-plan.md), with the evidence.
 | Environment | Expected |
 |---|---|
 | Developer machine | `427 passed, 2 skipped` — **measured** |
-| Developer machine with `PROXY_FILE` | `429 passed, 0 skipped` — derived: the 2 skips are the proxy-file tests |
-| CI (tracked files only, no `data/`) | `424 passed, 5 skipped` — **derived, not measured**: 429 collected, minus the 3 live-database guards that skip when `data/` is absent. P1 measured the same 3-test difference (308/2 → 305/5) |
+| Developer machine with `PROXY_FILE` | `430 passed, 0 skipped` — derived: the 2 skips are the proxy-file tests |
+| CI (tracked files only, no `data/`) | `425 passed, 5 skipped` — **derived, not measured**: 430 collected, minus the 3 live-database guards that skip when `data/` is absent. P1 measured the same 3-test difference (308/2 → 305/5) |
 
 The 11 warnings are the 9 pre-existing SQLAlchemy `utcnow()` deprecations plus 2 more of the **same**
 warning, newly reached because P2's tests touch `ScrapeRun`. No new warning class was introduced.

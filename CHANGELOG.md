@@ -38,7 +38,7 @@ plus the process and hygiene work completed after `v0.1.0-p1`.
 - `python main.py worker` — the standalone foreground worker.
 - A socket-blocking autouse fixture in `tests/conftest.py`: the offline guarantee is now
   machine-enforced rather than a convention. Loopback stays open.
-- 119 tests, including a 1,000-job / 4-thread claim race, a duration-parameterised concurrency soak
+- 120 tests, including a 1,000-job / 4-thread claim race, a duration-parameterised concurrency soak
   (`SOAK_SECONDS=600` runs the real 10 minutes) and a 10 MB log capture grepped for credentials.
 
 ### Changed — P2

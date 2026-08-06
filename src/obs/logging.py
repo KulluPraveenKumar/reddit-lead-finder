@@ -115,7 +115,11 @@ _RESERVED = {
 }
 
 # Context keys carried on every line when in scope.
-_CONTEXT_KEYS = ("run_id", "job_id", "project_id", "stage", "provider", "lead_id")
+#
+# `worker_id` and `provider` are separate keys on purpose: the worker's identity
+# and the AI provider's name are different questions, and one key answering both
+# makes "which provider was slow?" unanswerable by grep the moment P20 lands.
+_CONTEXT_KEYS = ("run_id", "job_id", "project_id", "stage", "worker_id", "provider", "lead_id")
 
 #: The ambient correlation context. A ``ContextVar`` rather than a thread-local
 #: because the worker's heartbeat thread and any future executor inherit a

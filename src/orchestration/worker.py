@@ -95,7 +95,7 @@ class Worker:
 
     def run_forever(self) -> None:
         """Claim and execute until :meth:`stop` is called."""
-        log.info("worker started", extra={"provider": self.worker_id})
+        log.info("worker started", extra={"worker_id": self.worker_id})
         while not self._stop.is_set():
             try:
                 self.tick()
@@ -105,7 +105,7 @@ class Worker:
                 # retry stops it becoming a hot loop against the database.
                 log.exception("worker tick failed")
                 self._stop.wait(self.poll_interval)
-        log.info("worker stopped", extra={"provider": self.worker_id})
+        log.info("worker stopped", extra={"worker_id": self.worker_id})
 
     def tick(self) -> bool:
         """One iteration. Returns whether a job was executed.

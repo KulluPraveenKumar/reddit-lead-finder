@@ -154,8 +154,8 @@ F1, F3 and F4 were found only by mutation testing.
 
 | | |
 |---|---|
-| Full suite | **427 passed, 2 skipped**, 11 warnings, 95 s |
-| New P2 tests | **119 passed** |
+| Full suite | **428 passed, 2 skipped**, 11 warnings, **95–170 s** (wall-clock bound: the claim race and the soak dominate) |
+| New P2 tests | **120 passed** |
 | `ruff check` / `ruff format --check` | All checks passed! / 80 files already formatted |
 | Coverage, `src/orchestration/` | **97%** |
 | `alembic heads` | `0004_orchestration (head)` — one head |
@@ -164,7 +164,7 @@ F1, F3 and F4 were found only by mutation testing.
 | Live DB | 459 leads · `intent_score` max 164.28 / avg 42.29 |
 | 10-minute soak | `27931 claims, 27931 events, 62168 reads, **0 errors**` |
 | Mutation testing | 10 mutations, 10 detected |
-| Clean-environment CI simulation | install · lint · format · **427 passed, 2 skipped** |
+| Clean-environment CI simulation | install · lint · format · **428 passed, 2 skipped** |
 
 ---
 

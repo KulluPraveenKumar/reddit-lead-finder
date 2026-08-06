@@ -188,6 +188,20 @@ def test_an_explicit_extra_beats_the_ambient_context(logs):
     assert json.loads(logs[-1])["run_id"] == 99
 
 
+def test_worker_id_and_provider_are_separate_keys(logs):
+    """One key answering two questions makes both unanswerable by grep.
+
+    ``worker_id`` is the worker's identity; ``provider`` is the AI provider P20
+    will name. They must not share a slot.
+    """
+    with log_context(worker_id="host-123-abc", provider="deepseek"):
+        logging.getLogger("t").info("claimed")
+
+    payload = json.loads(logs[-1])
+    assert payload["worker_id"] == "host-123-abc"
+    assert payload["provider"] == "deepseek"
+
+
 def test_none_values_are_not_logged_as_null(logs):
     with log_context(run_id=5, project_id=None):
         logging.getLogger("t").info("no project yet")
