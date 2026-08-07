@@ -26,9 +26,10 @@ gave it a runtime, and **nothing had ever put work in the queue** until now.
 
 | Check | Result |
 |---|---|
-| Full suite | **579 passed, 2 skipped** · 180 s |
-| Suite under `-W error::DeprecationWarning` | **579 passed, 2 skipped** — no deprecation warnings |
-| New P3 tests | **151** across six files |
+| Full suite | **581 passed, 2 skipped** · 180 s |
+| Suite under `-W error::DeprecationWarning` | **581 passed, 2 skipped** — no deprecation warnings |
+| New P3 tests | **153** — P2 handed over 428; **148** are in the six new files, the rest added to existing ones |
+| The two skips | `tests/test_net.py` — `PROXY_FILE is not set` and `no proxy pool configured on this machine`. **Neither is a contract or boundary test**; both are environment-gated and pre-date P3 |
 | `ruff check` / `ruff format --check` | All checks passed! / 90 files already formatted |
 | Coverage, `src/orchestration/` | **97 %** (680 statements, 19 uncovered) — budget is ≥ 80 % |
 | — `run_service.py` | 98 % |
@@ -188,6 +189,24 @@ for one page, growing with the history. Replaced with a single grouped query
 (`counts_by_state_for_runs`), pinned by a test that counts statements — invisible at ten runs and
 obvious at a thousand, so a timing test on a small fixture would never have caught it.
 
+### 5.5 Eleven of the 17 legacy endpoints were guarded by nothing — pre-existing
+
+R20 names **17 legacy endpoints**. `test_legacy_api_contract_is_frozen` replays
+`tests/baseline/api_contract.json`, which holds **seven GET paths** — the only ones whose response
+shape could be recorded. Every other route, and every non-GET method, had no guard at all: a phase
+could have deleted `DELETE /api/leads/<id>` or changed `PUT /api/settings` and the suite would have
+stayed green while the report claimed AC14 passed.
+
+Found by asking what "all 17 endpoints" was actually verified by, rather than trusting that a green
+suite meant it had been. P3 pins the whole route table as a literal — 18 rules, being `GET /` plus
+the 17 API endpoints, four of which carry two methods — and asserts each read path still answers.
+Written as a literal rather than derived from the app, because deriving it would assert only that
+the app equals itself.
+
+Because new surfaces go in new blueprints, that set must not **grow** either: an addition means
+someone edited `routes.py`, which is the file the whole compatibility guarantee rests on nobody
+editing.
+
 ---
 
 ## 6. Mutation testing
@@ -214,7 +233,7 @@ timing would not.
 | AC1 | `POST /api/scrape` creates a run and completes it; original keys present | ✅ `test_scrape_completes_the_run`, contract tests |
 | AC2 | Progress reflects real job counts, responds < 50 ms | ✅ measured at 5,000 jobs; mutation-verified |
 | AC3 | Kill mid-run, restart, remaining jobs resume | ✅ 10/10 parameterised iterations |
-| AC4 | Retryable error retried with growing backoff to `max_attempts` | ✅ at queue level (P2). **Not reachable from `scrape_subreddit`** — see §8 |
+| AC4 | Retryable error retried with growing backoff to `max_attempts` | ⚠️ **Met at the queue only.** No P3 handler can raise a retryable error, because the transport swallows its failures — so the criterion as written is **not** demonstrated end to end. Fully tested at the queue level by P2. See §8 |
 | AC5 | Lease expiry re-runs without duplicating leads | ✅ real expiry, real reclaim, real second execution |
 | AC6 | Cancel stops the run; queued jobs become `cancelled` | ✅ incl. the job in flight stopping at its checkpoint |
 | AC7 | Second run for the same project → 409 with the existing id | ✅ mutation-verified |
@@ -224,7 +243,7 @@ timing would not.
 | AC11 | Maintenance purges jobs, events, cache rows, metrics | ✅ unchanged from P2 |
 | AC12 | Illegal transition → 409 naming both states | ✅ caught by name, never as `ValueError` |
 | AC13 | No `database is locked` in a 10-minute soak | ✅ see §2 |
-| AC14 | 459 leads intact; legacy endpoints unchanged | ✅ |
+| AC14 | 459 leads intact; all 17 legacy endpoints unchanged | ✅ — and **strengthened**: the recorded replay only covers seven GET paths, so P3 pins the whole route table. See §5.5 |
 | AC15 | `ruff` clean, `pytest` passes, coverage ≥ 80% on `src/orchestration/` | ✅ see §2 |
 
 ---

@@ -230,7 +230,14 @@ def test_config_is_read_as_utf8_regardless_of_locale(tmp_path):
 
 
 def test_the_shipped_config_has_the_switch_on():
-    """The rollback is off by default; shipping it on would ship the rollback."""
+    """The rollback is off by default; shipping it on would ship the rollback.
+
+    This reads the **committed** `config.yaml`, deliberately. Rolling back is
+    something an operator does to a running installation, not something that gets
+    committed -- so a repository whose config says `false` is a repository that
+    ships P3 disabled. Flipping the switch locally therefore turns this red on
+    purpose, and `docs/testing/P03-testing.md` T9 warns the tester about it.
+    """
     from src.config import load_config
 
     assert load_config().get("orchestration", {}).get("enabled") is True

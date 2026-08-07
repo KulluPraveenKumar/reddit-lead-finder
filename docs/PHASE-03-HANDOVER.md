@@ -161,9 +161,10 @@ under more than one worker.
 
 | | |
 |---|---|
-| Full suite | **579 passed, 2 skipped** · 180 s |
-| Under `-W error::DeprecationWarning` | **579 passed, 2 skipped** |
-| New P3 tests | **151** |
+| Full suite | **581 passed, 2 skipped** · 180 s |
+| Under `-W error::DeprecationWarning` | **581 passed, 2 skipped** |
+| New P3 tests | **153** (148 in six new files) |
+| The two skips | Both in `tests/test_net.py`, environment-gated on `PROXY_FILE`. Neither is a contract or boundary test |
 | `ruff check` / `ruff format --check` | All checks passed! / 90 files already formatted |
 | Coverage, `src/orchestration/` | **97 %** |
 | `alembic heads` | `0004_orchestration (head)` — one head, no migration added |

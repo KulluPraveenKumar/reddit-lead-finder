@@ -55,8 +55,14 @@ code*, which looks exactly like a broken change:
 
 > .\.venv\Scripts\python.exe -m pytest
 
-→ **Expected:** `579 passed, 2 skipped` in roughly 3 minutes. The two skips are tests that need a
-live API key and a live database copy; they are skipped by design, not broken.
+→ **Expected:** `581 passed, 2 skipped` in roughly 3 minutes.
+
+The two skips are both in `tests/test_net.py` and need a proxy list this machine does not have
+(`PROXY_FILE is not set`). They are skipped by design, not broken. To see for yourself which two:
+
+> .\.venv\Scripts\python.exe -m pytest -q -rs
+
+→ Two `SKIPPED` lines, both mentioning proxies.
 
 ### Step 4 — No deprecation warnings
 
@@ -375,6 +381,12 @@ With it **on**, it collects **subreddit** leads only.
 ### Step 4 — Turn it back on
 
 Set `enabled: true` again and restart the dashboard. Confirm the button takes you to a run page.
+
+> ⚠️ **Do not leave it set to `false` and then re-run T1.** One test asserts that the *shipped*
+> configuration has the switch on, so the suite reports one failure for as long as the file says
+> `false`. That is the test doing its job — rolling back is something you do to a running
+> installation, not something you commit — but it looks like a broken build if you are not expecting
+> it. Set it back to `true` before re-running the suite.
 
 ---
 

@@ -275,6 +275,89 @@ def test_ruff_is_clean():
     assert result.returncode == 0, result.stdout + result.stderr
 
 
+#: Every route the legacy blueprint has ever exposed: ``GET /`` plus the
+#: **17 API endpoints** R20 names. Transcribed from the running app at P3 and
+#: frozen here as a literal, because the guarantee is about this exact set —
+#: deriving it from the app at test time would assert only that the app equals
+#: itself.
+LEGACY_ROUTES: frozenset[tuple[str, str]] = frozenset(
+    {
+        ("/", "GET"),
+        ("/api/keywords", "GET"),
+        ("/api/keywords", "POST"),
+        ("/api/keywords/<int:kw_id>", "DELETE"),
+        ("/api/leads", "GET"),
+        ("/api/leads/<int:lead_id>", "DELETE"),
+        ("/api/leads/<int:lead_id>/status", "PUT"),
+        ("/api/leads/export", "GET"),
+        ("/api/queries", "GET"),
+        ("/api/queries", "POST"),
+        ("/api/queries/<int:q_id>", "DELETE"),
+        ("/api/scrape", "POST"),
+        ("/api/settings", "GET"),
+        ("/api/settings", "PUT"),
+        ("/api/stats", "GET"),
+        ("/api/subreddits", "GET"),
+        ("/api/subreddits", "POST"),
+        ("/api/subreddits/<int:sub_id>", "DELETE"),
+    }
+)
+
+
+def test_the_seventeen_legacy_endpoints_are_all_still_there(client):
+    """R20's endpoint half, which the recorded replay does not cover.
+
+    ``test_legacy_api_contract_is_frozen`` replays seven **GET** paths — the ones
+    whose response shape could be recorded. That leaves the other eleven, and
+    every non-GET route, guarded by nothing: a phase could delete
+    ``DELETE /api/leads/<id>`` and the suite would stay green.
+
+    This asserts the route table itself. New surfaces go in new blueprints
+    (``routes_runs``, ``routes_health``, ``routes_pages``), so this set must not
+    grow either — an addition here means someone edited ``routes.py``, which is
+    the file the compatibility guarantee is built on not being edited.
+    """
+    from src.dashboard.app import create_app
+
+    app = create_app(run_migrations=False)
+    actual = {
+        (rule.rule, method)
+        for rule in app.url_map.iter_rules()
+        if rule.endpoint.startswith("main.")
+        for method in rule.methods
+        if method in {"GET", "POST", "PUT", "DELETE"}
+    }
+
+    assert actual == LEGACY_ROUTES, (
+        f"legacy route table changed:\n"
+        f"  removed: {sorted(LEGACY_ROUTES - actual)}\n"
+        f"  added:   {sorted(actual - LEGACY_ROUTES)}"
+    )
+    assert len({rule for rule, _ in LEGACY_ROUTES if rule != "/"}) + 4 == 17, (
+        "the count R20 states is 17 API endpoints; four paths carry two methods"
+    )
+
+
+def test_every_legacy_endpoint_still_answers(client):
+    """Present in the route table is not the same as working.
+
+    Only the read paths are exercised — a POST or DELETE here would mutate. That
+    is the honest limit of this test, and the write paths' shapes are covered by
+    their own tests elsewhere.
+    """
+    for path in (
+        "/",
+        "/api/leads",
+        "/api/leads/export",
+        "/api/keywords",
+        "/api/queries",
+        "/api/settings",
+        "/api/stats",
+        "/api/subreddits",
+    ):
+        assert client.get(path).status_code == 200, f"{path} no longer answers"
+
+
 def test_legacy_api_contract_is_frozen(client):
     """AC18, restated at the level that matters.
 

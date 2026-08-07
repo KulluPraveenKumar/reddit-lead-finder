@@ -25,7 +25,10 @@ this phase, nothing put work in the queue at all.
 
 ## Files changed
 
-**Twenty-one files: eight new, thirteen modified; plus five new test files.**
+**Thirty-five files outside `docs/`: fourteen new, twenty-one modified** — seven new source and
+template files, six new test files, and one recorded baseline. Verified with
+`git diff --name-status 8c12367..HEAD`. Source and configuration below; test files in the next
+section.
 
 | File | Change |
 |---|---|
@@ -69,9 +72,20 @@ this phase, nothing put work in the queue at all.
 | `tests/test_run_pages.py` | Both pages, the nav, the poll disciplines, template redaction |
 | `tests/test_schedule_and_health.py` | The scheduler's skip-and-continue, and queue health |
 
-Modified: `tests/test_concurrency_soak.py` (a reader on the real `RunService.progress` path),
-`tests/test_maintenance.py` and `tests/test_navigation_and_pages.py` (phase-boundary guards that had
-to move forward one phase).
+**148 tests across those six files.**
+
+Modified: `tests/test_boundaries.py` (**the 17 legacy endpoints are now pinned as a route table** —
+see below), `tests/test_concurrency_soak.py` (a reader on the real `RunService.progress` path),
+`tests/conftest.py` (the `app` fixture disables the in-process worker), `tests/test_maintenance.py`
+and `tests/test_navigation_and_pages.py` (phase-boundary guards that had to move forward one phase).
+
+### The gap that closing found
+
+R20 names **17 legacy endpoints**, and the recorded replay in `api_contract.json` covers **seven GET
+paths** — the only ones whose response shape could be recorded. The other eleven, and every non-GET
+route, were guarded by nothing: a phase could have deleted `DELETE /api/leads/<id>` and the suite
+would have stayed green. P3 pins the whole route table (18 rules: `GET /` plus the 17 API
+endpoints, four of which carry two methods) and asserts each read path still answers.
 
 ---
 
@@ -105,7 +119,8 @@ job-type list has no keyword or user type; those stages arrive in P5/P17.
 
 ## Verification
 
-**579 passed, 2 skipped** (and again under `-W error::DeprecationWarning`) · **151 new tests** ·
+**581 passed, 2 skipped** (and again under `-W error::DeprecationWarning`) · **153 new tests** since
+P2's 428 — 148 in the six new files, the rest added to existing ones ·
 `ruff` clean · **97 %** coverage on `src/orchestration/` · one alembic head, round-trip on a live-DB
 copy with 459 leads intact · `check_schema.py` **25/25** · **10-minute soak: 64,950 claims, 133,653
 reads, 68,248 progress polls, 0 errors** · progress **p95 < 50 ms at 5,000 jobs** · 3 mutations, 3
