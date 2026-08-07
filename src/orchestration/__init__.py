@@ -22,6 +22,16 @@ from src.orchestration.job_queue import (
     payload_of,
     utcnow,
 )
+from src.orchestration.run_service import (
+    FINALIZE_JOB,
+    SCRAPE_JOB,
+    SCRAPE_WALK,
+    RunAlreadyActive,
+    RunNotFound,
+    RunOptions,
+    RunProgress,
+    RunService,
+)
 from src.orchestration.states import (
     GATE_STATES,
     JOB_TRANSITIONS,
@@ -46,10 +56,13 @@ from src.orchestration.worker import (
 __all__ = [
     "BACKOFF_CAP_SECONDS",
     "DEFAULT_MAX_ATTEMPTS",
+    "FINALIZE_JOB",
     "GATE_STATES",
     "JOB_TRANSITIONS",
     "MAX_ATTEMPTS",
     "REGISTRY",
+    "SCRAPE_JOB",
+    "SCRAPE_WALK",
     "TERMINAL_STATES",
     "TRANSITIONS",
     "Handler",
@@ -57,6 +70,11 @@ __all__ = [
     "JobQueue",
     "JobState",
     "RetryableError",
+    "RunAlreadyActive",
+    "RunNotFound",
+    "RunOptions",
+    "RunProgress",
+    "RunService",
     "RunState",
     "Worker",
     "assert_job_transition",
