@@ -5,10 +5,10 @@ seven job types and the freeze closes that list, so the registry is a lookup
 table whose contents can be read in one screen — and an unregistered type fails
 loudly in the worker rather than being silently skipped.
 
-**P2 registers exactly one handler.** ``maintenance`` is the only job type whose
-work exists yet: ``scrape_subreddit`` and ``finalize_run`` are P3's, and every AI
-type belongs to a later stage. A registry with one entry is the phase behaving,
-not the phase unfinished.
+**P3 registers three.** ``maintenance`` arrived with P2; ``scrape_subreddit`` and
+``finalize_run`` are the pair that carries a run from start to finish. Every AI,
+discovery and comment type belongs to a later stage, and their absence is the
+phase behaving rather than the phase unfinished.
 
 A handler's contract:
 
@@ -28,12 +28,22 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from src.db.models import Job
+from src.orchestration.handlers.finalize import handle_finalize_run
 from src.orchestration.handlers.maintenance import handle_maintenance
+from src.orchestration.handlers.scrape import handle_scrape_subreddit
 
 Handler = Callable[[Session, Job], dict[str, Any] | None]
 
 REGISTRY: dict[str, Handler] = {
     "maintenance": handle_maintenance,
+    "scrape_subreddit": handle_scrape_subreddit,
+    "finalize_run": handle_finalize_run,
 }
 
-__all__ = ["REGISTRY", "Handler", "handle_maintenance"]
+__all__ = [
+    "REGISTRY",
+    "Handler",
+    "handle_finalize_run",
+    "handle_maintenance",
+    "handle_scrape_subreddit",
+]

@@ -157,13 +157,28 @@ def enrichment_payload():
 
 
 @pytest.fixture
-def app(temp_db):
-    from src.dashboard.app import create_app, reset_ai_service
+def app(temp_db, monkeypatch):
+    """The dashboard, with **no in-process worker**.
 
+    P3 made ``create_app()`` start a worker thread, which is right for the
+    operator and wrong for a test: a background thread claiming jobs turns every
+    queue assertion into a race with itself, and a test that sometimes finds the
+    job already done is worse than one that never runs it. Tests that need work
+    executed drive ``Worker.tick()`` explicitly, which is deterministic.
+
+    The environment variable is set **before** ``create_app`` runs, because that
+    is when the decision is made and reading it afterwards would be too late.
+    """
+    monkeypatch.setenv("WORKER_INPROCESS", "false")
+
+    from src.dashboard.app import create_app, reset_ai_service, stop_worker
+
+    stop_worker()
     reset_ai_service()
     application = create_app(run_migrations=False)
     application.config["TESTING"] = True
     yield application
+    stop_worker()
     reset_ai_service()
 
 

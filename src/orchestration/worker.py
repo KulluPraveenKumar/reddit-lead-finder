@@ -90,6 +90,12 @@ class Worker:
             worker_id or (f"{platform.node() or 'local'}-{os.getpid()}-{uuid.uuid4().hex[:6]}")[:80]
         )
         self._stop = threading.Event()
+        #: Set by :func:`start_inprocess_worker` when this worker runs on a
+        #: thread it owns, so a caller can wait for it to actually finish rather
+        #: than only ask it to. ``stop()`` sets an event; without a join, the
+        #: caller races the loop's last claim against whatever it does next —
+        #: in a test, disposing the engine the loop is still using.
+        self.thread: threading.Thread | None = None
 
     # -- lifecycle ----------------------------------------------------------
 
@@ -124,6 +130,17 @@ class Worker:
     def stop(self) -> None:
         """Ask the loop to finish the current job and exit."""
         self._stop.set()
+
+    def join(self, timeout: float = SHUTDOWN_TIMEOUT_SECONDS) -> bool:
+        """Wait for the loop to actually exit. Returns whether it did.
+
+        Bounded rather than indefinite: a worker that will not stop is a bug to
+        report, not a reason to hang the process that asked it to.
+        """
+        if self.thread is None:
+            return True
+        self.thread.join(timeout=timeout)
+        return not self.thread.is_alive()
 
     @property
     def stopping(self) -> bool:
@@ -223,6 +240,7 @@ def start_inprocess_worker(
 
     worker = Worker(queue, registry)
     thread = threading.Thread(target=worker.run_forever, name="worker", daemon=True)
+    worker.thread = thread
     thread.start()
     return worker
 

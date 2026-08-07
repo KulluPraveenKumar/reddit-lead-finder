@@ -1,12 +1,15 @@
 """Orchestration: the persisted run state machine and durable job queue.
 
 P1 shipped the *vocabulary* — states, transitions, and the three tables that hold
-them. P2 adds the *runtime*: a queue that claims work with a lease, a worker that
-executes it, and a handler registry. The service and API that drive it arrive in
-P3, so nothing here is reachable from a web route yet.
+them. P2 added the *runtime*: a queue that claims work with a lease, a worker
+that executes it, and a handler registry. P3 adds ``RunService``, the thing that
+drives them, and the first two handlers that do real work.
 
-The package still depends on neither ``src.ai`` nor ``src.scrapers``: a queue
-that knew what its jobs did would have to change every time a stage did.
+**The dependency rule, and where it now bends.** The queue, the worker and the
+state machine still know nothing about what a job does — that is what lets a
+stage change without the queue changing. ``handlers/scrape.py`` imports
+``src.scrapers`` because a handler is precisely the adapter between the two, and
+it is the only module here that does. Nothing in this package imports ``src.ai``.
 
 Specification: ``docs/04-system-design.md`` §1-3, ``docs/13-phase-03.md``.
 """

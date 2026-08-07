@@ -14,10 +14,24 @@ class SubredditScraper:
         self.client = reddit_client
         self.config = config
 
-    def run(self, session):
+    def run(self, session, subreddits=None, run_id=None):
+        """Scrape subreddits and record a ScrapeRun row.
+
+        Both parameters are additive and default to the previous behaviour, so
+        every existing caller is unaffected.
+
+        `subreddits` scopes the run to an explicit list. The orchestrated path
+        passes exactly one, because one job per subreddit is what gives the
+        progress bar a unit and cancellation a place to stop. Passing None keeps
+        the union of config and dashboard subreddits the CLI has always used.
+
+        `run_id` links the audit row to the orchestration run that caused it.
+        The column has existed since 0004 and was NULL on every row until now.
+        """
         total_leads = 0
         total_posts = 0
-        subreddits = get_all_subreddits(self.config, session)
+        if subreddits is None:
+            subreddits = get_all_subreddits(self.config, session)
         scorer = LeadScorer(self.config, session)
         repo = LeadRepository(session)
 
@@ -69,6 +83,7 @@ class SubredditScraper:
             scraper_type="subreddit",
             posts_found=total_posts,
             leads_found=total_leads,
+            run_id=run_id,
         )
         session.add(run)
         session.commit()

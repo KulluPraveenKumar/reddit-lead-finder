@@ -200,9 +200,15 @@ def test_vacuum_runs_when_the_payload_asks_and_pages_are_free(session, monkeypat
 # -- registration ----------------------------------------------------------
 
 
-def test_maintenance_is_the_only_handler_p2_registers(engine):
-    """P2 owns one job type. The rest arrive with the stages that need them."""
-    assert set(REGISTRY) == {"maintenance"}
+def test_maintenance_is_still_registered_and_unchanged(engine):
+    """P2's registration survives P3 adding two entries beside it.
+
+    This was ``set(REGISTRY) == {"maintenance"}`` while P2 was the newest phase.
+    P3 registers ``scrape_subreddit`` and ``finalize_run``, and the exact
+    membership is asserted in ``tests/test_handlers_scrape.py`` — the phase that
+    owns those entries. What matters here is that maintenance still points at
+    the function this file tests.
+    """
     assert REGISTRY["maintenance"] is handle_maintenance
 
 

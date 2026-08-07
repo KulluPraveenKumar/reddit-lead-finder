@@ -336,6 +336,46 @@ class JobQueue:
                 )
             return len(expired)
 
+    def requeue(self, job_id: int) -> Job | None:
+        """Force one failed job back into the queue. The operator's override.
+
+        Lives here rather than in the route because nothing outside this class
+        writes a job's state (``PHASE-02-HANDOVER`` G4) — a route setting
+        ``job.state = 'queued'`` would skip ``assert_job_transition`` and could
+        resurrect a job that is currently running.
+
+        ``FAILED -> QUEUED`` is the only legal source, so no state check is
+        needed here: anything else raises and the API answers 409.
+
+        A job that exhausted its attempts is granted exactly one more. An
+        operator pressing retry is information the automatic budget did not have
+        — usually "I fixed the thing that was breaking it" — and requeueing
+        without it would fail the job again on the next claim, which looks like
+        the button not working.
+        """
+        with self._session() as session:
+            job = session.get(Job, job_id)
+            if job is None:
+                return None
+
+            assert_job_transition(job.state, JobState.QUEUED)
+            job.state = JobState.QUEUED.value
+            job.available_at = utcnow()
+            job.worker_id = None
+            job.lease_expires_at = None
+            job.finished_at = None
+            job.error = None
+            if job.attempts >= job.max_attempts:
+                job.max_attempts = job.attempts + 1
+
+            log.info(
+                "job requeued by operator",
+                extra={"run_id": job.run_id, "job_id": job.id, "stage": job.job_type},
+            )
+            session.flush()
+            session.expunge(job)
+            return job
+
     def cancel_queued(self, run_id: int) -> int:
         """Cancel every queued job of a run. Running jobs are left alone."""
         with self._session() as session:

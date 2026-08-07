@@ -38,6 +38,7 @@ from sqlalchemy.orm import Session
 from src.db.models import Run
 from src.db.repositories.runs import JobRepository, RunRepository
 from src.obs.events import emit_event
+from src.obs.logging import redact
 from src.orchestration.job_queue import JobQueue, utcnow
 from src.orchestration.states import (
     TERMINAL_STATES,
@@ -323,10 +324,16 @@ class RunService:
         return run
 
     def fail(self, run_id: int, error: str) -> Run:
-        """Terminate a run as ``FAILED``, recording why on the row itself."""
+        """Terminate a run as ``FAILED``, recording why on the row itself.
+
+        Redacted on the way in, like ``jobs.error`` and every ``run_events``
+        message. This column is rendered into ``/runs/<id>``, and P2's F3 finding
+        was precisely that a credential reaches a sink nobody was watching —
+        there, an exception message; here, a run's error text.
+        """
         run = self._get(run_id)
-        run.error = error[:4000]
-        return self.transition(run_id, RunState.FAILED, reason=error)
+        run.error = redact(error)[:4000]
+        return self.transition(run_id, RunState.FAILED, reason=run.error)
 
     def cancel(self, run_id: int, reason: str = "Cancelled by the operator.") -> Run:
         """Cancel queued work and stop the run.
@@ -432,7 +439,37 @@ class RunService:
             return False
         return bool((_load_json(run.stats_json) or {}).get("cancel_requested"))
 
+    def stats(self, run_id: int) -> dict[str, Any]:
+        """The run's rolling counters."""
+        return _load_json(self._get(run_id).stats_json) or {}
+
+    # -- counters the handlers keep -----------------------------------------
+    #
+    # These live here rather than in the handlers so that the shape of
+    # `stats_json` has one owner. A handler reaching into the column directly
+    # would make "what keys does a run carry?" a question you answer by grepping.
+
+    def note_subreddit_started(self, run_id: int, subreddit: str) -> None:
+        """Record which subreddit is being scraped, for the stage label."""
+        self._merge_stats(self._get(run_id), current_subreddit=subreddit)
+
+    def note_subreddit_finished(self, run_id: int, leads: int) -> dict[str, Any]:
+        """Advance the done count and the running lead total."""
+        run = self._get(run_id)
+        stats = _load_json(run.stats_json) or {}
+        return self._merge_stats(
+            run,
+            subreddits_done=int(stats.get("subreddits_done", 0) or 0) + 1,
+            leads_found=int(stats.get("leads_found", 0) or 0) + int(leads),
+        )
+
     # -- plumbing -----------------------------------------------------------
+
+    def get(self, run_id: int) -> Run:
+        """The run, or :class:`RunNotFound`. Raising beats returning ``None``:
+        every caller here needs the row, and a ``None`` check duplicated at each
+        one is a check that will eventually be forgotten."""
+        return self._get(run_id)
 
     def _get(self, run_id: int) -> Run:
         run = self.runs.get(run_id)
