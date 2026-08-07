@@ -178,26 +178,43 @@ def test_fresh_database_upgrades_to_head(temp_db):
 
 
 def test_live_database_preserved(live_db_copy):
-    """AC1: the live database migrates with every lead and score intact."""
+    """AC1 / R20: the 459 original leads migrate with every score intact.
+
+    **Scoped to the baseline rows, and that is the contract.** R20 protects the
+    leads that existed before the rebuild; it does not freeze the table. The
+    product's entire purpose is to add leads, and every manual test run does —
+    P3's own testing took the live database from 459 rows to 469.
+
+    This asserts the strong half unchanged: every baseline id still present, and
+    the digest over their scores byte-identical. A deleted original drops the
+    count; an altered score changes the digest. What it no longer asserts is that
+    the database never grew, which was never the guarantee and is now provably
+    false in normal operation.
+    """
     from src.db.migrate import MigrationRunner
+
+    if not BASELINE.exists():  # pragma: no cover
+        pytest.skip("no baseline fingerprint recorded")
+    baseline = json.loads(BASELINE.read_text())
+    boundary = baseline["baseline_max_lead_id"]
 
     MigrationRunner(live_db_copy).ensure_current()
 
     conn = sqlite3.connect(live_db_copy)
     try:
-        count = conn.execute("SELECT COUNT(*) FROM leads").fetchone()[0]
-        rows = conn.execute("SELECT id, intent_score FROM leads ORDER BY id").fetchall()
+        total = conn.execute("SELECT COUNT(*) FROM leads").fetchone()[0]
+        rows = conn.execute(
+            "SELECT id, intent_score FROM leads WHERE id <= ? ORDER BY id", (boundary,)
+        ).fetchall()
     finally:
         conn.close()
 
+    assert len(rows) == baseline["lead_count"], (
+        f"{baseline['lead_count'] - len(rows)} of the original leads are missing"
+    )
     digest = hashlib.sha256(json.dumps(rows).encode()).hexdigest()
-
-    if BASELINE.exists():
-        baseline = json.loads(BASELINE.read_text())
-        assert count == baseline["lead_count"]
-        assert digest == baseline["intent_score_sha256"]
-    else:  # pragma: no cover
-        pytest.skip("no baseline fingerprint recorded")
+    assert digest == baseline["intent_score_sha256"], "an original intent_score changed"
+    assert total >= baseline["lead_count"]
 
 
 def test_downgrade_round_trip(temp_db):

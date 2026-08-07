@@ -1,4 +1,5 @@
 {
+  "_comment": "The legacy contract (R20) is that the 459 leads that existed before the rebuild are never lost or altered. It is NOT that the database stays 459 rows: collecting new leads is what the product is for, and every manual test run adds some. So the fingerprint identifies the BASELINE ROWS and pins those. Recorded 2026-08-05; boundary fields added 2026-08-07 when the operator's own P3 manual testing grew the table to 469 and made the old whole-table form fail.",
   "tables": [
     "dashboard_keywords",
     "dashboard_search_queries",
@@ -10,5 +11,12 @@
     "tracked_users"
   ],
   "lead_count": 459,
-  "intent_score_sha256": "52b2ebb2aeaf9165ba462296a56d6a3b196dc7a8ab327971eed1b67ac9017f8a"
+  "baseline_max_lead_id": 459,
+  "intent_score_sha256": "52b2ebb2aeaf9165ba462296a56d6a3b196dc7a8ab327971eed1b67ac9017f8a",
+  "_intent_score_sha256_scope": "sha256 of json.dumps of [(id, intent_score)] for leads with id <= baseline_max_lead_id, ordered by id",
+  "baseline_intent_score_min": 5.0,
+  "baseline_intent_score_max": 164.28,
+  "baseline_intent_score_avg": 42.29,
+  "baseline_scrape_run_count": 10,
+  "_baseline_scrape_run_note": "scrape_runs ids 1-10 predate orchestration and carry run_id IS NULL forever (src/db/models.py). Rows created from P3 onwards do carry a run_id."
 }

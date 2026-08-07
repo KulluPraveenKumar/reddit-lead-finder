@@ -13,7 +13,9 @@ Everything here is offline.
 
 from __future__ import annotations
 
+import json
 import sqlite3
+from pathlib import Path
 
 import pytest
 
@@ -31,6 +33,16 @@ from src.orchestration import (
     is_gate,
     is_terminal,
 )
+
+#: The recorded shape of the pre-rebuild database. Read rather than hardcoded so
+#: the legacy contract has exactly one definition, in one file, shared with
+#: `tests/test_migrations.py`.
+_BASELINE_PATH = Path(__file__).parent / "baseline" / "db_fingerprint.json"
+
+
+def _baseline() -> dict:
+    return json.loads(_BASELINE_PATH.read_text(encoding="utf-8"))
+
 
 # ---------------------------------------------------------------------------
 # The specification, transcribed from docs/04 §1.1-1.2.
@@ -411,28 +423,48 @@ class TestOrchestrationSchema:
 
 class TestMigrationSafety:
     def test_live_database_migrates_with_leads_intact(self, live_db_copy):
-        """The 459 real leads survive the first revision that touches an old table."""
+        """The 459 real leads survive the first revision that touches an old table.
+
+        Scoped to the baseline rows for the reason given in
+        ``tests/test_migrations.py::test_live_database_preserved``: the live
+        database legitimately grows every time the product is used, and pinning
+        its total would make normal operation look like a regression.
+        """
         from src.db.migrate import MigrationRunner
+
+        baseline = _baseline()
+        lead_boundary = baseline["baseline_max_lead_id"]
+        run_boundary = baseline["baseline_scrape_run_count"]
 
         MigrationRunner(live_db_copy).ensure_current()
 
         conn = sqlite3.connect(live_db_copy)
         try:
-            leads = conn.execute("SELECT COUNT(*) FROM leads").fetchone()[0]
+            leads = conn.execute(
+                "SELECT COUNT(*) FROM leads WHERE id <= ?", (lead_boundary,)
+            ).fetchone()[0]
             stats = conn.execute(
-                "SELECT MIN(intent_score), MAX(intent_score), ROUND(AVG(intent_score),2) FROM leads"
+                "SELECT MIN(intent_score), MAX(intent_score), ROUND(AVG(intent_score),2) "
+                "FROM leads WHERE id <= ?",
+                (lead_boundary,),
             ).fetchone()
-            scrape_runs, with_run = conn.execute(
-                "SELECT COUNT(*), COUNT(run_id) FROM scrape_runs"
+            legacy_runs, legacy_with_run = conn.execute(
+                "SELECT COUNT(*), COUNT(run_id) FROM scrape_runs WHERE id <= ?", (run_boundary,)
             ).fetchone()
         finally:
             conn.close()
 
-        assert leads == 459
-        assert stats == (5.0, 164.28, 42.29)
-        assert scrape_runs == 10
+        assert leads == baseline["lead_count"]
+        assert stats == (
+            baseline["baseline_intent_score_min"],
+            baseline["baseline_intent_score_max"],
+            baseline["baseline_intent_score_avg"],
+        )
+        assert legacy_runs == run_boundary
         # The pre-existing audit rows predate orchestration and belong to no run.
-        assert with_run == 0
+        # `src/db/models.py` says NULL "forever"; this is where forever is checked.
+        # Rows created from P3 onwards do carry a run_id, and are outside this scope.
+        assert legacy_with_run == 0
 
     def test_downgrade_removes_everything_and_restores_scrape_runs(self, live_db_copy):
         from src.db.migrate import MigrationRunner
@@ -448,14 +480,20 @@ class TestMigrationSafety:
             }
             cols = {r[1] for r in conn.execute("PRAGMA table_info(scrape_runs)")}
             fks = [r[2] for r in conn.execute("PRAGMA foreign_key_list(ai_calls)")]
-            leads = conn.execute("SELECT COUNT(*) FROM leads").fetchone()[0]
+            baseline_leads = conn.execute(
+                "SELECT COUNT(*) FROM leads WHERE id <= ?",
+                (_baseline()["baseline_max_lead_id"],),
+            ).fetchone()[0]
         finally:
             conn.close()
 
         assert not ({"runs", "jobs", "run_events"} & tables)
         assert "run_id" not in cols
         assert fks == []
-        assert leads == 459
+        # Counted over the baseline ids, not the whole table: a downgrade must
+        # not lose an original lead, and counting everything would let a loss be
+        # masked by leads collected since.
+        assert baseline_leads == _baseline()["lead_count"]
 
         # ...and back up again, which is where a broken downgrade usually shows.
         runner.upgrade("head")
