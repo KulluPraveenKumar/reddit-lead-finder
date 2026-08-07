@@ -13,7 +13,14 @@ phase behaving rather than the phase unfinished.
 A handler's contract:
 
 * signature ``(session, job) -> dict | None`` — the dict lands in ``jobs.result_json``
-* it runs **inside the caller's transaction**; it must not commit
+* it runs **inside the caller's transaction**, and normally must not commit.
+  **The exception is a handler about to block on I/O.** SQLite has one write
+  lock; a session with pending writes takes it at the next flush and holds it
+  until commit, so a handler that leaves work pending and then spends a minute
+  on the network locks every other writer out for that minute — which is how
+  cancelling a run mid-scrape once returned an HTTP 500. Such a handler commits
+  its bookkeeping *before* the blocking call. What must still commit together is
+  the stage's outcome and the enqueue of its successor (G1)
 * it must be **idempotent** (R9). A lease can expire mid-execution and the job
   will be re-claimed and re-run, by design
 * it raises :class:`~src.orchestration.job_queue.RetryableError` for a failure a

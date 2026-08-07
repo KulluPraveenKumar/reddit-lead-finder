@@ -118,6 +118,28 @@ def handle_scrape_subreddit(session: Session, job: Job) -> dict[str, Any]:
         subreddit=subreddit,
     )
 
+    # **Commit before the scrape, and never remove this.**
+    #
+    # The two calls above leave the session dirty. The scrape below spends
+    # minutes on the network, and its first query — ``LeadScorer`` reading
+    # ``settings`` — autoflushes those pending writes, which takes SQLite's
+    # single write lock. Nothing releases it until the scrape commits, so every
+    # other writer waits out ``busy_timeout`` and then fails: cancelling a run
+    # mid-scrape returned "database is locked" as an HTTP 500 (T4).
+    #
+    # K13 is writer contention, and P2's mitigation is stated as short
+    # transactions. A transaction that spans a network fetch is the opposite of
+    # short, and no timeout value fixes it — the lock simply must not be held
+    # across I/O.
+    #
+    # Committing here is safe for G1: the atomic unit that matters is "this
+    # stage finished **and** the next one is queued", and both of those happen
+    # after the scrape, in the transaction the worker commits. What is committed
+    # here is progress telemetry, which is *more* correct early — it is what
+    # makes "Scraping r/x" appear on the run page while the scrape is running
+    # rather than after it has finished.
+    session.commit()
+
     scraper = build_scraper(load_config())
     leads = scraper.run(session, subreddits=[subreddit], run_id=run_id)
     leads = int(leads or 0)

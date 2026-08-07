@@ -14,7 +14,7 @@ import pytest
 from sqlalchemy.orm import Session
 
 from src.db import database
-from src.db.models import Job, Lead, RunEvent, ScrapeRun
+from src.db.models import Job, Lead, Run, RunEvent, ScrapeRun, Settings
 from src.orchestration.handlers import REGISTRY
 from src.orchestration.handlers import scrape as scrape_handler
 from src.orchestration.job_queue import JobQueue, utcnow
@@ -305,6 +305,112 @@ def test_resume_after_a_kill_succeeds_every_time(session, fake_scraper, iteratio
 
     session.refresh(run)
     assert run.state == RunState.COMPLETE.value, f"iteration {iteration} did not resume"
+
+
+# ------------------------------------------- the write lock during a scrape
+
+
+def test_the_run_can_be_cancelled_while_a_subreddit_is_being_scraped(session, temp_db):
+    """The T4 manual failure, reproduced: cancel returned HTTP 500.
+
+    `sqlite3.OperationalError: database is locked`, raised from
+    `JobQueue.cancel_queued`. The handler dirtied its session -- the progress
+    counter and the "Scraping r/x" event -- and then handed that same session to
+    a scrape that spends minutes on the network. The scraper's first query
+    autoflushes those pending writes, which takes SQLite's single write lock,
+    and nothing releases it until the scrape commits. Any other writer waits out
+    `busy_timeout` (10 s) and then fails.
+
+    Reproduced without the network by modelling the same shape rather than the
+    same duration: a scraper that issues a query (the autoflush point -- the real
+    one constructs a `LeadScorer`, which reads `settings`) and then, standing in
+    for the fetch, has a second connection cancel the run.
+
+    Every fake scraper in this file previously did its work *without* querying,
+    so no autoflush ever happened and the lock was never taken. That is precisely
+    why 581 automated tests passed while the manual test failed.
+    """
+    cancelled_from_inside = {}
+
+    class NetworkBoundScraper:
+        def run(self, handler_session, subreddits=None, run_id=None):
+            # What LeadScorer's constructor does. Autoflush fires here, and with
+            # a dirty session that is the moment the write lock is taken.
+            handler_session.query(Settings).all()
+
+            # Standing in for the minutes this spends fetching pages: the
+            # operator presses Cancel, which is a write from another connection.
+            with Session(bind=database.ENGINE, expire_on_commit=False) as other:
+                RunService(other, JobQueue(database.ENGINE)).cancel(run_id)
+                other.commit()
+            cancelled_from_inside["ok"] = True
+            return 0
+
+    import src.orchestration.handlers.scrape as handler_module
+
+    original_build, original_config = handler_module.build_scraper, handler_module.load_config
+    handler_module.build_scraper = lambda config: NetworkBoundScraper()
+    handler_module.load_config = lambda: {}
+    try:
+        run = _start_run(session, ("saas", "startups"))
+        job = session.query(Job).filter(Job.run_id == run.id).order_by(Job.id).first()
+
+        # Called directly rather than through the worker, so the failure surfaces
+        # here as the production exception instead of being absorbed into a
+        # failed job.
+        REGISTRY["scrape_subreddit"](session, job)
+        session.commit()
+    finally:
+        handler_module.build_scraper, handler_module.load_config = original_build, original_config
+
+    assert cancelled_from_inside.get("ok"), "the cancel never completed"
+
+    session.expire_all()
+    assert session.query(Run).filter(Run.id == run.id).one().state == RunState.CANCELLED.value
+
+    # Scoped to scrape jobs: the handler still queues the finaliser afterwards,
+    # which is correct and harmless -- it finds the run already terminal and
+    # reports that it skipped.
+    still_queued = session.query(Job).filter(
+        Job.run_id == run.id,
+        Job.job_type == "scrape_subreddit",
+        Job.state == JobState.QUEUED.value,
+    )
+    assert still_queued.count() == 0, "queued scrape jobs should have been cancelled"
+
+
+def test_the_handler_holds_no_pending_writes_when_the_scrape_starts(session, temp_db):
+    """The invariant behind the fix, stated where it cannot drift.
+
+    A dirty session at this point means the scraper's first query takes the write
+    lock and holds it for the length of a network fetch. Asserting on the session
+    rather than on a timing makes the guarantee deterministic: there is no
+    duration here to tune, and no way for the test to pass by being lucky.
+    """
+    seen = {}
+
+    class Inspecting:
+        def run(self, handler_session, subreddits=None, run_id=None):
+            seen["dirty"] = bool(handler_session.dirty)
+            seen["new"] = bool(handler_session.new)
+            seen["in_transaction"] = handler_session.in_transaction()
+            return 0
+
+    import src.orchestration.handlers.scrape as handler_module
+
+    original_build, original_config = handler_module.build_scraper, handler_module.load_config
+    handler_module.build_scraper = lambda config: Inspecting()
+    handler_module.load_config = lambda: {}
+    try:
+        run = _start_run(session, ("saas",))
+        job = session.query(Job).filter(Job.run_id == run.id).one()
+        REGISTRY["scrape_subreddit"](session, job)
+        session.commit()
+    finally:
+        handler_module.build_scraper, handler_module.load_config = original_build, original_config
+
+    assert seen["dirty"] is False, "a modified row is pending; the scrape will flush it under lock"
+    assert seen["new"] is False, "an unwritten row is pending; the scrape will flush it under lock"
 
 
 # -------------------------------------------------------------- cancellation
