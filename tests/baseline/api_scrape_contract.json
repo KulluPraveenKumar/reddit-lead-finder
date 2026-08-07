@@ -1,0 +1,17 @@
+{
+  "_comment": "Verbatim POST /api/scrape response recorded before P3 modified the route. P3 may ADD keys (run_id) and may not change or remove one. docs/13 \u00a76, R20.",
+  "body_bytes": "{\"message\":\"Scrape started in background\",\"ok\":true}\n",
+  "content_type": "application/json",
+  "keys": [
+    "message",
+    "ok"
+  ],
+  "method": "POST",
+  "path": "/api/scrape",
+  "recorded_before_phase": "P3",
+  "status_code": 200,
+  "values": {
+    "message": "Scrape started in background",
+    "ok": true
+  }
+}
