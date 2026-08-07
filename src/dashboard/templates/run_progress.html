@@ -1,0 +1,136 @@
+{% extends "_base_ai.html" %}
+{% block title %}Run #{{ run.id }} · Reddit Lead Finder{% endblock %}
+
+{#
+  docs/09 §3.6. Progress bar, counters, cancel, and the run_events feed.
+
+  Fields the design shows that P3 has no source for -- AI cost, the funnel,
+  proxy health -- are ABSENT rather than rendered as zeroes. A zero is a
+  measurement; a blank is an honest "not yet".
+
+  Rendered server-side first, then polled. The first paint is correct rather
+  than a row of dashes that fill in a moment later, which reads as a fault.
+#}
+
+{% block content %}
+<style>
+  .progress-bar{height:10px;background:var(--panel2);border-radius:5px;overflow:hidden;margin:14px 0 8px}
+  .progress-bar > i{display:block;height:100%;background:var(--accent);transition:width .3s}
+  .progress-bar.done > i{background:var(--ok)}
+  .progress-bar.bad > i{background:var(--bad)}
+  .counters{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-top:16px}
+  .counter .k{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.06em}
+  .counter .v{font-size:20px;font-variant-numeric:tabular-nums;margin-top:3px}
+  .feed{max-height:460px;overflow-y:auto;font-size:12.5px;content-visibility:auto}
+  .feed-row{display:flex;gap:12px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.04)}
+  .feed-row:last-child{border-bottom:0}
+  .feed-time{color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+  .feed-row.warning .feed-msg{color:var(--warn)}
+  .feed-row.error .feed-msg{color:var(--bad)}
+  .live{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.06em}
+</style>
+
+<p class="crumbs"><a href="/">Dashboard</a> › <a href="/runs">Runs</a> › #{{ run.id }}</p>
+
+<div style="display:flex;align-items:baseline;justify-content:space-between;gap:14px;flex-wrap:wrap">
+  <h1>Run #{{ run.id }}</h1>
+  <button id="cancel-btn" class="ghost" type="button">Cancel run</button>
+</div>
+<p class="sub" id="stage-label">{{ progress.stage_label }}</p>
+
+<div class="card">
+  <div style="display:flex;justify-content:space-between;align-items:baseline">
+    <span class="pill" id="state-pill">{{ progress.state.replace('_', ' ') }}</span>
+    <span id="percent-label">{{ progress.percent }}%</span>
+  </div>
+  <div class="progress-bar" id="progress-bar"><i style="width:{{ progress.percent }}%"></i></div>
+
+  <div class="counters">
+    <div class="counter"><div class="k">Leads found</div><div class="v" id="c-leads">{{ progress.leads_found }}</div></div>
+    <div class="counter"><div class="k">Jobs done</div><div class="v" id="c-done">{{ progress.jobs_done }} / {{ progress.jobs_total }}</div></div>
+    <div class="counter"><div class="k">Failed</div><div class="v" id="c-failed">{{ progress.jobs_failed }}</div></div>
+    <div class="counter"><div class="k">Started</div><div class="v" style="font-size:14px">{{ run.started_at }}</div></div>
+  </div>
+
+  <div class="banner bad {{ 'show' if progress.last_error }}" id="error-banner">
+    {{ progress.last_error or '' }}
+  </div>
+</div>
+
+<div class="card">
+  <h2>Activity <span class="live" id="live-flag">live</span></h2>
+  <div class="feed" id="feed"></div>
+  <p class="empty" id="feed-empty" style="display:none">No activity recorded yet.</p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const RUN_ID = {{ run.id }};
+let lastEventId = 0;
+let eventPoll = null;
+
+function render(p){
+  document.getElementById('stage-label').textContent = p.stage_label;
+  document.getElementById('state-pill').textContent = p.state.replace(/_/g, ' ');
+  document.getElementById('percent-label').textContent = p.percent + '%';
+  document.getElementById('c-leads').textContent = p.leads_found;
+  document.getElementById('c-done').textContent = p.jobs_done + ' / ' + p.jobs_total;
+  document.getElementById('c-failed').textContent = p.jobs_failed;
+
+  const bar = document.getElementById('progress-bar');
+  bar.firstElementChild.style.width = p.percent + '%';
+  bar.className = 'progress-bar' + (p.state === 'complete' ? ' done'
+                                  : p.state === 'failed' ? ' bad' : '');
+
+  const banner = document.getElementById('error-banner');
+  banner.textContent = p.last_error || '';
+  banner.className = 'banner bad' + (p.last_error ? ' show' : '');
+
+  document.getElementById('cancel-btn').disabled = p.terminal;
+
+  if(p.terminal){
+    /* Stop both polls together. A finished run whose feed kept polling would
+       hit the server every 3 s for as long as the tab stayed open. */
+    document.getElementById('live-flag').textContent = p.state;
+    if(eventPoll) eventPoll.stop();
+    return false;
+  }
+  return true;
+}
+
+function appendEvents(payload){
+  const feed = document.getElementById('feed');
+  for(const ev of payload.events){
+    const row = document.createElement('div');
+    row.className = 'feed-row ' + ev.level;
+    const time = document.createElement('span');
+    time.className = 'feed-time';
+    time.textContent = (ev.created_at || '').slice(11, 19);
+    const msg = document.createElement('span');
+    msg.className = 'feed-msg';
+    /* textContent, never innerHTML: these strings come from the database and
+       carry scraped subreddit names. Redacted on write, escaped on render. */
+    msg.textContent = ev.message || ev.event;
+    row.append(time, msg);
+    feed.prepend(row);
+  }
+  if(payload.events.length) lastEventId = payload.last_id;
+  document.getElementById('feed-empty').style.display = feed.childElementCount ? 'none' : '';
+  return true;
+}
+
+document.getElementById('cancel-btn').addEventListener('click', async () => {
+  if(!confirm('Cancel this run? Queued subreddits will be skipped.')) return;
+  try{
+    await api('/api/runs/' + RUN_ID + '/cancel', {method: 'POST'});
+    toast('Run cancelled. The subreddit in progress will finish first.', 'ok');
+    render(await api('/api/runs/' + RUN_ID + '/progress'));
+  }catch(err){ /* api() already surfaced it as a toast */ }
+});
+
+eventPoll = poll(() => '/api/runs/' + RUN_ID + '/events?after=' + lastEventId,
+                 appendEvents, {intervalMs: 3000});
+poll('/api/runs/' + RUN_ID + '/progress', render, {intervalMs: 3000});
+</script>
+{% endblock %}

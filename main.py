@@ -85,18 +85,73 @@ def cmd_dashboard(config):
     app.run(host=host, port=port, debug=False)
 
 
+def enqueue_scheduled_run(config):
+    """Create a run for the scheduled scrape, or say why it did not.
+
+    Returns the run id, or ``None`` when one was already in flight.
+
+    **Skipping is the correct outcome, not a failure.** The scheduler fires on a
+    clock; the previous run finishes when it finishes. If a 60-minute interval
+    meets a 70-minute scrape, the duplicate-run guard refuses the second one --
+    and this loop must log that and carry on rather than die, because it runs
+    unattended and a scheduler that exits on a routine condition is a scheduler
+    that silently stops scraping.
+    """
+    from src.dashboard.routes_runs import configured_subreddits
+    from src.db.database import session_scope
+    from src.orchestration.run_service import RunAlreadyActive, RunOptions, RunService
+
+    with session_scope() as session:
+        try:
+            run = RunService(session).create(
+                None, RunOptions(subreddits=configured_subreddits(session))
+            )
+        except RunAlreadyActive as exc:
+            console.print(f"[yellow]Run {exc.run_id} is still going; skipping this tick.[/yellow]")
+            return None
+        console.print(f"[green]Queued run {run.id}[/green]")
+        return run.id
+
+
 def cmd_schedule(config):
+    """Enqueue a run on an interval, and execute it here unless told otherwise.
+
+    A worker runs in this process for the same reason one runs in the dashboard:
+    the operator's command set does not grow. ``WORKER_INPROCESS=false`` turns
+    it off, for an operator who runs ``main.py worker`` separately.
+
+    With ``orchestration.enabled: false`` this falls back to calling the scrapers
+    directly, exactly as it did before P3 -- and that path still runs all three.
+    """
+    from src.orchestration.run_service import orchestration_enabled
+    from src.orchestration.worker import start_inprocess_worker
+
     interval = config.get("schedule", {}).get("interval_minutes", 60)
+    orchestrated = orchestration_enabled()
+
     console.print(
         Panel(
             f"[bold cyan]Scheduling scrapers every {interval} minutes. Press Ctrl+C to stop.[/bold cyan]"
         )
     )
 
+    worker = None
+    if orchestrated:
+        init_db()
+        worker = start_inprocess_worker()
+        if worker is None:
+            console.print(
+                "[yellow]WORKER_INPROCESS is off — runs will queue but nothing here "
+                "will execute them. Start `python main.py worker` too.[/yellow]"
+            )
+
     def job():
         console.print("\n[bold]--- Scheduled scrape starting ---[/bold]")
         try:
-            cmd_scrape(config)
+            if orchestrated:
+                enqueue_scheduled_run(config)
+            else:
+                cmd_scrape(config)
         except Exception as e:
             console.print(f"[red]Scrape error: {e}[/red]")
 
@@ -109,6 +164,10 @@ def cmd_schedule(config):
             time.sleep(60)
     except KeyboardInterrupt:
         console.print("\n[yellow]Scheduler stopped.[/yellow]")
+    finally:
+        if worker is not None:
+            worker.stop()
+            worker.join()
 
 
 def cmd_worker(config):

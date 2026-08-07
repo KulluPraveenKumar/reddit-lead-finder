@@ -126,6 +126,68 @@ async function api(url, options){
 }
 function fmtUSD(n){ return '$' + (Number(n)||0).toFixed(4); }
 function fmtPct(n){ return ((Number(n)||0) * 100).toFixed(1) + '%'; }
+
+/* Shared polling, with the three disciplines docs/09 §5.2 requires. Without
+   them a forgotten browser tab polls a finished run forever, and a server that
+   has gone away gets hit every 3 s by every open tab until someone notices.
+
+     - stop() when the caller says the state is terminal
+     - back off to 10 s after three consecutive errors, and recover on success
+     - pause while document.hidden, resume on visibilitychange
+
+   `onUpdate` returns true to keep polling and false to stop. Returning the
+   decision -- rather than having poll() inspect the payload -- keeps this
+   helper ignorant of what it is polling, so the run page and anything later
+   can share it.
+
+   `url` may be a function, for feeds whose target moves: the event feed asks
+   for everything after the last id it saw, so a fixed string would re-fetch the
+   whole timeline every three seconds and render it again. */
+function poll(url, onUpdate, options){
+  options = options || {};
+  const baseMs = options.intervalMs || 3000;
+  const slowMs = options.backoffMs || 10000;
+  const errorsBeforeBackoff = 3;
+
+  let timer = null, stopped = false, errors = 0;
+
+  function delay(){ return errors >= errorsBeforeBackoff ? slowMs : baseMs; }
+
+  function schedule(){
+    if(stopped) return;
+    clearTimeout(timer);
+    timer = setTimeout(tick, delay());
+  }
+
+  async function tick(){
+    if(stopped) return;
+    /* Hidden tab: skip the request but keep the timer, so a tab brought back
+       after an hour resumes without the page having to be reloaded. */
+    if(document.hidden){ schedule(); return; }
+    try{
+      const res = await fetch(typeof url === 'function' ? url() : url);
+      if(!res.ok) throw new Error(res.status + ' ' + res.statusText);
+      const data = await res.json();
+      errors = 0;
+      if(onUpdate(data) === false){ stop(); return; }
+    }catch(err){
+      errors += 1;
+      if(errors === errorsBeforeBackoff){
+        toast('Lost contact with the server — retrying every 10 s.', 'bad');
+      }
+    }
+    schedule();
+  }
+
+  function stop(){ stopped = true; clearTimeout(timer); }
+
+  document.addEventListener('visibilitychange', () => {
+    if(!document.hidden && !stopped){ clearTimeout(timer); tick(); }
+  });
+
+  tick();
+  return { stop, isStopped: () => stopped };
+}
 </script>
 {% block scripts %}{% endblock %}
 </body>

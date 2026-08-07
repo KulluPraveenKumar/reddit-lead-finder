@@ -1,0 +1,61 @@
+{% extends "_base_ai.html" %}
+{% block title %}Runs · Reddit Lead Finder{% endblock %}
+
+{#
+  The run list. Server-rendered, not polled: a list of mostly-finished runs does
+  not change second to second, and the page that does change -- /runs/<id> --
+  is one click away and polls there.
+#}
+
+{% block content %}
+<p class="crumbs"><a href="/">Dashboard</a> › Runs</p>
+<h1>Runs</h1>
+<p class="sub">Every scrape run, newest first. Click a run to watch it or to cancel it.</p>
+
+<div class="card">
+  <h2>Recent runs</h2>
+
+  {% if runs %}
+  <div class="scroll-x">
+    <table class="data">
+      <thead>
+        <tr>
+          <th>Run</th>
+          <th>State</th>
+          <th>Leads</th>
+          <th>Jobs</th>
+          <th>Duration</th>
+          <th>Started</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for run in runs %}
+        <tr>
+          <td><a href="/runs/{{ run.id }}">#{{ run.id }}</a></td>
+          <td>
+            {# Colour is never the only signal: the state is spelled out. #}
+            <span class="pill {{ 'ok' if run.state == 'complete'
+                                else 'bad' if run.state == 'failed'
+                                else 'warn' if run.state == 'cancelled' else '' }}">
+              {{ run.state.replace('_', ' ') }}
+            </span>
+          </td>
+          <td>{{ run.leads_found }}</td>
+          <td>{{ run.jobs_done }} / {{ run.jobs_total }}</td>
+          <td>{{ run.duration_label }}</td>
+          <td>{{ run.started_label }}</td>
+          <td><a href="/runs/{{ run.id }}">Open</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="empty">
+    No runs yet. Start one from the <a href="/">Dashboard</a> sidebar, or from
+    <a href="/configuration">Configuration</a> once you have chosen some subreddits.
+  </p>
+  {% endif %}
+</div>
+{% endblock %}

@@ -37,7 +37,7 @@ class NavItem:
 #: The full navigation, in display order.
 #:
 #: Deliberately absent until their phase lands (docs/10):
-#:   Projects  - Phase 4    Runs      - Phase 3
+#:   Projects  - Phase 4
 #:   Discovery - Phase 5    Quality   - Phase 8
 NAV_ITEMS: list[NavItem] = [
     NavItem(
@@ -46,6 +46,13 @@ NAV_ITEMS: list[NavItem] = [
         url="/",
         title="Leads, activity and scraper status",
         phase=0,
+    ),
+    NavItem(
+        key="runs",
+        label="Runs",
+        url="/runs",
+        title="Scrape runs: progress, activity feed, cancel and retry",
+        phase=3,
     ),
     NavItem(
         key="configuration",

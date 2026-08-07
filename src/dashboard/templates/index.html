@@ -449,23 +449,38 @@
         // with their Enter-key handlers. Left behind, these bound to elements
         // that no longer exist and threw on every page load.
 
-        // Run scrape
+        // Run scrape.
+        //
+        // Phase 3: this used to show "Scrape complete!" after a five-second
+        // timer, whether or not the scrape had finished -- or started. The
+        // response now carries a run_id, so the button sends the operator to a
+        // page that shows what is actually happening.
         function runScrape() {
             const btn = document.getElementById('scrape-btn');
             const status = document.getElementById('scrape-status');
             btn.disabled = true;
-            btn.textContent = 'Scraping...';
+            btn.textContent = 'Starting...';
             status.className = 'scrape-status active';
-            status.textContent = 'Scrape running in background...';
+            status.textContent = 'Starting the run...';
             fetch('/api/scrape', { method: 'POST' })
             .then(r => r.json())
             .then(data => {
-                setTimeout(() => {
-                    btn.disabled = false;
-                    btn.textContent = 'Run Scrape Now';
-                    status.className = 'scrape-status done';
-                    status.textContent = 'Scrape complete! Refresh to see new leads.';
-                }, 5000);
+                if (data && data.run_id) {
+                    window.location.href = '/runs/' + data.run_id;
+                    return;
+                }
+                // No run_id means orchestration.enabled is false and the legacy
+                // background thread is doing the work, with nothing to watch.
+                btn.disabled = false;
+                btn.textContent = 'Run Scrape Now';
+                status.className = 'scrape-status done';
+                status.textContent = 'Scrape running in the background. Refresh in a few minutes.';
+            })
+            .catch(() => {
+                btn.disabled = false;
+                btn.textContent = 'Run Scrape Now';
+                status.className = 'scrape-status active';
+                status.textContent = 'Could not start the run. Is the dashboard still running?';
             });
         }
 

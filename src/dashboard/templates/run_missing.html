@@ -1,0 +1,20 @@
+{% extends "_base_ai.html" %}
+{% block title %}Run not found · Reddit Lead Finder{% endblock %}
+
+{#
+  A 404 page rather than a raw Flask one, because the most likely way to arrive
+  here is a bookmarked run that retention has since purged -- which is normal
+  operation, not a fault, and should not look like a broken site.
+#}
+
+{% block content %}
+<p class="crumbs"><a href="/">Dashboard</a> › <a href="/runs">Runs</a> › #{{ run_id }}</p>
+<h1>Run #{{ run_id }} not found</h1>
+<p class="sub">
+  There is no run with that number. Old runs are purged after 90 days, so a
+  bookmark from a while ago will land here.
+</p>
+<div class="card">
+  <p><a href="/runs">Back to all runs</a></p>
+</div>
+{% endblock %}

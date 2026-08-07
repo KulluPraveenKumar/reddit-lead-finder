@@ -10,7 +10,11 @@ def load_config(path=None):
     if not config_path.exists():
         raise FileNotFoundError(f"Config not found: {config_path}")
 
-    with open(config_path, "r") as f:
+    # Explicit encoding, not the locale default. On Windows that default is
+    # cp1252, so a single non-ASCII character anywhere in the file -- including
+    # in a comment -- raises UnicodeDecodeError and takes down every command
+    # that loads config. YAML is UTF-8 by specification; this says so.
+    with open(config_path, "r", encoding="utf-8") as f:
         config = yaml.safe_load(f)
 
     _validate(config)

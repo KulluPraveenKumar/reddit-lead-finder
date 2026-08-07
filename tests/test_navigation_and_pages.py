@@ -38,8 +38,13 @@ def test_nav_appears_on_every_page(client):
 
 
 def test_no_nav_entry_points_at_an_unbuilt_phase(client):
-    """Phases 2-8 must not appear until they exist."""
-    forbidden = ("/projects", "/runs", "/discovery", "/quality", "/leads/")
+    """Phases 2-8 must not appear until they exist.
+
+    ``/runs`` left this list in P3, which built it. The list shrinks as phases
+    land; an entry removed while the page is still missing is caught by
+    ``test_every_nav_target_resolves``, which would then 404.
+    """
+    forbidden = ("/projects", "/discovery", "/quality", "/leads/")
     for path in PAGES:
         body = client.get(path).get_data(as_text=True)
         nav = body[body.find('class="appnav"') : body.find("</nav>")]

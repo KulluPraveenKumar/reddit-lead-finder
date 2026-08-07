@@ -104,6 +104,25 @@ worker:
   poll_interval_seconds: 2.0
 
 # ---------------------------------------------------------------------------
+# Orchestration (P3)
+#
+# Whether POST /api/scrape and the scheduler create a run and enqueue jobs, or
+# fall back to the pre-P3 daemon thread. This is the phase's rollback switch and
+# it is NOT the same as WORKER_INPROCESS, which only decides whether a process
+# runs a worker of its own.
+#
+# ⚠️ The two paths do not collect the same thing. Through the queue, a scrape
+# runs the SUBREDDIT scraper only: the frozen job-type list (docs/04 §2.4) has
+# no keyword or user type, and those stages arrive in P5/P17. Set this to false
+# and the keyword and user scrapers run again, as they did before P3 -- so
+# rolling back makes leads reappear, which is expected rather than a fault.
+#
+# `python main.py scrape` is unaffected and always runs all three.
+# ---------------------------------------------------------------------------
+orchestration:
+  enabled: true
+
+# ---------------------------------------------------------------------------
 # Proxy / transport (Phase 2)
 #
 # The proxy FILE path is here; the credentials are only ever in that file, which

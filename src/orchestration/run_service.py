@@ -103,6 +103,28 @@ SCRAPE_JOB = "scrape_subreddit"
 FINALIZE_JOB = "finalize_run"
 
 
+def orchestration_enabled() -> bool:
+    """Does ``POST /api/scrape`` go through the queue? ``docs/34`` §P3 Rollback.
+
+    **A different switch from ``WORKER_INPROCESS``**, which decides whether a
+    host process runs a worker. This one decides whether the legacy route creates
+    a run at all, and setting it false restores the pre-P3 daemon thread — the
+    rollback the phase is required to have.
+
+    Defaults to true, and defaults to true again if ``config.yaml`` cannot be
+    read: a missing config file must not silently downgrade the system to the
+    path it is being replaced with.
+    """
+    try:
+        from src.config import load_config
+
+        section = (load_config() or {}).get("orchestration") or {}
+    except Exception:  # noqa: BLE001 - an unreadable config is not a rollback signal
+        log.debug("could not read orchestration config; assuming enabled", exc_info=True)
+        return True
+    return bool(section.get("enabled", True))
+
+
 class RunAlreadyActive(Exception):
     """This project already has a run in flight.
 

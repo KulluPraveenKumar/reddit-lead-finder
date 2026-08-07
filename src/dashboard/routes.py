@@ -463,12 +463,67 @@ def api_settings_put():
 
 @bp.route("/api/scrape", methods=["POST"])
 def api_scrape():
+    """Create a run and enqueue its work. Response shape unchanged (R20).
+
+    The recorded contract is `{"ok": true, "message": "Scrape started in
+    background"}` (tests/baseline/api_scrape_contract.json, captured before this
+    edit). `run_id` is ADDED; docs/13 §6 permits that and forbids changing or
+    removing a key.
+
+    **The status code is part of that contract too.** This route has only ever
+    returned 200, and the sidebar button calls it with `fetch(...).then(r =>
+    r.json())` and no status check -- a 409 would render to the operator as
+    "Scrape complete!". So when a run is already active this returns 200 with
+    that run's id, which is also the behaviour docs/13 §9.4 wants: the UI
+    navigates to the run in flight instead of starting a second one. The 409 the
+    duplicate-run guard produces is exposed on POST /api/runs, where AC7 asserts
+    it and where no legacy client is listening.
+
+    ⚠️ Through the queue this runs the SUBREDDIT scraper only. The frozen
+    job-type list (docs/04 §2.4) has no keyword or user type; those stages
+    arrive in P5/P17. `orchestration.enabled: false` restores the pre-P3
+    behaviour, and `python main.py scrape` still runs all three.
+    """
+    from src.orchestration.run_service import orchestration_enabled
+
+    if not orchestration_enabled():
+        return _legacy_scrape()
+
+    from src.dashboard.routes_runs import configured_subreddits
+    from src.orchestration.run_service import RunAlreadyActive, RunOptions, RunService
+
+    session = get_session()
+    try:
+        try:
+            run = RunService(session).create(
+                None, RunOptions(subreddits=configured_subreddits(session))
+            )
+            session.commit()
+            run_id = run.id
+        except RunAlreadyActive as exc:
+            # Not an error from this route's point of view: the operator asked
+            # for a scrape and there is one running. Point them at it.
+            run_id = exc.run_id
+        return jsonify(
+            {"ok": True, "message": "Scrape started in background", "run_id": run_id}
+        )
+    finally:
+        session.close()
+
+
+def _legacy_scrape():
+    """The pre-P3 daemon thread, retained behind `orchestration.enabled: false`.
+
+    Kept verbatim rather than reimplemented. It is the documented rollback for
+    this phase (docs/34 §P3), and a rollback path that had been "tidied up" is
+    one nobody can trust at the moment they need it.
+    """
     from src.config import load_config
+    from src.db.database import init_db
     from src.reddit_client import RedditClient
     from src.scrapers.keyword_scraper import KeywordScraper
     from src.scrapers.subreddit_scraper import SubredditScraper
     from src.scrapers.user_scraper import UserScraper
-    from src.db.database import init_db
 
     def run_scrape():
         config = load_config()

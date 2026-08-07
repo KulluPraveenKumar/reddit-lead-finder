@@ -263,13 +263,39 @@ def _run_json(run: Run) -> dict[str, Any]:
 
 
 def _run_summary(session, run: Run) -> dict[str, Any]:
-    """A list row: the run, plus the two numbers the table shows."""
+    """A list row: the run, plus the numbers and labels the table shows.
+
+    The display strings are built here rather than by a Jinja filter so the JSON
+    endpoint and the page show the same thing. A filter would give the page one
+    formatting and every API consumer another.
+    """
     stats = _json_column(run.stats_json) or {}
     payload = _run_json(run)
     payload["leads_found"] = int(stats.get("leads_found", 0) or 0)
     payload["duration_seconds"] = _duration(run)
+    payload["duration_label"] = _duration_label(payload["duration_seconds"])
+    payload["started_label"] = _time_label(run.started_at)
     payload["job_counts"] = JobRepository(session).counts_by_state(run.id)
+    payload["jobs_total"] = sum(payload["job_counts"].values())
+    payload["jobs_done"] = payload["job_counts"].get("done", 0)
     return payload
+
+
+def _duration_label(seconds: float | None) -> str:
+    """``18m 22s``. Empty for a run that has not started, never ``0s``."""
+    if seconds is None:
+        return "—"
+    total = int(seconds)
+    if total < 60:
+        return f"{total}s"
+    if total < 3600:
+        return f"{total // 60}m {total % 60:02d}s"
+    return f"{total // 3600}h {(total % 3600) // 60:02d}m"
+
+
+def _time_label(value) -> str:
+    """``08-07 14:22`` — UTC, like every stored timestamp in this schema."""
+    return value.strftime("%m-%d %H:%M") if value else "—"
 
 
 def _job_json(job: Job) -> dict[str, Any]:

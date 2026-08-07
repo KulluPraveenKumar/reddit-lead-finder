@@ -75,6 +75,43 @@ def _pool_payload() -> dict:
     }
 
 
+def _queue_payload() -> dict:
+    """Queue depth, plus whether *this* process is executing jobs.
+
+    ``docs/13`` §14 asks ``/health`` for "worker liveness and queue depth". Depth
+    is a query. **Liveness is not, and P3 cannot make it one**: proving a worker
+    in another process is alive needs a heartbeat row, and P3 owns no migration
+    to add the table for it. Reporting a guess would be worse than reporting the
+    gap, so this says exactly what it knows — the depth, the age of the oldest
+    queued job, and whether this process holds a worker.
+
+    ``oldest_queued_at`` is the field that actually detects a dead worker: a
+    queue with jobs whose oldest has been waiting an hour is a stalled queue, no
+    matter what any liveness flag claims.
+    """
+    from .app import get_worker
+
+    session = get_session()
+    try:
+        from ..db.repositories.runs import JobRepository
+
+        depth = JobRepository(session).queue_depth()
+    except Exception as exc:  # noqa: BLE001 - /health must not 500
+        log.warning("health: queue depth failed: %s", exc)
+        depth = {"error": str(exc)}
+    finally:
+        session.close()
+
+    oldest = depth.pop("oldest_queued_at", None) if isinstance(depth, dict) else None
+    worker = get_worker()
+    return {
+        **depth,
+        "oldest_queued_at": oldest.isoformat() if oldest else None,
+        "inprocess_worker": worker is not None and not worker.stopping,
+        "worker_id": worker.worker_id if worker is not None else None,
+    }
+
+
 @bp.route("/health")
 def health_page():
     return render_template("health_ai.html", nav_active="health_ai")
@@ -170,6 +207,7 @@ def health():
             "status": "ok",
             "database": {"leads": lead_count, "path": str(DB_PATH)},
             "schema": schema,
+            "queue": _queue_payload(),
             # Summary only. The full per-proxy table lives at
             # /api/health/proxies; this is what a monitor would alert on.
             "proxies": {
