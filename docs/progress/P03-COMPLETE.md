@@ -72,7 +72,7 @@ section.
 | `tests/test_run_pages.py` | Both pages, the nav, the poll disciplines, template redaction |
 | `tests/test_schedule_and_health.py` | The scheduler's skip-and-continue, and queue health |
 
-**148 tests across those six files.**
+**150 tests across those six files.**
 
 Modified: `tests/test_boundaries.py` (**the 17 legacy endpoints are now pinned as a route table** —
 see below), `tests/test_concurrency_soak.py` (a reader on the real `RunService.progress` path),
@@ -110,19 +110,23 @@ job-type list has no keyword or user type; those stages arrive in P5/P17.
 
 ## Defects fixed
 
-1. `retry()` doubled a run's work when the failed attempt still had jobs queued.
-2. `config.yaml` was read with the locale encoding — one non-ASCII character broke every command.
-3. `RunService.fail()` stored its error unredacted into a column the run page renders.
-4. The run list issued one count query per row.
+1. **Cancelling a run mid-scrape returned HTTP 500** (`database is locked`) — the scrape handler
+   held SQLite's write lock across a network fetch. **Found by manual T4; it blocked sign-off.**
+2. `retry()` doubled a run's work when the failed attempt still had jobs queued.
+3. `config.yaml` was read with the locale encoding — one non-ASCII character broke every command.
+4. `RunService.fail()` stored its error unredacted into a column the run page renders.
+5. The run list issued one count query per row.
+6. The legacy-contract checks pinned the live database's total row counts, which the product
+   increases every time it is used; they now pin the baseline rows and are stricter on them.
 
 ---
 
 ## Verification
 
-**581 passed, 2 skipped** (and again under `-W error::DeprecationWarning`) · **153 new tests** since
-P2's 428 — 148 in the six new files, the rest added to existing ones ·
+**583 passed, 2 skipped** (and again under `-W error::DeprecationWarning`) · **153 new tests** since
+P2's 428 — 150 in the six new files, the rest added to existing ones ·
 `ruff` clean · **97 %** coverage on `src/orchestration/` · one alembic head, round-trip on a live-DB
-copy with 459 leads intact · `check_schema.py` **25/25** · **10-minute soak: 64,950 claims, 133,653
+copy with all 459 baseline leads intact · `check_schema.py` **25/25** · **10-minute soak: 64,950 claims, 133,653
 reads, 68,248 progress polls, 0 errors** · progress **p95 < 50 ms at 5,000 jobs** · 3 mutations, 3
 detected.
 

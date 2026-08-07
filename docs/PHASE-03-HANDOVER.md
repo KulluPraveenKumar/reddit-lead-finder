@@ -103,6 +103,16 @@ P2's G4, still true. `POST /api/jobs/<id>/retry` goes through `JobQueue.requeue(
 
 ## 4. Traps waiting in P4
 
+**T0 — never hold the SQLite write lock across I/O. This one already bit us.**
+`handle_scrape_subreddit` commits its bookkeeping *before* calling the scraper, and the comment there
+says why in full. SQLite has one write lock; a dirty session takes it at the next flush and holds it
+until commit, so a handler that leaves work pending and then blocks on the network locks every other
+writer out for the duration — which is how cancelling a run returned an HTTP 500 during P3's manual
+testing. **P4 makes network calls from inside that same handler.** Anything added between that commit
+and the scraper's return must not leave pending writes. `tests/test_handlers_scrape.py` asserts the
+session is clean at the moment the scrape starts, so a regression fails there rather than in
+production.
+
 **T1 — a scrape now collects less than it did, and that is intentional.** `POST /api/scrape` and
 `python main.py schedule` run `scrape_subreddit` only; the keyword and user scrapers are not reached
 from those paths. The frozen job-type list has no type for them. **Do not "fix" this in P4** — it is
@@ -154,6 +164,8 @@ under more than one worker.
 | **F4** | The first test double for the scraper was not idempotent, so the idempotence test failed for a reason the product does not have | **A fake must reproduce the property under test.** A fake that is easier than reality tests the fake |
 | **F5** | Two tests asserted strings the page never contains (`/api/runs/1/progress`, built in JS as `'/api/runs/' + RUN_ID + '/progress'`) | Assert on what the artefact contains, not on what you pictured it containing |
 | **F6** | Mutation testing: replacing the progress `GROUP BY` with Python-side counting failed **both** the 50 ms budget test and the query-shape test | The budget test is real, not decorative — at 5,000 jobs the wrong implementation is observably slow |
+| **F7** | **Cancel returned HTTP 500 in manual testing and green in 583 automated tests.** Every fake scraper worked without querying, so the autoflush that takes the write lock never happened | **A fake that is easier than reality tests the fake.** When the thing under test is a resource held across a call, the double must acquire it the same way. This is F4 again, one phase later, at a cost of a blocked sign-off |
+| **F8** | Three legacy-contract tests pinned the live database's *total* row counts, which the product increases every time it is used | **Pin the invariant, not the snapshot.** A check that normal operation breaks gets relaxed under pressure; scoping it to the baseline rows made it both durable and stricter |
 
 ---
 
@@ -161,16 +173,16 @@ under more than one worker.
 
 | | |
 |---|---|
-| Full suite | **581 passed, 2 skipped** · 180 s |
-| Under `-W error::DeprecationWarning` | **581 passed, 2 skipped** |
-| New P3 tests | **153** (148 in six new files) |
+| Full suite | **583 passed, 2 skipped** · 180 s |
+| Under `-W error::DeprecationWarning` | **583 passed, 2 skipped** |
+| New P3 tests | **155** (150 in six new files) |
 | The two skips | Both in `tests/test_net.py`, environment-gated on `PROXY_FILE`. Neither is a contract or boundary test |
 | `ruff check` / `ruff format --check` | All checks passed! / 90 files already formatted |
 | Coverage, `src/orchestration/` | **97 %** |
 | `alembic heads` | `0004_orchestration (head)` — one head, no migration added |
-| Round-trip on a live-DB copy | `upgrade → downgrade -1 → upgrade` · 459 leads intact |
+| Round-trip on a live-DB copy | `upgrade → downgrade -1 → upgrade` · all 459 baseline leads intact |
 | `check_schema.py` | **OK — all 25 checks passed** |
-| Live DB | 459 leads · `intent_score` max 164.28 / avg 42.29 · orchestration tables empty |
+| Live DB | **469 leads** — the 459 baseline rows byte-identical, plus 10 the operator's own manual testing collected. 2 runs, 18 `scrape_runs`. The legacy checks are scoped to the baseline rows and mutation-verified |
 | 10-minute soak | `64950 claims, 133653 reads, 68248 progress polls, **0 errors**` |
 | Progress p95 at 5,000 jobs | **< 50 ms**, one query |
 | Mutation testing | 3 mutations, 3 detected |

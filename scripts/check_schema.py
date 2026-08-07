@@ -117,9 +117,37 @@ FORBIDDEN_EXPIRY_COLUMNS = frozenset({"expires_at", "timeout_at", "deadline", "t
 
 #: The legacy contract from ARCHITECTURE_FREEZE R20. A migration that changed
 #: any of these has destroyed data, whatever else it did correctly.
+#:
+#: **Scoped to the baseline rows, not the whole table.** R20 protects the leads
+#: that existed before the rebuild; it does not freeze the database. From P3
+#: onwards the product collects new leads every time it runs, so asserting a
+#: total would report normal operation as data loss. `BASELINE_MAX_LEAD_ID` is
+#: the boundary: ids at or below it are the original 459.
 EXPECTED_LEADS = 459
+BASELINE_MAX_LEAD_ID = 459
 EXPECTED_INTENT_MAX = 164.28
 EXPECTED_INTENT_AVG = 42.29
+
+#: Legal state values, transcribed from `src/orchestration/states.py`. Kept here
+#: rather than imported so this script stays runnable against any database with
+#: nothing but the standard library.
+LEGAL_RUN_STATES = frozenset(
+    {
+        "pending",
+        "profiling",
+        "discovering",
+        "awaiting_subreddit_review",
+        "generating_keywords",
+        "awaiting_keyword_review",
+        "awaiting_options",
+        "scraping",
+        "analyzing",
+        "complete",
+        "failed",
+        "cancelled",
+    }
+)
+LEGAL_JOB_STATES = frozenset({"queued", "running", "done", "failed", "cancelled"})
 
 
 class Report:
@@ -307,16 +335,39 @@ def check_constraints(conn: sqlite3.Connection, report: Report) -> None:
 
 
 def check_row_counts(conn: sqlite3.Connection, report: Report) -> None:
-    """P1 ships shape, not behaviour — nothing writes to the new tables yet.
+    """The orchestration tables, and whether what is in them is legal.
 
-    Independent of the legacy-lead contract below, so this still runs against an
-    empty or non-production database.
+    Until P3 this asserted the three tables were **empty** — true while nothing
+    enqueued anything, and false the moment the product was used. Emptiness was
+    never the property worth protecting; it was a stand-in for "P1 ships shape,
+    not behaviour". What matters now that rows exist is that every one of them
+    holds a state the state machine defines: a value outside the enum is a row no
+    code can ever move again, and it would sit there silently.
     """
-    report.section("Row counts")
+    report.section("Orchestration rows")
 
-    for table in ("runs", "jobs", "run_events"):
-        count = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
-        report.check(count == 0, f"{table} is empty (P1 runs nothing yet)", f"got: {count} rows")
+    counts = {
+        table: conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+        for table in ("runs", "jobs", "run_events")
+    }
+    print(f"  INFO  runs={counts['runs']} jobs={counts['jobs']} run_events={counts['run_events']}")
+
+    for table, column, legal in (
+        ("runs", "state", LEGAL_RUN_STATES),
+        ("jobs", "state", LEGAL_JOB_STATES),
+    ):
+        found = {r[0] for r in conn.execute(f"SELECT DISTINCT {column} FROM {table}")}
+        illegal = sorted(found - legal)
+        report.check(
+            not illegal,
+            f"every {table}.{column} is a state the machine defines",
+            f"illegal: {illegal}",
+        )
+
+    orphans = conn.execute(
+        "SELECT COUNT(*) FROM run_events WHERE run_id NOT IN (SELECT id FROM runs)"
+    ).fetchone()[0]
+    report.check(orphans == 0, "no run_events orphaned from their run", f"got: {orphans}")
 
 
 def check_legacy_fingerprint(conn: sqlite3.Connection, report: Report, expect_leads: bool) -> None:
@@ -334,21 +385,36 @@ def check_legacy_fingerprint(conn: sqlite3.Connection, report: Report, expect_le
         print(f"  INFO  leads = {leads} (not checked; --no-leads-check was passed)")
         return
 
-    report.check(leads == EXPECTED_LEADS, f"leads = {EXPECTED_LEADS}", f"got: {leads}")
-
     if leads == 0:
         print("  INFO  empty database — skipping the intent_score fingerprint")
         return
 
-    hi, avg = conn.execute("SELECT MAX(intent_score), AVG(intent_score) FROM leads").fetchone()
+    baseline = conn.execute(
+        "SELECT COUNT(*) FROM leads WHERE id <= ?", (BASELINE_MAX_LEAD_ID,)
+    ).fetchone()[0]
+    collected = leads - baseline
+    print(f"  INFO  leads = {leads} ({baseline} baseline + {collected} collected since)")
+
+    # The originals: every one still present, and none rescored. Growth above the
+    # boundary is the product working and is reported, not asserted.
+    report.check(
+        baseline == EXPECTED_LEADS,
+        f"the {EXPECTED_LEADS} original leads are all still present",
+        f"got: {baseline} — {EXPECTED_LEADS - baseline} missing",
+    )
+
+    hi, avg = conn.execute(
+        "SELECT MAX(intent_score), AVG(intent_score) FROM leads WHERE id <= ?",
+        (BASELINE_MAX_LEAD_ID,),
+    ).fetchone()
     report.check(
         round(hi, 2) == EXPECTED_INTENT_MAX,
-        f"max(intent_score) = {EXPECTED_INTENT_MAX}",
+        f"max(intent_score) over the original leads = {EXPECTED_INTENT_MAX}",
         f"got: {round(hi, 2)}",
     )
     report.check(
         round(avg, 2) == EXPECTED_INTENT_AVG,
-        f"avg(intent_score) = {EXPECTED_INTENT_AVG}",
+        f"avg(intent_score) over the original leads = {EXPECTED_INTENT_AVG}",
         f"got: {round(avg, 2)}",
     )
 

@@ -60,6 +60,12 @@ plus the process and hygiene work completed after `v0.1.0-p1`.
 
 ### Fixed — P3
 
+- **Cancelling a run while a subreddit was being scraped returned HTTP 500** (`database is locked`).
+  The scrape handler left pending writes on its session and then spent minutes on the network; the
+  scraper's first query flushed them, taking SQLite's single write lock and holding it for the whole
+  fetch, so `POST /api/runs/<id>/cancel` waited out `busy_timeout` and failed. The handler now
+  commits its bookkeeping before the scrape starts. **"Scraping r/x" also now appears on the run page
+  while that subreddit is being scraped, instead of after it finishes.** Found by manual testing.
 - **`config.yaml` was read with the locale's default encoding.** On Windows that is cp1252, so a
   single non-ASCII character anywhere in the file — including in a comment — raised
   `UnicodeDecodeError` from every command that loads config. It is now read as UTF-8, which is what

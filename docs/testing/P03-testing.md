@@ -55,7 +55,7 @@ code*, which looks exactly like a broken change:
 
 > .\.venv\Scripts\python.exe -m pytest
 
-→ **Expected:** `581 passed, 2 skipped` in roughly 3 minutes.
+→ **Expected:** `583 passed, 2 skipped` in roughly 3 minutes.
 
 The two skips are both in `tests/test_net.py` and need a proxy list this machine does not have
 (`PROXY_FILE is not set`). They are skipped by design, not broken. To see for yourself which two:

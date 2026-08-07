@@ -26,18 +26,18 @@ gave it a runtime, and **nothing had ever put work in the queue** until now.
 
 | Check | Result |
 |---|---|
-| Full suite | **581 passed, 2 skipped** · 180 s |
-| Suite under `-W error::DeprecationWarning` | **581 passed, 2 skipped** — no deprecation warnings |
-| New P3 tests | **153** — P2 handed over 428; **148** are in the six new files, the rest added to existing ones |
+| Full suite | **583 passed, 2 skipped** · 180 s |
+| Suite under `-W error::DeprecationWarning` | **583 passed, 2 skipped** — no deprecation warnings |
+| New P3 tests | **155** — P2 handed over 428; **150** are in the six new files, the rest added to existing ones |
 | The two skips | `tests/test_net.py` — `PROXY_FILE is not set` and `no proxy pool configured on this machine`. **Neither is a contract or boundary test**; both are environment-gated and pre-date P3 |
 | `ruff check` / `ruff format --check` | All checks passed! / 90 files already formatted |
 | Coverage, `src/orchestration/` | **97 %** (680 statements, 19 uncovered) — budget is ≥ 80 % |
 | — `run_service.py` | 98 % |
 | — `handlers/scrape.py` · `handlers/finalize.py` | 94 % · 97 % |
 | `alembic heads` | `0004_orchestration (head)` — one head, **no migration added** |
-| Migration round-trip on a **copy** of the live DB | `upgrade → downgrade -1 → upgrade` · **459 leads intact** |
+| Migration round-trip on a **copy** of the live DB | `upgrade → downgrade -1 → upgrade` · **all 459 baseline leads intact** |
 | `scripts/check_schema.py` (live DB) | **OK — all 25 checks passed** |
-| Live DB after the phase | 459 leads · `intent_score` max 164.28 / avg 42.29 — **unchanged** · orchestration tables still empty (nothing here wrote to it) |
+| Live DB after manual testing | **469 leads** — the 459 baseline rows byte-identical (digest `52b2ebb2…`, min/max/avg `5.0 / 164.28 / 42.29`) **plus 10 real leads the operator's own T2 scrape collected**. 2 runs, 18 `scrape_runs` (ids 1–10 still `run_id IS NULL`, 11–18 carry a run id). **This is the product working, not a regression** — see §5.6 |
 | **10-minute soak** (`SOAK_SECONDS=600`) | **64,950 claims · 64,950 events · 133,653 reads · 68,248 progress polls · 0 errors** |
 | Progress endpoint | **p95 < 50 ms at 5,000 jobs**, and **one** query for the counts |
 | Mutation testing | 3 mutations on the bold criteria, **3 detected** (§6) |
@@ -188,6 +188,59 @@ needed it.
 for one page, growing with the history. Replaced with a single grouped query
 (`counts_by_state_for_runs`), pinned by a test that counts statements — invisible at ten runs and
 obvious at a thousand, so a timing test on a small fixture would never have caught it.
+
+### 5.0 ⚠️ Cancelling a run mid-scrape returned HTTP 500 — found by manual T4
+
+**The defect that blocked sign-off, and the most serious of the phase.**
+
+```
+sqlite3.OperationalError: database is locked
+[SQL: UPDATE jobs SET state=? WHERE jobs.run_id = ? AND jobs.state = ?]
+  job_queue.py:385 cancel_queued  <-  run_service.py:374 cancel
+```
+
+`handle_scrape_subreddit` recorded the progress counter and the "Scraping r/x"
+event — leaving its session dirty — and then handed **that same session** to a scrape that spends
+minutes on the network. The scraper's first query (`LeadScorer` reading `settings`) autoflushes
+those pending writes, which takes SQLite's single write lock, and nothing releases it until the
+scrape commits. Every other writer then waits out `busy_timeout` (10 s) and fails.
+
+This is K13 exactly, and P2's stated mitigation is *short transactions*. A transaction spanning a
+network fetch is the opposite of short, and **no timeout value fixes it** — the lock must not be
+held across I/O. The handler now commits its bookkeeping before the scrape begins.
+
+G1 is untouched: the atomic unit that matters is "this stage finished **and** the next is queued",
+and both still commit together after the scrape. A side benefit falls out — "Scraping r/x" now
+appears on the run page *while* the subreddit is being scraped rather than after it finishes, which
+is what that event existed for.
+
+**Why 583 automated tests passed while the manual test failed.** Every fake scraper in the suite did
+its work *without querying*, so autoflush never fired and the lock was never taken. The fakes were
+easier than reality in precisely the dimension under test — P3's F4 lesson, recurring. The
+regression test now models the shape (query first, then have a second connection cancel the run) and
+fails with the production exception when the fix is reverted; a second test asserts the invariant
+directly on the session, so there is no duration to tune and no way to pass by luck.
+
+### 5.6 The legacy-contract checks pinned a database that legitimately grows — pre-existing
+
+Three tests asserted the live database still held **exactly** 459 leads, an aggregate over every
+lead, and exactly 10 `scrape_runs` rows. The operator's own manual testing scraped 10 real leads,
+taking it to 469, and all three failed.
+
+That is not what R20 protects. The contract is that **the 459 leads which existed before the rebuild
+are never lost or altered** — not that the table is frozen. Collecting leads is the product's
+purpose; the old form would have failed after every future manual test, and the only way to make it
+pass would have been to delete real data.
+
+Verified before changing anything: the originals are byte-identical. The rows with `id <= 459` hash
+to the recorded `52b2ebb2…` and their min/max/avg is exactly `(5.0, 164.28, 42.29)`.
+
+The checks now pin the baseline rows and allow growth above them, and are **not weaker on the
+originals** — the downgrade check counts baseline ids rather than all leads, so a lost original can
+no longer be masked by leads collected since. Mutation-verified in both directions.
+
+`scrape_runs` ids 1–10 still carry `run_id IS NULL`, which `models.py` promises "forever"; ids 11–18
+carry a run id, which is `scrape_runs.run_id` working end to end for the first time.
 
 ### 5.5 Eleven of the 17 legacy endpoints were guarded by nothing — pre-existing
 
