@@ -84,7 +84,7 @@ def runs_page():
         return render_template(
             "runs.html",
             nav_active="runs",
-            runs=[_run_summary(session, run) for run in runs],
+            runs=_run_summaries(session, runs),
         )
     finally:
         session.close()
@@ -121,7 +121,7 @@ def api_runs_list():
         state = request.args.get("state", "").strip()
         if state:
             query = query.filter(Run.state == state)
-        return jsonify([_run_summary(session, run) for run in query.limit(RUN_LIST_LIMIT)])
+        return jsonify(_run_summaries(session, query.limit(RUN_LIST_LIMIT).all()))
     finally:
         session.close()
 
@@ -262,23 +262,28 @@ def _run_json(run: Run) -> dict[str, Any]:
     }
 
 
-def _run_summary(session, run: Run) -> dict[str, Any]:
-    """A list row: the run, plus the numbers and labels the table shows.
+def _run_summaries(session, runs: list[Run]) -> list[dict[str, Any]]:
+    """List rows for many runs, with **one** query for all their job counts.
 
-    The display strings are built here rather than by a Jinja filter so the JSON
-    endpoint and the page show the same thing. A filter would give the page one
-    formatting and every API consumer another.
+    Counting per row would be fifty round trips for one page, growing with the
+    history. The display strings are built here rather than by a Jinja filter so
+    the JSON endpoint and the page show the same thing — a filter would give the
+    page one formatting and every API consumer another.
     """
-    stats = _json_column(run.stats_json) or {}
-    payload = _run_json(run)
-    payload["leads_found"] = int(stats.get("leads_found", 0) or 0)
-    payload["duration_seconds"] = _duration(run)
-    payload["duration_label"] = _duration_label(payload["duration_seconds"])
-    payload["started_label"] = _time_label(run.started_at)
-    payload["job_counts"] = JobRepository(session).counts_by_state(run.id)
-    payload["jobs_total"] = sum(payload["job_counts"].values())
-    payload["jobs_done"] = payload["job_counts"].get("done", 0)
-    return payload
+    counts = JobRepository(session).counts_by_state_for_runs([run.id for run in runs])
+    summaries = []
+    for run in runs:
+        stats = _json_column(run.stats_json) or {}
+        payload = _run_json(run)
+        payload["leads_found"] = int(stats.get("leads_found", 0) or 0)
+        payload["duration_seconds"] = _duration(run)
+        payload["duration_label"] = _duration_label(payload["duration_seconds"])
+        payload["started_label"] = _time_label(run.started_at)
+        payload["job_counts"] = counts.get(run.id, {})
+        payload["jobs_total"] = sum(payload["job_counts"].values())
+        payload["jobs_done"] = payload["job_counts"].get("done", 0)
+        summaries.append(payload)
+    return summaries
 
 
 def _duration_label(seconds: float | None) -> str:

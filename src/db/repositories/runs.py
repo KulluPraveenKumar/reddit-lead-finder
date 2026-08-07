@@ -86,6 +86,30 @@ class JobRepository:
             query = query.filter(Job.run_id == run_id)
         return {state: int(count) for state, count in query.group_by(Job.state).all()}
 
+    def counts_by_state_for_runs(self, run_ids: list[int]) -> dict[int, dict[str, int]]:
+        """``{run_id: {state: count}}`` for many runs in **one** query.
+
+        The run list renders fifty rows, each showing "jobs done / total". Asking
+        :meth:`counts_by_state` per row is fifty round trips for one page, and it
+        grows with the history rather than staying flat — the kind of N+1 that is
+        invisible at ten runs and obvious at a thousand.
+
+        Runs with no jobs are absent, matching :meth:`counts_by_state`: the
+        caller decides what an absent run means.
+        """
+        if not run_ids:
+            return {}
+        rows = (
+            self.session.query(Job.run_id, Job.state, func.count(Job.id))
+            .filter(Job.run_id.in_(run_ids))
+            .group_by(Job.run_id, Job.state)
+            .all()
+        )
+        counts: dict[int, dict[str, int]] = {}
+        for run_id, state, count in rows:
+            counts.setdefault(run_id, {})[state] = int(count)
+        return counts
+
     def queue_depth(self) -> dict[str, Any]:
         """Queue health, independent of any run. Feeds ``/health`` in P3."""
         counts = self.counts_by_state()

@@ -137,6 +137,36 @@ def test_run_list_carries_the_columns_the_table_shows(client, session):
     assert "leads_found" in row and "duration_seconds" in row and "job_counts" in row
 
 
+def test_run_list_counts_every_run_in_one_query(client, session):
+    """No N+1: fifty rows must not mean fifty count queries.
+
+    Invisible at ten runs and obvious at a thousand, which is exactly the kind
+    of regression a timing test on a small fixture would never catch.
+    """
+    for index in range(6):
+        run = _make_run(session, ("a", "b"), project_id=index)
+        run.state = RunState.COMPLETE.value
+        session.commit()
+
+    from sqlalchemy import event
+
+    counting: list[str] = []
+
+    def record(_conn, _cursor, statement, *_args):
+        if "count" in statement.lower() and "jobs" in statement.lower():
+            counting.append(statement)
+
+    event.listen(database.ENGINE, "before_cursor_execute", record)
+    try:
+        rows = client.get("/api/runs").get_json()
+    finally:
+        event.remove(database.ENGINE, "before_cursor_execute", record)
+
+    assert len(rows) == 6
+    assert all(row["jobs_total"] == 2 for row in rows)
+    assert len(counting) == 1, f"{len(counting)} count queries for 6 runs"
+
+
 # ----------------------------------------------------------------- progress
 
 
