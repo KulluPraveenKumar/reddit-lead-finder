@@ -14,11 +14,60 @@ under the process in [docs/EXECUTION_MODE_LOCK.md](docs/EXECUTION_MODE_LOCK.md).
 
 ## [Unreleased]
 
-**P2 — job queue, worker, structured logging** ([docs/PHASE-02-COMPLETION-REPORT.md](docs/PHASE-02-COMPLETION-REPORT.md)),
+**P3 — run service, run API, run pages** ([docs/PHASE-03-COMPLETION-REPORT.md](docs/PHASE-03-COMPLETION-REPORT.md))
+and **P2 — job queue, worker, structured logging** ([docs/PHASE-02-COMPLETION-REPORT.md](docs/PHASE-02-COMPLETION-REPORT.md)),
 plus the process and hygiene work completed after `v0.1.0-p1`.
 
 > Not yet tagged. [EXECUTION_MODE_LOCK §6.2](docs/EXECUTION_MODE_LOCK.md) forbids tagging a phase
 > whose manual sign-off table is unsigned.
+
+### ⚠️ Changed — P3, behaviour an operator will notice
+
+- **`POST /api/scrape` and `python main.py schedule` now collect subreddit leads only.** They create
+  a run and enqueue one `scrape_subreddit` job per subreddit; the **keyword and user scrapers no
+  longer run on those two paths**. The frozen job-type list ([docs/04 §2.4](docs/04-system-design.md))
+  contains no keyword or user type, and those stages arrive in P5/P17. This is a deliberate,
+  approved scope decision, not an oversight.
+  **Unaffected:** `python main.py scrape` still runs all three, and setting
+  `orchestration.enabled: false` restores the previous behaviour on every path.
+- **The "Run Scrape Now" button navigates to `/runs/<id>`** instead of showing "Scrape complete!"
+  after a five-second timer that was never connected to the scrape.
+- **A second scrape while one is running no longer starts a second run.** `POST /api/scrape` returns
+  the run already in flight, and the UI opens it. `POST /api/runs` returns `409` with its id.
+
+### Added — P3
+
+- `src/orchestration/run_service.py` — `RunService` (create / transition / cancel / retry /
+  progress), `RunOptions`, `RunProgress`, the duplicate-run guard, and `orchestration_enabled()`.
+  A run walks all seven legal hops from `PENDING` to `SCRAPING`; both review gates lie on that path
+  and each records on the timeline why the operator's configured list already satisfies it
+  ([ARCHITECTURE_FREEZE §11.1](docs/ARCHITECTURE_FREEZE.md)).
+- `src/orchestration/handlers/scrape.py` and `finalize.py` — one job per subreddit, and the job that
+  closes a run. A failed subreddit does not fail the run (AD-9); the timeline says what was lost.
+- `src/dashboard/routes_runs.py` — `GET/POST /api/runs`, `/api/runs/<id>`, `/progress`, `/events`,
+  `/cancel`, `/retry`, `GET /api/jobs`, `POST /api/jobs/<id>/retry`, and the `/runs` and `/runs/<id>`
+  pages.
+- `poll()` in `_base_ai.html` — stops on a terminal state, backs off to 10 s after three consecutive
+  errors, and pauses while the tab is hidden.
+- `JobQueue.requeue()` — the operator's force-retry for one failed job, granting one extra attempt.
+- `Worker.join()` — waits for the loop to actually exit rather than only asking it to.
+- `orchestration.enabled` in `config.yaml` (default `true`) — the phase's rollback switch, distinct
+  from `WORKER_INPROCESS`.
+- `/api/health` gained a `queue` block: depth, `oldest_queued_at`, and whether **this** process holds
+  a worker. Cross-process worker liveness needs a heartbeat table P3 does not own.
+- `SubredditScraper.run()` gained two additive keyword arguments, `subreddits` and `run_id`; both
+  default to the previous behaviour. `scrape_runs.run_id` is now populated.
+
+### Fixed — P3
+
+- **`config.yaml` was read with the locale's default encoding.** On Windows that is cp1252, so a
+  single non-ASCII character anywhere in the file — including in a comment — raised
+  `UnicodeDecodeError` from every command that loads config. It is now read as UTF-8, which is what
+  YAML specifies.
+- **`RunService.fail()` stored its error unredacted.** That column is rendered on `/runs/<id>`, so a
+  credential in an exception message could have reached the page (R15, and P2's F3 finding).
+- The scrape button no longer reports success it cannot know about, and no longer fails silently
+  when the request errors.
 
 ### Added — P2
 

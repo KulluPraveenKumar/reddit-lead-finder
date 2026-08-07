@@ -179,6 +179,22 @@ predecessor has not been approved. The `.claude/skills/phase-manager` skill enfo
 | **Config** | None |
 | **Depends on** | P2 |
 | **Tasks** | 1. `RunService`: create / transition / cancel / retry / progress<br>2. Duplicate-run guard → **409 with the existing run id**<br>3. `GET /api/runs/<id>/progress` from `jobs GROUP BY state`<br>4. `GET /api/runs/<id>/events?after=` incremental feed<br>5. `POST /api/scrape` → enqueue; response keeps its original keys **plus** `run_id`<br>6. Run list and progress pages; `poll()` stops on terminal, backs off after 3 errors, pauses on `document.hidden` |
+
+> ✅ **DELIVERED 2026-08-07.** Report: [PHASE-03-COMPLETION-REPORT.md](PHASE-03-COMPLETION-REPORT.md) ·
+> Handover: [PHASE-03-HANDOVER.md](PHASE-03-HANDOVER.md).
+> **Three decisions this row did not settle**, resolved with the operator before implementation:
+> **(a)** the run **walks both review gates** — the transition table admits no other path from
+> `PENDING` to `SCRAPING`, recorded as a reconciliation in
+> [ARCHITECTURE_FREEZE §11.1](ARCHITECTURE_FREEZE.md);
+> **(b)** the shim runs **`scrape_subreddit` only**. The frozen job-type list
+> ([04 §2.4](04-system-design.md)) has no keyword or user type, so `POST /api/scrape` and the
+> scheduler no longer run those two scrapers — a deliberate, documented behaviour change until
+> P5/P17. `python main.py scrape` still runs all three;
+> **(c)** this row says *Config: None* and its own **Rollback** row names `orchestration.enabled` —
+> a self-conflict. The key **is** implemented, default `true`, and the retained legacy thread path is
+> exercised by a test that asserts scraper *construction* (asserting a 200 would pass either way).
+> **Measured:** progress p95 **&lt; 50 ms at 5,000 jobs**, verified by mutation — replacing the
+> `GROUP BY` with Python-side counting fails both the budget test and the query-shape test.
 | **Acceptance** | `POST /api/scrape` returns the original keys · progress reflects real job counts and responds **< 50 ms** · killing the process mid-run and restarting resumes remaining jobs · cancel marks queued jobs cancelled · second run for the same project → 409 · illegal transition → 409 naming both states · `run_events` renders live |
 | **Metrics** | Progress p95 < 50 ms at 5,000 jobs · resume success 10/10 kill tests · contract test on `/api/scrape` passes |
 | **Time / Risk** | **3 days · Low** |

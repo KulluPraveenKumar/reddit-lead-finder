@@ -7,7 +7,7 @@
 > |---|---|---|
 > | **P1** | `0004` migration, `Run`/`Job`/`RunEvent` models, `RunState`/`JobState`, transition table | ✅ **shipped 2026-08-05** — [PHASE-01-HANDOVER.md](PHASE-01-HANDOVER.md) |
 > | **P2** | `JobQueue`, `Worker`, handler registry, `maintenance`, structured logging | ✅ **shipped 2026-08-06** — [PHASE-02-HANDOVER.md](PHASE-02-HANDOVER.md) |
-> | **P3** | `RunService`, run API, `/runs` pages, `POST /api/scrape` shim | pending |
+> | **P3** | `RunService`, run API, `/runs` pages, `POST /api/scrape` shim | ✅ **shipped 2026-08-07** — [PHASE-03-HANDOVER.md](PHASE-03-HANDOVER.md) |
 >
 > **Scheduling is deferred to P24** (`hermes cron` replaces the `schedule` library);
 > §2.1's per-project scheduling is out of scope for all three.
@@ -44,7 +44,12 @@ day for a human.
 - AI job types (Phase 4)
 - Discovery / keyword job types (Phase 5)
 - Comment / analysis job types (Phases 6–7)
-- The review gate UIs (Phase 5) — the *states* exist, but nothing enters them yet
+- The review gate UIs (Phase 5) — the *states* exist, and a run **passes through**
+  them without pausing. ⚠️ **Corrected 2026-08-07.** This line originally read "nothing enters
+  them yet", which the transition table makes impossible: both gates lie on the only legal path from
+  `PENDING` to `SCRAPING`. A P3 run traverses them, recording on the timeline that the operator's
+  configured subreddit list already satisfies them. See
+  [ARCHITECTURE_FREEZE §11.1](ARCHITECTURE_FREEZE.md). The gate **pages** remain P18's
 - Multi-worker concurrency (the claim is written to be safe for it; the default is one)
 
 ## 3. Architecture
