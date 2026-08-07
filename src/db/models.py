@@ -18,9 +18,16 @@ Base = declarative_base()
 def _utcnow() -> datetime.datetime:
     """Timezone-aware UTC now, stored naive to match the existing columns.
 
-    The pre-existing tables use naive ``datetime.utcnow`` defaults. New tables
-    use this instead: ``utcnow`` is deprecated in 3.12, but the *stored* value
-    must stay naive-UTC so old and new rows compare correctly.
+    Every ``DateTime`` default in this module goes through here. ``utcnow`` is
+    deprecated in 3.12 and raises under ``-W error::DeprecationWarning`` — and
+    because SQLAlchemy evaluates column defaults *inside* statement execution,
+    that raise surfaces as a ``StatementError`` on INSERT rather than anything
+    that names a datetime.
+
+    The ``replace(tzinfo=None)`` is load-bearing, not cosmetic. The whole schema
+    stores naive UTC, and ``job_queue.claim`` compares timestamps as formatted
+    SQLite strings; an aware value serializes with a ``+00:00`` suffix, so the
+    comparison would silently stop matching. Naive-UTC in, naive-UTC out.
     """
     return datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
 
@@ -42,7 +49,7 @@ class Lead(Base):
     matched_keywords = Column(Text, default="")
     status = Column(String(20), default="new", index=True)
     created_utc = Column(DateTime, nullable=False)
-    scraped_at = Column(DateTime, default=datetime.datetime.utcnow)
+    scraped_at = Column(DateTime, default=_utcnow)
 
     __table_args__ = (
         Index("ix_leads_intent_score", "intent_score"),
@@ -71,7 +78,7 @@ class DashboardSubreddit(Base):
 
     id = Column(Integer, primary_key=True)
     name = Column(String(100), unique=True, nullable=False)
-    added_at = Column(DateTime, default=datetime.datetime.utcnow)
+    added_at = Column(DateTime, default=_utcnow)
 
     def __repr__(self):
         return f"<DashboardSubreddit r/{self.name}>"
@@ -83,7 +90,7 @@ class DashboardKeyword(Base):
     id = Column(Integer, primary_key=True)
     keyword = Column(String(200), nullable=False)
     intent_level = Column(String(20), nullable=False, default="high")
-    added_at = Column(DateTime, default=datetime.datetime.utcnow)
+    added_at = Column(DateTime, default=_utcnow)
 
     def __repr__(self):
         return f"<DashboardKeyword [{self.intent_level}] {self.keyword}>"
@@ -94,7 +101,7 @@ class DashboardSearchQuery(Base):
 
     id = Column(Integer, primary_key=True)
     query = Column(String(300), nullable=False)
-    added_at = Column(DateTime, default=datetime.datetime.utcnow)
+    added_at = Column(DateTime, default=_utcnow)
 
     def __repr__(self):
         return f"<DashboardSearchQuery {self.query}>"
@@ -118,8 +125,8 @@ class TrackedUser(Base):
     username = Column(String(100), unique=True, nullable=False, index=True)
     post_count = Column(Integer, default=1)
     lead_count = Column(Integer, default=0)
-    first_seen = Column(DateTime, default=datetime.datetime.utcnow)
-    last_seen = Column(DateTime, default=datetime.datetime.utcnow)
+    first_seen = Column(DateTime, default=_utcnow)
+    last_seen = Column(DateTime, default=_utcnow)
 
     def __repr__(self):
         return f"<TrackedUser u/{self.username}>"
@@ -133,7 +140,7 @@ class ScrapeRun(Base):
     subreddit = Column(String(100), nullable=True)
     posts_found = Column(Integer, default=0)
     leads_found = Column(Integer, default=0)
-    run_at = Column(DateTime, default=datetime.datetime.utcnow)
+    run_at = Column(DateTime, default=_utcnow)
     # Added in 0004. NULL on the 10 pre-existing rows, forever: they predate
     # orchestration and belong to no run. This table stays the per-scraper audit
     # record it already is; `runs` is the higher-level concept.

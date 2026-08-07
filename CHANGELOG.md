@@ -54,6 +54,30 @@ plus the process and hygiene work completed after `v0.1.0-p1`.
   from the first line of the application onward.
 - `config.yaml` — `logging.file` and `worker.poll_interval_seconds`.
 
+### Fixed — P2
+
+- **Every `DateTime` column default now uses the timezone-aware `models._utcnow` instead of the
+  deprecated `datetime.utcnow`** (7 columns across `leads`, `dashboard_subreddits`,
+  `dashboard_keywords`, `dashboard_search_queries`, `tracked_users` and `scrape_runs`). SQLAlchemy
+  evaluates Python-side defaults *inside* statement execution, so under
+  `pytest -W error::DeprecationWarning` the deprecation raised as a `StatementError` on INSERT —
+  an error naming neither the column nor the datetime. Six tests failed this way, and one of them,
+  `test_a_reclaimed_job_re_runs_without_duplicating_rows`, reported *"the re-run duplicated a row"*
+  when the truth was the opposite: the rolled-back INSERT wrote **zero** rows, and the reclaim and
+  idempotency logic it guards were correct throughout. The stored value stays **naive** UTC:
+  `JobQueue.claim` compares timestamps as formatted SQLite strings, so an aware value would carry a
+  `+00:00` suffix and the `<=` would silently stop matching — a queue that claims nothing and
+  reports no error.
+- The same substitution in `src/scoring.py` and the three scrapers, which computed naive UTC
+  directly. No test reaches these call sites; they are behaviour-preserving by construction.
+- Three regression tests in `tests/test_boundaries.py`, reflecting off `Base.metadata` so they cover
+  columns added later rather than the ones that happened to break: no `DateTime` default may be
+  `datetime.utcnow` (deprecated) or a bare `datetime.now` (local time, not UTC); every default must
+  return a naive value on a UTC clock; and both offending columns must round-trip that way through a
+  real INSERT and SELECT. The first is keyed on `__qualname__` rather than identity, because
+  `datetime.datetime.utcnow` returns a fresh bound-builtin on every attribute access and an `is`
+  check would pass no matter what the model did. Verified by mutation, not by assumption.
+
 ### Dependencies
 
 - `python-json-logger>=3.1` — the one dependency P2 adds, named by

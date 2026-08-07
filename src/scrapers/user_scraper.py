@@ -36,7 +36,7 @@ class UserScraper:
                 if sub_name.lower() not in subreddits:
                     continue
 
-                created_utc = post["created_utc"] or datetime.datetime.utcnow()
+                created_utc = post["created_utc"] or datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
                 lead = Lead(
                     reddit_id=post["id"],
                     subreddit=sub_name,
@@ -54,7 +54,7 @@ class UserScraper:
                 session.add(lead)
                 user_leads += 1
 
-            user.last_seen = datetime.datetime.utcnow()
+            user.last_seen = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
             user.post_count = user.post_count + len(posts)
             user.lead_count = user.lead_count + user_leads
             session.commit()

@@ -58,7 +58,10 @@ class LeadScorer:
 
         recency_score = 0
         if created_utc:
-            age_hours = (datetime.datetime.utcnow() - created_utc).total_seconds() / 3600
+            # Naive UTC on both sides: `created_utc` comes off reddit already
+            # stripped to naive UTC, and subtracting an aware value would raise.
+            now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
+            age_hours = (now - created_utc).total_seconds() / 3600
             recency_score = max(0, 100 - age_hours) * self.recency_weight / 100
 
         total = keyword_score + upvote_score + comment_score + recency_score

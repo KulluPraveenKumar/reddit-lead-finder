@@ -34,7 +34,7 @@ class SubredditScraper:
             # within the page, which the old per-post check let through and the
             # reddit_id unique index then rejected at commit time.
             for post in repo.filter_new(posts):
-                created_utc = post["created_utc"] or datetime.datetime.utcnow()
+                created_utc = post["created_utc"] or datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
                 score_result = scorer.score_post(
                     title=post["title"],
                     body=post["body"] or "",
@@ -85,12 +85,12 @@ class SubredditScraper:
         if sub:
             sub.description = info["description"]
             sub.subscriber_count = info["subscribers"]
-            sub.last_scraped = datetime.datetime.utcnow()
+            sub.last_scraped = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
         else:
             sub = Subreddit(
                 name=sub_name,
                 description=info["description"],
                 subscriber_count=info["subscribers"],
-                last_scraped=datetime.datetime.utcnow(),
+                last_scraped=datetime.datetime.now(datetime.UTC).replace(tzinfo=None),
             )
             session.add(sub)

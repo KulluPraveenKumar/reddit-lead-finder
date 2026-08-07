@@ -12,6 +12,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from sqlalchemy import DateTime
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SRC = PROJECT_ROOT / "src"
@@ -323,3 +324,119 @@ def test_legacy_api_contract_is_frozen(client):
                 assert sorted(payload[0]) == expected, (
                     f"{path} item keys changed:\n  was {expected}\n  now {sorted(payload[0])}"
                 )
+
+
+# ------------------------------------------------------- naive-UTC timestamps
+
+
+def _datetime_column_defaults():
+    """Every callable ``DateTime`` default/onupdate in the schema.
+
+    Yields ``(label, callable)``. Reflected off ``Base.metadata`` rather than
+    listed by hand: a test that enumerates today's columns stops protecting the
+    ones added tomorrow, which is exactly when this bug comes back.
+    """
+    from src.db.models import Base
+
+    for table in Base.metadata.tables.values():
+        for column in table.columns:
+            if not isinstance(column.type, DateTime):
+                continue
+            for kind in ("default", "onupdate"):
+                spec = getattr(column, kind)
+                if spec is not None and spec.is_callable:
+                    # SQLAlchemy wraps a zero-arg default in ``lambda ctx: fn()``
+                    # and copies the original's metadata onto it; ``__wrapped__``
+                    # is the function actually written in the model.
+                    yield (
+                        f"{table.name}.{column.name} {kind}",
+                        getattr(spec.arg, "__wrapped__", spec.arg),
+                    )
+
+
+def test_no_datetime_column_defaults_to_a_deprecated_or_local_clock():
+    """The bug this pass fixed, made permanent.
+
+    ``datetime.utcnow`` is deprecated in 3.12 and *raises* under
+    ``-W error::DeprecationWarning``. Because SQLAlchemy evaluates column
+    defaults inside statement execution, that raise arrives as a
+    ``StatementError`` on INSERT — an error that names neither the column nor
+    the datetime, and which cost this project six mysterious test failures.
+
+    ``datetime.now`` without a ``tz`` is the trap on the other side: it silences
+    the warning and returns *local* time, which is wrong by hours on a
+    developer's machine and right by accident in a UTC CI container.
+    """
+    # Keyed by ``__qualname__`` rather than identity: ``datetime.datetime.utcnow``
+    # hands back a fresh bound-builtin object on every attribute access, so ``is``
+    # would never match and the test would pass no matter what the model did.
+    banned = {
+        "datetime.utcnow": "datetime.utcnow, which is deprecated and raises under -W error",
+        "datetime.now": "a bare datetime.now, which returns local time, not UTC",
+    }
+    for label, fn in _datetime_column_defaults():
+        reason = banned.get(getattr(fn, "__qualname__", ""))
+        assert reason is None, f"{label} uses {reason}; use models._utcnow instead"
+
+
+def test_every_datetime_default_produces_naive_utc():
+    """Naive in, naive out — and actually UTC, not the local wall clock.
+
+    The ``replace(tzinfo=None)`` in ``models._utcnow`` is load-bearing:
+    ``JobQueue.claim`` compares timestamps as formatted SQLite strings, so an
+    aware value would serialize with a ``+00:00`` suffix and the ``<=`` would
+    silently stop matching — a queue that claims nothing and reports no error.
+    """
+    import datetime as _dt
+
+    reference = _dt.datetime.now(_dt.UTC).replace(tzinfo=None)
+    for label, fn in _datetime_column_defaults():
+        value = fn()
+        assert value.tzinfo is None, (
+            f"{label} returned an aware datetime; the schema stores naive UTC"
+        )
+        assert abs((value - reference).total_seconds()) < 60, (
+            f"{label} is not on a UTC clock (returned {value}, expected ~{reference})"
+        )
+
+
+def test_stored_timestamp_defaults_round_trip_as_naive_utc(temp_db):
+    """The same guarantee end-to-end, through a real INSERT and SELECT.
+
+    Both tables named here failed under ``-W error::DeprecationWarning``:
+    ``leads.scraped_at`` broke the repository tests and ``scrape_runs.run_at``
+    broke the worker's reclaim test, where the rolled-back INSERT looked like a
+    duplicate-row bug.
+    """
+    import datetime as _dt
+
+    from sqlalchemy.orm import Session
+
+    from src.db import database
+    from src.db.models import Lead, ScrapeRun
+
+    reference = _dt.datetime.now(_dt.UTC).replace(tzinfo=None)
+    with Session(bind=database.ENGINE) as session:
+        session.add(
+            Lead(
+                reddit_id="t3_utc",
+                subreddit="test",
+                author="tester",
+                title="timestamp defaults",
+                url="https://example.invalid/t3_utc",
+                created_utc=reference,
+            )
+        )
+        session.add(ScrapeRun(scraper_type="subreddit", posts_found=1))
+        session.commit()
+
+    with Session(bind=database.ENGINE) as session:
+        stamps = {
+            "leads.scraped_at": session.query(Lead).one().scraped_at,
+            "scrape_runs.run_at": session.query(ScrapeRun).one().run_at,
+        }
+
+    for label, stored in stamps.items():
+        assert stored is not None, f"{label} was not populated by its default"
+        assert stored.tzinfo is None, f"{label} came back aware; the schema stores naive UTC"
+        assert abs((stored - reference).total_seconds()) < 60, f"{label} is not on a UTC clock"

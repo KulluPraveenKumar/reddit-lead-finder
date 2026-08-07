@@ -39,7 +39,7 @@ class KeywordScraper:
                 seen_ids.update(p["id"] for p in posts)
 
                 for post in repo.filter_new(posts):
-                    created_utc = post["created_utc"] or datetime.datetime.utcnow()
+                    created_utc = post["created_utc"] or datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
                     score_result = scorer.score_post(
                         title=post["title"],
                         body=post["body"] or "",
