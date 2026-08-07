@@ -252,6 +252,61 @@ def test_lease_expiry_reclaims_and_re_runs_without_duplicating(session, worker, 
     assert session.query(Lead).count() == before
 
 
+# -------------------------------------------------------------- kill / resume
+
+
+def test_a_killed_worker_leaves_the_run_resumable(session, fake_scraper):
+    """AC3: kill the process mid-run, restart, the remaining jobs finish.
+
+    A killed process is modelled by abandoning the worker while it holds a claim
+    -- which is exactly what the database sees. The row stays `running` with a
+    lease nobody will renew, and recovery is a *new* worker reclaiming it. No
+    state is carried over in memory, because after a kill there is none.
+    """
+    run = _start_run(session, ("a", "b", "c"))
+
+    first = Worker(JobQueue(database.ENGINE), REGISTRY, poll_interval=0.0)
+    first.tick()  # one subreddit done
+    claimed = JobQueue(database.ENGINE).claim(first.worker_id, lease_seconds=900)
+    assert claimed is not None  # a second job is now held by the "dead" worker
+    del first
+
+    # The lease outlives the process, so recovery waits for it to lapse.
+    with Session(bind=database.ENGINE) as s:
+        s.get(Job, claimed.id).lease_expires_at = utcnow().replace(year=2000)
+        s.commit()
+
+    second = Worker(JobQueue(database.ENGINE), REGISTRY, poll_interval=0.0)
+    _drain(second, session)
+
+    session.refresh(run)
+    assert run.state == RunState.COMPLETE.value
+    assert session.query(Lead).count() == 3
+
+
+@pytest.mark.parametrize("iteration", range(10))
+def test_resume_after_a_kill_succeeds_every_time(session, fake_scraper, iteration):
+    """docs/34 §P3 Metrics: "resume success 10/10 kill tests".
+
+    Parameterised rather than looped so a failure names which iteration broke,
+    and so one flake cannot be hidden by a retry inside the test.
+    """
+    run = _start_run(session, ("a", "b"))
+
+    dying = Worker(JobQueue(database.ENGINE), REGISTRY, poll_interval=0.0)
+    claimed = JobQueue(database.ENGINE).claim(dying.worker_id, lease_seconds=900)
+    assert claimed is not None
+    with Session(bind=database.ENGINE) as s:
+        s.get(Job, claimed.id).lease_expires_at = utcnow().replace(year=2000)
+        s.commit()
+    del dying
+
+    _drain(Worker(JobQueue(database.ENGINE), REGISTRY, poll_interval=0.0), session)
+
+    session.refresh(run)
+    assert run.state == RunState.COMPLETE.value, f"iteration {iteration} did not resume"
+
+
 # -------------------------------------------------------------- cancellation
 
 

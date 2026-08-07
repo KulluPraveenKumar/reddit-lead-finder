@@ -60,7 +60,7 @@ def test_concurrent_read_write_soak_reports_no_locked_database(engine):
         run_id = run.id
 
     errors: list[str] = []
-    counters = {"claims": 0, "reads": 0, "events": 0}
+    counters = {"claims": 0, "reads": 0, "events": 0, "progress": 0}
     stop = threading.Event()
     lock = threading.Lock()
 
@@ -100,6 +100,27 @@ def test_concurrent_read_write_soak_reports_no_locked_database(engine):
             except Exception as exc:  # noqa: BLE001
                 record(exc)
 
+    def progress_reader() -> None:
+        """P3's actual poll path, not an imitation of it.
+
+        The readers above issue the queries the progress endpoint *would*. This
+        one calls the code the endpoint calls, so a future change to
+        ``RunService.progress`` -- an extra query, a longer transaction -- is
+        contended against here rather than discovered in production. Both shapes
+        run: the raw one keeps the soak honest if the service is refactored away.
+        """
+        from src.orchestration.run_service import RunService
+
+        while not stop.is_set():
+            try:
+                with Session(bind=engine) as session:
+                    RunService(session, queue).progress(run_id)
+                    RunService(session, queue).stats(run_id)
+                with lock:
+                    counters["progress"] += 1
+            except Exception as exc:  # noqa: BLE001
+                record(exc)
+
     # Two writers, not one: a single writer never contends with itself, and a
     # soak that cannot produce contention cannot prove its absence. Mutation
     # testing found this — with one writer, setting `busy_timeout=0` left this
@@ -109,6 +130,7 @@ def test_concurrent_read_write_soak_reports_no_locked_database(engine):
         threading.Thread(target=writer, name="soak-writer-2"),
         threading.Thread(target=reader, name="soak-reader-1"),
         threading.Thread(target=reader, name="soak-reader-2"),
+        threading.Thread(target=progress_reader, name="soak-progress-1"),
     ]
     for thread in threads:
         thread.start()
@@ -122,7 +144,8 @@ def test_concurrent_read_write_soak_reports_no_locked_database(engine):
     # "it passed". Visible with `pytest -s`.
     print(
         f"\nsoak {duration:.0f}s: {counters['claims']} claims, "
-        f"{counters['events']} events, {counters['reads']} reads, {len(errors)} errors"
+        f"{counters['events']} events, {counters['reads']} reads, "
+        f"{counters['progress']} progress polls, {len(errors)} errors"
     )
 
     locked = [e for e in errors if "database is locked" in e or "database table is locked" in e]
@@ -130,6 +153,7 @@ def test_concurrent_read_write_soak_reports_no_locked_database(engine):
     assert errors == [], f"unexpected errors during the soak: {errors[:3]}"
     assert counters["claims"] > 0, "the writer never claimed anything"
     assert counters["reads"] > 0, "the reader never ran"
+    assert counters["progress"] > 0, "the progress poller never ran"
 
 
 def test_the_pragmas_that_make_the_soak_possible_are_actually_set(engine):
