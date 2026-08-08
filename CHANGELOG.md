@@ -14,12 +14,52 @@ under the process in [docs/EXECUTION_MODE_LOCK.md](docs/EXECUTION_MODE_LOCK.md).
 
 ## [Unreleased]
 
+**P4 — network provider abstraction** ([docs/PHASE-04-COMPLETION-REPORT.md](docs/PHASE-04-COMPLETION-REPORT.md)),
 **P3 — run service, run API, run pages** ([docs/PHASE-03-COMPLETION-REPORT.md](docs/PHASE-03-COMPLETION-REPORT.md))
 and **P2 — job queue, worker, structured logging** ([docs/PHASE-02-COMPLETION-REPORT.md](docs/PHASE-02-COMPLETION-REPORT.md)),
 plus the process and hygiene work completed after `v0.1.0-p1`.
 
 > Not yet tagged. [EXECUTION_MODE_LOCK §6.2](docs/EXECUTION_MODE_LOCK.md) forbids tagging a phase
 > whose manual sign-off table is unsigned.
+
+### ⚠️ Changed — P4, behaviour an operator will notice
+
+- **Bulk page fetches now prefer the direct connection over the datacenter proxy pool.** P0 measured
+  direct at **100% success / 0% blocks** against Webshare's **71.4% / 28.6%**, reproduced twice, with
+  direct also faster (1.55×) and cheaper on CPU (2.55×). Reverse with `network.ladder: [dc, direct]`.
+- **An exhausted proxy pool no longer stops a run.** It degrades to the next rung of
+  `network.ladder`, bounded by `network.direct.max_requests_per_hour` (120) and reported as a
+  **warning on the run timeline**. The previous behaviour is `network.policy: proxy_only` +
+  `network.on_pool_exhausted: fail_run`.
+- **`/health/proxies` now reflects scraper traffic.** It never did: the dashboard built one pool and
+  every scrape job built another, so the page reported a pool that had never served a request. Both
+  now resolve one process-wide policy — which is also what makes the hourly cap a real cap rather
+  than one per job.
+
+### Added — P4
+
+- `NetworkProvider` ABC with capability flags, and four providers: `direct`, `managed_list`,
+  `managed_gateway` (one generic class covering every managed residential vendor), `null_provider`.
+- `NetworkPolicy` — egress chosen per **request class** (`rss`, `health`, `website`, `html`,
+  `comments`, `validation`) with a degradation ladder. `rss`, `health` and `website` are **always
+  direct**, in code rather than in configuration.
+- **Target-acceptance health.** A proxy that answers the IP-echo probe but is refused by the target
+  now reports as degraded instead of healthy, and pool-wide collapse opens the circuit early.
+- `network:` block in `config.yaml`, fully commented. Absent, the legacy `proxy:` block still drives
+  everything exactly as before.
+- **Grep fence 4** (`src/net/` contains no Reddit identifiers) — specified in three documents,
+  ticked as delivered in P2, and never actually written until now.
+
+### Fixed — P4
+
+- **A direct fetch carrying a `Referer` picked a random browser profile**, mixing a Chrome
+  User-Agent with another profile's `Accept-Language` — the exact incoherence that produced a
+  measured 100% block rate on two separate occasions. Latent since P2 because nothing exercised the
+  path.
+- **`exclude=tried` is now enforced** rather than an accident of LRU ordering, so a retry cannot
+  reuse the exit that just failed.
+- **A blacklist cooldown can no longer scale to zero** under pool pressure, which would have made
+  pool exhaustion unobservable and silently disabled the degradation ladder.
 
 ### ⚠️ Changed — P3, behaviour an operator will notice
 

@@ -109,6 +109,40 @@ def test_no_wire_format_details_outside_ai():
     assert offenders == [], f"provider wire details leaked: {offenders}"
 
 
+def test_the_network_layer_has_no_reddit_knowledge():
+    """Fence 4 (R5), and the first implementation of it.
+
+    ``docs/35`` §2.1 lists this among the four checks it calls non-negotiable and
+    ``docs/12`` §14 ticked it as delivered in P2 -- but no such test existed, and
+    writing it in P4 found seven Reddit identifiers in ``src/net/blocks.py``.
+    They were moved to ``RedditClient`` rather than deleted; the transport now
+    carries generic challenge signatures and the caller supplies target-specific
+    ones.
+
+    **Scope is `src/net/` only.** ``docs/testing/P04-testing.md`` T12 instructs a
+    tester to plant the word in a file under that tree and watch this fail;
+    widening the scope to all of ``src/`` would make that instruction defeat
+    itself, and would also fail on ``src/reddit_client.py``, which is *supposed*
+    to know about Reddit.
+
+    AST-based, not ``grep -ri``: the rule is about coupling, not vocabulary.
+    ``src/net/user_agents.py`` must stay free to explain in its docstring that it
+    exists because of ``old.reddit.com`` 403s -- a literal reading of the old
+    text would have forced an engineer to delete the comment explaining why the
+    boundary exists. See ARCHITECTURE_FREEZE §11.1.
+    """
+    pattern = re.compile(r"reddit", re.IGNORECASE)
+    offenders = []
+    for path in _python_files(SRC / "net"):
+        hits = sorted({t for t in _executable_tokens(path).split() if pattern.search(t)})
+        if hits:
+            offenders.append(f"{path.relative_to(PROJECT_ROOT)}: {hits}")
+    assert offenders == [], (
+        "src/net/ is a reusable egress layer and must contain no Reddit knowledge "
+        f"in executable code (R5). Offenders: {offenders}"
+    )
+
+
 def test_prompts_are_files_not_literals():
     """A literal buried in a function cannot be diffed in a review."""
     offenders = []

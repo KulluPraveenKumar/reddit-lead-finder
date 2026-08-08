@@ -216,6 +216,22 @@ predecessor has not been approved. The `.claude/skills/phase-manager` skill enfo
 | **Config** | `network.policy`, `network.direct.{enabled,max_requests_per_hour,classes}`, `network.providers[]`, `network.ladder`, `network.on_pool_exhausted` |
 | **Depends on** | P0 (U8 block-rate result) |
 | **Tasks** | 1. Define the ABC and flags (`exposes_origin_ip`, `is_metered`, `supports_sticky`, `rotation`)<br>2. Refactor `ProxyManager` behind `WebshareDatacenterProvider` — **behaviour unchanged**<br>3. `DirectProvider` with a pinned header profile and an hourly governor<br>4. `ManagedProxyProvider` — one generic gateway class covering every residential vendor<br>5. `NetworkPolicy.acquire(request_class, session_key)`; ladder degradation<br>6. Add `target_ok`/`target_blocked`/`acceptance_rate` to `ProxyRuntime`; selection prefers acceptance<br>7. Make `exclude=tried` **explicit**<br>8. Cooldown scaled by pool pressure<br>9. Bandwidth floor → metered provider reports unhealthy |
+> ✅ **DELIVERED 2026-08-08.** Report: [PHASE-04-COMPLETION-REPORT.md](PHASE-04-COMPLETION-REPORT.md) ·
+> Handover: [PHASE-04-HANDOVER.md](PHASE-04-HANDOVER.md).
+> **Three decisions taken before implementation**, analysed in
+> [P4-DECISION-ANALYSIS.md](P4-DECISION-ANALYSIS.md):
+> **(a) `policy` decides eligibility, `ladder` decides order.** The three-value enum cannot express
+> "direct first, proxy as fallback", which is what P0 measured; keeping order in `ladder` ships the
+> measurement with **no frozen-document change**. Ships `prefer_proxy` + `[direct, dc]`;
+> **(b) target-specific block signatures are injected by the caller**, so `src/net/` is Reddit-free —
+> without this, grep fence 4 cannot pass;
+> **(c) degradation notices are buffered and drained after the scrape**, because `emit_event` dirties
+> the caller's session and P3's F7 proved what that costs across a network call.
+> **Corrected during implementation:** this row's *"all **251** `src/net/` tests"* is not
+> reproducible — the only file importing `src.net` collects **114**, a third of them covering
+> parsers and scoring. The measured baseline (583 suite-wide, 2 skipped) was used instead.
+> **Found:** grep fence 4 was specified in three documents and ticked as delivered in
+> [12 §14](12-phase-02.md), **did not exist**, and failed on seven identifiers when written.
 | **Acceptance** | RSS, health and website classes go **direct** under `prefer_proxy` · bulk HTML uses a proxy when healthy and degrades per policy · degradation emits a **visible `run_events` warning** and respects the hourly cap · `ProxyLeakError` still fatal · a proxy healthy on ipify but soft-blocked on target reports **degraded** · **all 251 `src/net/` tests pass or their change is justified** · vendor swap is config-only · retries use a different exit, enforced · credentials in no log/DB/response/UI · `src/net/` has zero Reddit identifiers |
 | **Metrics** | 251/251 tests · 0 credential tokens across all endpoint responses · provider construction from config for all 5 types |
 | **Time / Risk** | **3 days · Medium** — touches shipped, tested code |

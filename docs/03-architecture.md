@@ -591,6 +591,39 @@ Three constraints keep it safe to depend on:
   dependency on a loadable extension would make the schema un-installable in exchange for a recall
   improvement — not a trade worth making.
 
+### AD-25 — Egress is a policy, not a mandate
+
+*Transcribed here from [32 §4](32-documentation-consistency.md) by P4, which is where this register
+is the single home for decisions. The decision itself is unchanged and was frozen on 2026-08-05.*
+
+**Context.** [07 §1](07-scraping-pipeline.md) required all traffic via a rotating proxy and
+[08 §7](08-proxy-service.md) set `fail_closed: true`. ✅ [PHASE-02-STATUS §4.1](PHASE-02-STATUS.md)
+measured a 67% block rate *through the pool*, with 8 of 10 proxies blacklisted, while
+[00 §3](00-current-state.md) recorded the direct connection returning 200. P0 then measured both
+head to head: **direct 100% success / 0% blocks; Webshare 71.4% / 28.6%**, reproduced twice, with
+direct also winning on latency (1.55×), CPU (2.55×) and posts extracted
+([SPRINT-0 §1.2](SPRINT-0-MEASUREMENTS.md)). **The architecture required the slower, less reliable
+path and forbade the faster, more reliable one.**
+
+**Decision.** Egress is selected **per request class** by a `NetworkPolicy` over pluggable
+`NetworkProvider`s. RSS, health checks and the customer's own website are always direct ([R18](ARCHITECTURE_FREEZE.md)).
+Bulk HTML prefers whatever the ladder puts first and degrades under `on_pool_exhausted`, bounded by
+`max_requests_per_hour` and logged to `run_events`.
+
+**Two axes, deliberately separate.** `policy` decides which providers are *eligible*; `ladder`
+decides the *order*. The measurement that sets the order is independent of the rule that sets
+eligibility, so re-measuring is a one-line config change rather than a code change.
+
+**Consequences.** The IP-exposure goal is preserved; the throughput penalty is not. Degradation is
+bounded and visible rather than absent. A vendor swap becomes a config change
+([29 §5.4](29-network-and-proxy-strategy.md)) — one generic gateway class covers every managed
+residential vendor, because they all encode rotation and session in the username.
+
+**Rejected.** *Removing proxies entirely* — IP exposure at volume is a real concern and the goal was
+always correct. *Keeping `fail_closed`* — a truncated run is worse than a slower one, and the
+original objection (an **unbounded, silent** fallback) is answered by the governor, the class
+allowlist and the visible warning, not dismissed.
+
 ---
 
 ## 7. Cross-cutting concerns
@@ -618,6 +651,7 @@ Three constraints keep it safe to depend on:
 | Bulk enrichment | Bounded adaptive concurrency pool | Batch API | **DeepSeek has no batch endpoint** |
 | Secret storage | Fernet in the `settings` table, key from env | Plaintext, OS keyring | No new table, no new dependency beyond `cryptography`; keyring is absent on headless servers |
 | HTTP | `requests` + `HTTPAdapter` pooling | `httpx`, `aiohttp` | Already present; sync fits a single worker; per-proxy adapters give connection pooling for free |
+| **Network provider** | **`NetworkProvider` ABC + `NetworkPolicy`, per request class** (`direct`, `managed_list`, `managed_gateway`, `null_provider`) | A mandated single proxy pool; one class per vendor | [AD-25](#ad-25--egress-is-a-policy-not-a-mandate). Capability flags (`exposes_origin_ip`, `is_metered`) let the policy reason without branching on a provider's name, so adding a vendor is a config block rather than a class. Every managed residential vendor speaks the same `user-session-x:pass@gateway:port` shape, so **one** generic gateway class covers the market |
 | HTML parse | `BeautifulSoup` + `lxml` | `selectolax`, regex | Already present and working; parse cost is not the bottleneck |
 | Text extraction | `trafilatura` | `readability-lxml`, `newspaper3k` | Best boilerplate removal; single dependency; graceful `bs4` fallback |
 | DB | SQLite + WAL | Postgres | One operator, one machine; documented upgrade path |

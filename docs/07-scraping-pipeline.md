@@ -7,7 +7,7 @@
 | `old.reddit.com` only | `BASE_URL` constant; a test asserts no `oauth.reddit.com` / `api.reddit.com` / `praw` anywhere in the tree |
 | No Reddit API | dependency audit in CI: `praw`, `asyncpraw`, `redditwarp` are banned imports |
 | No OAuth, no login | no credential handling, no `Authorization` header, no account cookies |
-| All traffic via rotating proxy | `RedditClient` has no direct `requests` access; only `ProxiedHTTPClient` |
+| **All traffic via the network policy; egress is chosen per request class** | `RedditClient` has no direct `requests` access; only `ProxiedHTTPClient`. **Changed in P4** ([29 §6](29-network-and-proxy-strategy.md), [AD-25](ARCHITECTURE_FREEZE.md)): the *enforcement* is unchanged — no bare `requests.get` in `RedditClient` — but the destination is `NetworkPolicy`, not a mandated proxy. RSS, health checks and the customer's own website are always direct ([R18](ARCHITECTURE_FREEZE.md)); bulk HTML follows the configured ladder |
 
 Reference: [02 §1.1](02-research-findings.md) — the market leader in this category was terminated by
 a Reddit Data API licensing decision. The constraint is strategic, not incidental.

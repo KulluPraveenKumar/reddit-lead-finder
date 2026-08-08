@@ -1,12 +1,39 @@
 {% extends "_base_ai.html" %}
-{% block title %}Proxy Health{% endblock %}
+{% block title %}Network &amp; Proxy Health{% endblock %}
 
 {% block content %}
-<h1>Proxy Health</h1>
-<p class="sub">Every Reddit request leaves through one of these. When none of them work,
-scraping stops rather than falling back to this machine's address.</p>
+<h1>Network &amp; Proxy Health</h1>
+<p class="sub">Egress is chosen per kind of request, not globally. Feeds, health checks and
+customer websites always leave directly; bulk pages follow the ladder below.</p>
 
 <div id="banner" class="banner"></div>
+
+<div class="card">
+  <h2>Egress policy</h2>
+  <div class="row"><span class="k">Policy</span><span class="v" id="e-policy">&mdash;</span></div>
+  <div class="row"><span class="k">Ladder</span><span class="v" id="e-ladder">&mdash;</span></div>
+  <div class="row"><span class="k">When everything is unusable</span><span class="v" id="e-exhausted">&mdash;</span></div>
+  <div class="row"><span class="k">Direct requests this hour</span><span class="v" id="e-direct">&mdash;</span></div>
+  <div class="scroll-x" style="margin-top:12px">
+    <table class="data" id="provider-table">
+      <thead><tr>
+        <th>Provider</th><th>Type</th><th>State</th><th>Exposes your IP</th>
+        <th>Metered</th><th>Exits</th><th>Notes</th>
+      </tr></thead>
+      <tbody><tr><td colspan="7" class="empty">Loading&hellip;</td></tr></tbody>
+    </table>
+  </div>
+  <div class="scroll-x" style="margin-top:12px">
+    <table class="data" id="routing-table">
+      <thead><tr><th>Request kind</th><th>Goes out through</th></tr></thead>
+      <tbody><tr><td colspan="2" class="empty">Loading&hellip;</td></tr></tbody>
+    </table>
+  </div>
+  <p class="note"><strong>Feeds, health checks and website fetches are always direct.</strong>
+  That is a fixed architectural rule, not a setting &mdash; a customer's own site should be
+  fetched from one stable address, and rotating ten datacenter IPs through it looks like an
+  attack.</p>
+</div>
 
 <div class="card">
   <h2>Pool</h2>
@@ -16,6 +43,7 @@ scraping stops rather than falling back to this machine's address.</p>
   <div class="row"><span class="k">Blacklisted</span><span class="v" id="p-black">&mdash;</span></div>
   <div class="row"><span class="k">Not yet tested</span><span class="v" id="p-untested">&mdash;</span></div>
   <div class="row"><span class="k">Circuit</span><span class="v" id="p-circuit">&mdash;</span></div>
+  <div class="row"><span class="k">Target acceptance</span><span class="v" id="p-acceptance">&mdash;</span></div>
   <div class="row"><span class="k">On exhaustion</span><span class="v" id="p-failclosed">&mdash;</span></div>
   <p class="note"><strong>Degraded is not broken.</strong> A proxy leaves rotation after
   consecutive failures and returns automatically once its cooldown expires &mdash; a run
@@ -28,11 +56,16 @@ scraping stops rather than falling back to this machine's address.</p>
     <table class="data" id="proxy-table">
       <thead><tr>
         <th>Proxy</th><th>State</th><th>Exit IP</th><th>Requests</th>
-        <th>Failures</th><th>Fail rate</th><th>Blocked</th><th>Mean</th><th>Last error</th>
+        <th>Failures</th><th>Fail rate</th><th>Blocked</th><th>Accepted</th>
+        <th>Mean</th><th>Last error</th>
       </tr></thead>
-      <tbody><tr><td colspan="9" class="empty">Loading&hellip;</td></tr></tbody>
+      <tbody><tr><td colspan="10" class="empty">Loading&hellip;</td></tr></tbody>
     </table>
   </div>
+  <p class="note"><strong>&ldquo;Accepted&rdquo; is not the same as &ldquo;reachable&rdquo;.</strong>
+  A proxy can answer the live check perfectly and still be refused by the site being scraped.
+  Reachability is measured against an IP echo service; acceptance is measured from real traffic,
+  and it is the column that tells you whether a proxy is actually <em>useful</em>.</p>
   <p class="note">Proxies are identified by <code>host:port</code> only. The username and
   password live in the proxy file and are never written to the database, the logs or this
   page &mdash; a copied database cannot become a compromised proxy account.</p>
@@ -63,23 +96,72 @@ function stateKind(state){
   return '';
 }
 
+const EXHAUSTION_WORDS = {
+  degrade_to_direct: 'continue from this machine’s address, under the hourly cap',
+  pause_run:         'pause the run and retry when the pool recovers',
+  fail_run:          'stop the run rather than use this machine’s address'
+};
+
+function renderEgress(d){
+  document.getElementById('e-policy').textContent   = d.policy || '—';
+  document.getElementById('e-ladder').textContent   = (d.ladder || []).join('  →  ') || '—';
+  document.getElementById('e-exhausted').textContent =
+    EXHAUSTION_WORDS[d.on_pool_exhausted] || d.on_pool_exhausted || '—';
+  document.getElementById('e-direct').textContent =
+    d.direct_max_requests_per_hour === null || d.direct_max_requests_per_hour === undefined
+      ? '—'
+      : d.direct_requests_this_hour + ' / ' + d.direct_max_requests_per_hour;
+
+  const pbody = document.querySelector('#provider-table tbody');
+  pbody.innerHTML = (d.providers || []).length
+    ? d.providers.map(p =>
+        '<tr>'
+        + '<td>' + p.name + '</td>'
+        + '<td><code>' + p.type + '</code></td>'
+        + '<td>' + (p.healthy ? pill('ready', 'ok') : pill('unavailable', 'warn')) + '</td>'
+        + '<td>' + (p.exposes_origin_ip ? pill('yes', 'warn') : 'no') + '</td>'
+        + '<td>' + (p.metered ? 'yes' : 'no') + '</td>'
+        + '<td>' + p.usable_exits + '</td>'
+        + '<td>' + (p.reason || '—') + '</td>'
+        + '</tr>').join('')
+    : '<tr><td colspan="7" class="empty">No providers configured.</td></tr>';
+
+  const rbody = document.querySelector('#routing-table tbody');
+  const routing = d.routing || {};
+  const kinds = Object.keys(routing);
+  rbody.innerHTML = kinds.length
+    ? kinds.map(k =>
+        '<tr><td>' + k + '</td><td>' + (routing[k] || '<span class="empty">nothing available</span>')
+        + '</td></tr>').join('')
+    : '<tr><td colspan="2" class="empty">—</td></tr>';
+}
+
 function render(d){
   const banner = document.getElementById('banner');
   banner.className = 'banner';
+
+  renderEgress(d);
+
+  const degraded = (d.degradations || []).length;
 
   if(!d.enabled){
     document.getElementById('p-enabled').innerHTML = pill('disabled', 'warn');
     banner.className = 'banner warn show';
     banner.textContent = d.error
-      ? ('Proxy pool unavailable: ' + d.error + ' — requests would go out from this machine’s address.')
-      : 'Proxying is off. Requests go out from this machine’s address.';
+      ? ('Proxy pool unavailable: ' + d.error + ' — bulk requests go out from this machine’s address, under the hourly cap.')
+      : 'No proxy pool is configured. Bulk requests go out from this machine’s address, under the hourly cap.';
   } else {
     document.getElementById('p-enabled').innerHTML = pill('enabled', 'ok');
     if(d.circuit_open){
       banner.className = 'banner bad show';
-      banner.textContent = d.fail_closed
-        ? 'No usable proxy. Scraping is stopped — it will not fall back to this machine’s address.'
-        : 'No usable proxy, and fail_closed is off, so requests will fall back to this machine’s address.';
+      banner.textContent = 'No usable proxy. '
+        + (EXHAUSTION_WORDS[d.on_pool_exhausted] || 'behaviour per policy')
+        + ' — this is the ' + (d.on_pool_exhausted || '?') + ' setting.';
+    } else if(degraded){
+      banner.className = 'banner warn show';
+      banner.textContent = 'Egress has degraded ' + degraded + ' time(s) this run: '
+        + d.degradations.map(x => x.from_provider + ' → ' + x.to_provider).join(', ')
+        + '. Check the run timeline for when and why.';
     }
   }
 
@@ -89,14 +171,17 @@ function render(d){
   document.getElementById('p-untested').textContent = d.untested;
   document.getElementById('p-circuit').innerHTML =
     d.circuit_open ? pill('open — nothing usable', 'bad') : pill('closed — proxies available', 'ok');
+  document.getElementById('p-acceptance').innerHTML =
+    d.acceptance_rate === null || d.acceptance_rate === undefined
+      ? '<span class="empty">no traffic yet</span>'
+      : fmtPct(d.acceptance_rate);
   document.getElementById('p-failclosed').textContent =
-    d.fail_closed === null ? '—'
-    : (d.fail_closed ? 'stop the run (fail closed)' : 'use this machine’s IP (fail open)');
+    EXHAUSTION_WORDS[d.on_pool_exhausted] || '—';
 
   const body = document.querySelector('#proxy-table tbody');
   if(!d.proxies || !d.proxies.length){
-    body.innerHTML = '<tr><td colspan="9" class="empty">'
-      + (d.enabled ? 'No proxies loaded.' : 'Proxying is disabled.') + '</td></tr>';
+    body.innerHTML = '<tr><td colspan="10" class="empty">'
+      + (d.enabled ? 'No proxies loaded.' : 'No proxy pool is configured.') + '</td></tr>';
     return;
   }
   body.innerHTML = d.proxies.map(p =>
@@ -108,6 +193,8 @@ function render(d){
     + '<td>' + p.failures + '</td>'
     + '<td>' + fmtPct(p.failure_rate) + '</td>'
     + '<td>' + p.blocked_responses + '</td>'
+    + '<td>' + (p.acceptance_rate === null || p.acceptance_rate === undefined
+        ? '<span class="empty">—</span>' : fmtPct(p.acceptance_rate)) + '</td>'
     + '<td>' + (p.mean_latency_ms === null ? '—' : p.mean_latency_ms + ' ms') + '</td>'
     + '<td>' + (p.last_error ? p.last_error : '—') + '</td>'
     + '</tr>').join('');

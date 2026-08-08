@@ -188,6 +188,23 @@ def _selectable(self, exclude) -> list[ProxyRuntime]:
 All three sort `HEALTHY` before `COOLDOWN`/`DEGRADED` before `UNKNOWN`, so degraded proxies are used
 only when healthy ones are unavailable.
 
+> **What actually shipped.** One strategy exists: **least-recently-used with per-proxy pacing**
+> ([12 §14](12-phase-02.md) records the other two as deliberately not built — configuration surface
+> with no evidence for choosing between them). P4 orders by **measured target acceptance first, then
+> LRU** (§3a), and leaves everything else as built.
+>
+> **`exclude=tried` is enforced as of P4**, not emergent. [12 §14](12-phase-02.md) previously
+> recorded it as a side effect of LRU ordering; `ProxyManager.acquire(exclude=…)` now filters
+> explicitly and raises when every usable exit has already been tried for this request. Retrying the
+> same failing IP is the classic rotating-proxy bug and must not depend on an ordering accident —
+> and the case that proves the difference is a paced pool where the *excluded* exit is the only one
+> ready.
+>
+> **Cooldown scales with pool pressure** (`effective_cooldown = base × healthy/size`), with a
+> **floor** that is not a rounding detail: without it, zero healthy proxies yields a zero-second
+> cooldown, every blacklisted proxy returns to rotation instantly, `ProxyExhaustedError` becomes
+> unreachable, and the entire P4 degradation ladder silently never fires.
+
 ### 3.2 Sticky sessions
 
 ```python
@@ -280,6 +297,42 @@ def _check_one(self, p: ProxyRuntime, timeout: float) -> bool:
    and on every background health check, and a leak is a **loud error**, not a warning.
 3. Run at startup (blocking, with a summary) and then on a background thread every
    `health_check_interval_s`.
+
+---
+
+## 3a. Target acceptance — the third health signal *(added in P4)*
+
+**Both checks above are necessary and neither is sufficient.** A proxy that returns 200 from
+`api.ipify.org` and a soft-block page from the target is reported `healthy` by everything in §3.4 —
+and that is exactly the state 8 of 10 proxies were in during the run recorded in
+[PHASE-02-STATUS §4.1](PHASE-02-STATUS.md). The health page would have shown them as fine right up
+to the moment the retry ladder blacklisted them.
+
+| Signal | Source | Answers |
+|---|---|---|
+| Reachability | ipify probe | Does the proxy work at all? |
+| Leak | exit IP ≠ local IP | Is it actually proxying? |
+| **★ Target acceptance** | rolling window of real outcomes: `ok ÷ (ok + blocked)` | Does it work **for this target**? |
+
+`ProxyStats` carries `target_ok`, `target_blocked` and a derived `acceptance_rate`. Three properties
+of the implementation are load-bearing:
+
+- **The health probe does not count.** `record_success(..., target=False)` — the probe hits an IP echo
+  service, and counting it would report a proxy as accepted on the strength of a request the target
+  never saw, which is the blind spot this signal exists to close.
+- **Only a refusal counts against it.** A timeout or a reset says the transport failed, not that the
+  exit is unwelcome. Collapsing the two would retire good exits on a flaky network.
+- **Unknown is not zero.** `acceptance_rate` is `None` before there is evidence, and selection
+  ignores it below `ACCEPTANCE_MIN_SAMPLES` (5). At `0.0`-on-no-data, one early success would pin the
+  whole pool to a single exit and destroy the spread that LRU selection provides.
+
+Pool-wide acceptance below `POOL_ACCEPTANCE_FLOOR` (0.2, over ≥10 samples) opens the circuit
+**before** every proxy has been individually blacklisted — blacklisting needs three consecutive
+failures each, so a ten-proxy pool otherwise spends thirty requests learning what this knows after
+ten.
+
+**It costs zero extra requests.** It is derived from traffic that is happening anyway. Synthetic
+health checks answer *"is it up?"*; only real outcomes answer *"is it useful?"*
 
 Startup output:
 
@@ -454,12 +507,46 @@ proxy:
   circuit_failure_threshold: 0.8
   circuit_open_seconds: 300
 
-  fail_closed: true                  # refuse to start if 0 healthy proxies
+  fail_closed: true                  # ⚠️ SUPERSEDED IN P4 — see below
 ```
 
-`fail_closed: true` is the default and should stay that way. Setting it to `false` means the tool
-will scrape Reddit from the operator's own IP when the pool dies — which is exactly the situation
-proxies exist to prevent.
+> ⚠️ **`fail_closed` was replaced in P4 by `network.on_pool_exhausted`.** The key is still read, and
+> a machine with no `network:` block still behaves exactly as described here — but the three-value
+> policy below is what ships. **The original reasoning is retained rather than deleted**, because it
+> was correct and only half of it changed:
+>
+> > `fail_closed: true` is the default and should stay that way. Setting it to `false` means the tool
+> > will scrape Reddit from the operator's own IP when the pool dies — which is exactly the situation
+> > proxies exist to prevent.
+>
+> That objection is to an **unbounded, silent** fallback, and it stands. What P4 adds is a fallback
+> that is neither: a per-hour governor on the operator's own address
+> (`network.direct.max_requests_per_hour`, 120), a class allowlist, and a **visible `run_events`
+> warning** every time it happens. A capped, logged fallback is a different thing from the uncapped
+> one this decision rejected ([29 §2.2](29-network-and-proxy-strategy.md)).
+
+```yaml
+network:
+  policy: prefer_proxy           # which providers are ELIGIBLE
+  ladder: [direct, dc]           # what ORDER they are tried in
+  on_pool_exhausted: degrade_to_direct
+  direct:
+    max_requests_per_hour: 120
+    classes: [rss, health, website]     # always direct (R18)
+```
+
+| `on_pool_exhausted` | Behaviour | When to choose it |
+|---|---|---|
+| `degrade_to_direct` | Continue on the direct connection, under the governor, and log a visible `run_events` warning | **Default.** A truncated run is worse than a slower one |
+| `pause_run` | Raises with `retryable=True`; the run resumes when the pool recovers | When IP exposure genuinely matters more than latency |
+| `fail_run` | This section's original `fail_closed` behaviour | Kept for compliance situations |
+
+**Policy and ladder are two axes, deliberately.** `policy` answers *which providers may be used*;
+`ladder` answers *in what order*. P0 measured the direct connection at 100% success against the
+datacenter pool's 71.4% ([SPRINT-0 §1.2](SPRINT-0-MEASUREMENTS.md)), so the shipped ladder is
+`[direct, dc]`. Encoding order in the eligibility enum would have made re-measuring a code change.
+
+**Rollback:** `policy: proxy_only` + `on_pool_exhausted: fail_run` reproduces this section exactly.
 
 ---
 
@@ -520,13 +607,29 @@ output contains neither the username nor the password from the fixture file.
 
 Because `src/net/` has no Reddit knowledge:
 
-| Consumer | Phase | Benefit |
-|---|---|---|
-| `RedditClient` | 1 | Rotation, retry, caching, metrics |
-| `WebsiteFetcher` | 4 | Target sites that rate-limit or geo-block are handled identically |
-| Subreddit validator | 5 | Live validation without a separate transport |
-| Comment scraper | 6 | Sticky sessions per subreddit |
-| Any future source | — | Implement a parser; egress is solved |
+| Consumer | Phase | Egress class | Benefit |
+|---|---|---|---|
+| `RedditClient` | 1 | `html` / `comments` | Rotation, retry, caching, metrics |
+| **`WebsiteFetcher`** | **P13** | **`website` — always DIRECT** | See the correction below |
+| Subreddit validator | P17 | `validation` | Live validation without a separate transport |
+| Comment scraper | P8–P11 | `comments` | One transport, one policy |
+| RSS discovery | P5–P6 | `rss` — always direct | Published feed, low volume |
+| Any future source | — | — | Implement a parser; egress is solved |
 
-This is the payoff for building the proxy layer first: every later network consumer is a parser plus
-a schema, not a transport project.
+> ⚠️ **Correction, P4.** This section previously listed `WebsiteFetcher` as a proxy-pool consumer and
+> called it *"the payoff for building the proxy layer first."* **It is the opposite.** A bounded,
+> polite, seven-page crawl of a site whose owner is the operator's own customer is the one fetch in
+> the system that should be **direct and consistent**: arriving from ten rotating datacenter IPs
+> looks like an attack, and the customer is the person the operator least wants to alarm.
+>
+> `website` is therefore in the `ALWAYS_DIRECT` set ([R18](ARCHITECTURE_FREEZE.md)) — enforced in
+> `src/net/policy.py`, unaffected by `policy`, by the ladder, or by editing
+> `network.direct.classes`. See [29 §2](29-network-and-proxy-strategy.md), where the error was
+> identified before P13 could ship it.
+
+The reuse claim itself holds, and P4 strengthened it: `src/net/` now contains **zero** Reddit
+identifiers in executable code, enforced by grep fence 4
+(`tests/test_boundaries.py::test_the_network_layer_has_no_reddit_knowledge`). Target-specific
+soft-block signatures are injected by the caller, so P13 fetches a customer's website without
+Reddit's interstitial heuristics being applied to it. Every later network consumer is a parser plus a
+schema, not a transport project.

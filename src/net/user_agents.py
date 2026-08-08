@@ -121,8 +121,16 @@ def pick_profile(seed: str | None = None) -> HeaderProfile:
     return PROFILES[hash(seed) % len(PROFILES)]
 
 
-def headers_for(seed: str | None = None, *, referer: str | None = None) -> dict[str, str]:
-    headers = pick_profile(seed).as_dict()
+def headers_for_profile(profile: HeaderProfile, *, referer: str | None = None) -> dict[str, str]:
+    """Headers for a **known** profile, optionally arriving from another page.
+
+    Prefer this over :func:`headers_for` wherever the caller already holds the
+    profile the session was built with. ``headers_for(None, referer=...)`` picks
+    a *random* profile, so a request that adds a Referer to a session built with
+    a different profile ends up presenting two identities in one exchange --
+    exactly the incoherence rule 1 above exists to prevent.
+    """
+    headers = profile.as_dict()
     if referer:
         headers["Referer"] = referer
         # A browser arriving from another page on the same site reports
@@ -130,3 +138,7 @@ def headers_for(seed: str | None = None, *, referer: str | None = None) -> dict[
         # incoherent pair of exactly the kind that caused the 403.
         headers["Sec-Fetch-Site"] = "same-origin"
     return headers
+
+
+def headers_for(seed: str | None = None, *, referer: str | None = None) -> dict[str, str]:
+    return headers_for_profile(pick_profile(seed), referer=referer)

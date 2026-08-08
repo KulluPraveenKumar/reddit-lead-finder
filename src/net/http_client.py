@@ -1,21 +1,28 @@
 """ProxiedHTTPClient — every outbound request goes through here.
 
-Reddit-agnostic. Phase 4's website fetcher reuses it unchanged, which is the
+Reddit-agnostic. Phase 13's website fetcher reuses it unchanged, which is the
 test of whether the abstraction is real.
 
 The loop, in order, because the order is the design:
 
-    acquire proxy (paced, LRU)
-      -> cache lookup            hit? return, no network
-      -> request through proxy
-      -> classify status         403/429/5xx/timeout
-      -> classify BODY           a 200 can still be a block
-      -> success: record, cache
-      -> failure: record, rotate or back off, retry
+    cache lookup               hit? return, no network
+      -> policy.acquire        egress chosen by REQUEST CLASS, not globally
+      -> request through it
+      -> classify status       403/429/5xx/timeout
+      -> classify BODY         a 200 can still be a block
+      -> policy.release        outcome, latency, bytes -- always, including failure
+      -> success: cache
+      -> failure: retry through a DIFFERENT exit, enforced
 
 **Body classification is the step that is easy to omit and expensive to omit.**
-Reddit answers with HTTP 200 and an interstitial; treating that as success
-caches a block and reports "no posts found".
+A target can answer with HTTP 200 and an interstitial; treating that as success
+caches a block and reports "nothing found". Which signatures mean "interstitial"
+is the *caller's* knowledge, not this layer's -- see ``block_signatures``.
+
+**Retries use a different exit, and it is enforced.** Every label tried is added
+to ``tried`` and passed as ``exclude`` on the next acquire. ``docs/29`` §4.2:
+retrying the same failing IP is the classic rotating-proxy bug and must not
+depend on an ordering side effect.
 """
 
 from __future__ import annotations
@@ -25,13 +32,14 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-import requests
-
 from . import blocks
 from .metrics import NetMetrics
+from .policy import DEFAULT_REQUEST_CLASS, EgressExhausted, NetworkPolicy, build_legacy_policy
+from .providers import Lease, Outcome
 from .proxy_manager import ProxyManager
-from .retry import BlockedError, NetErrorClass, ProxyExhaustedError, RetryPolicy
+from .retry import BlockedError, NetErrorClass, RetryPolicy
 from .retry import classify as classify_status
+from .user_agents import headers_for_profile
 
 log = logging.getLogger(__name__)
 
@@ -49,6 +57,9 @@ class FetchResult:
         default_factory=lambda: blocks.BlockVerdict(blocks.BlockKind.NONE)
     )
     final_url: str | None = None
+    #: Which provider served it. ``proxy`` stays the exit label so every
+    #: pre-P4 reader of this field keeps working.
+    provider: str | None = None
 
     @property
     def ok(self) -> bool:
@@ -58,21 +69,38 @@ class FetchResult:
 class ProxiedHTTPClient:
     def __init__(
         self,
-        proxy_manager: ProxyManager | None = None,
+        egress: NetworkPolicy | ProxyManager | None = None,
         *,
         cache=None,
         metrics: NetMetrics | None = None,
         retry_policy: RetryPolicy | None = None,
         timeout: tuple[float, float] = (10.0, 30.0),
         max_bytes: int = 5_000_000,
+        block_signatures: blocks.BlockSignatures | None = None,
     ):
-        self.proxies = proxy_manager
+        # A bare ProxyManager is wrapped rather than handled separately: two
+        # request loops would drift, and the pre-P4 arrangement is expressible
+        # as a policy exactly (proxy first, stop or degrade per fail_closed).
+        if isinstance(egress, NetworkPolicy):
+            self.policy = egress
+        else:
+            self.policy = build_legacy_policy(egress)
+
         self.cache = cache
         self.metrics = metrics or NetMetrics()
         self.retry = retry_policy or RetryPolicy()
         self.timeout = timeout
         self.max_bytes = max_bytes
-        self._direct_session: requests.Session | None = None
+        self.block_signatures = block_signatures or blocks.DEFAULT_SIGNATURES
+
+    @property
+    def proxies(self) -> ProxyManager | None:
+        """The datacenter pool, when one is configured.
+
+        Retained because ``/health/proxies`` and several tests reach for it. It
+        is a view onto the policy, not a second source of truth.
+        """
+        return self.policy.pool
 
     # ---------------------------------------------------------------- fetch
 
@@ -84,12 +112,18 @@ class ProxiedHTTPClient:
         cache_ttl: int | None = None,
         referer: str | None = None,
         allow_cache: bool = True,
+        request_class: str = DEFAULT_REQUEST_CLASS,
+        session_key: str | None = None,
     ) -> FetchResult:
-        """Fetch ``url``, rotating proxies and detecting blocks.
+        """Fetch ``url``, choosing egress by ``request_class`` and detecting blocks.
 
         ``expect_selector`` is a CSS selector the response should match. It is
         what lets a 200-with-no-content be distinguished from a 200 that simply
         has nothing to show.
+
+        ``request_class`` selects the egress policy (``docs/29`` §2.1). It
+        defaults to ``html`` -- the proxy-preferred bulk class -- so a caller
+        that does not care keeps the behaviour it had before P4.
         """
         if allow_cache and self.cache is not None:
             cached = self.cache.get(url)
@@ -105,45 +139,45 @@ class ProxiedHTTPClient:
 
         attempt = 0
         last_error: Exception | None = None
+        tried: set[str] = set()
 
         while attempt < self.retry.max_attempts:
             attempt += 1
-            endpoint = None
-            session: requests.Session
-            proxies: dict[str, str] | None = None
 
-            if self.proxies is not None and self.proxies.enabled:
-                try:
-                    endpoint = self.proxies.acquire()
-                except ProxyExhaustedError as exc:
-                    if self.proxies.fail_closed:
-                        # Falling back to the local IP here would leak the real
-                        # address to the target -- the one thing the pool exists
-                        # to prevent -- so this stops instead.
-                        raise
-                    log.warning("proxy pool exhausted; continuing direct: %s", exc)
-                    session, proxies = self._direct(), None
-                else:
-                    session = self.proxies.session_for(endpoint)
-                    proxies = endpoint.as_requests_proxies()
-            else:
-                if self.proxies is not None and self.proxies.fail_closed and self.proxies.endpoints:
-                    raise ProxyExhaustedError("Proxying is disabled but fail_closed is set.")
-                session, proxies = self._direct(), None
+            try:
+                lease = self.policy.acquire(
+                    request_class, session_key=session_key, exclude=tried or None
+                )
+            except EgressExhausted:
+                if attempt == 1:
+                    # Nothing could carry the request at all. That is a network
+                    # configuration fact, not a fact about this URL, so it is
+                    # raised rather than reported as a failed fetch -- which is
+                    # what `fail_closed` has always done.
+                    raise
+                # Every exit the ladder can reach has already been tried for
+                # *this* URL. `exclude` is enforced rather than emergent, so
+                # there is nothing left to try; retrying a known-failing exit is
+                # the bug it exists to prevent. Fall through to the give-up path
+                # so the caller sees why the target refused us, not merely that
+                # the pool ran out.
+                attempt -= 1
+                break
+            tried.add(lease.label)
 
-            headers = {}
-            if referer:
-                from .user_agents import headers_for
-
-                headers = headers_for(endpoint.label if endpoint else None, referer=referer)
+            headers = (
+                headers_for_profile(lease.profile, referer=referer)
+                if referer and lease.profile is not None
+                else None
+            )
 
             started = time.perf_counter()
             try:
-                response = session.get(
+                response = lease.session.get(
                     url,
-                    proxies=proxies,
+                    proxies=lease.proxies,
                     timeout=self.timeout,
-                    headers=headers or None,
+                    headers=headers,
                     allow_redirects=True,
                     stream=True,
                 )
@@ -156,11 +190,8 @@ class ProxiedHTTPClient:
                 latency = int((time.perf_counter() - started) * 1000)
                 last_error = exc
                 error_class = classify_status(None, exc)
-                if endpoint:
-                    self.proxies.record_failure(endpoint, f"{type(exc).__name__}: {exc}"[:200])
-                self.metrics.record_request(
-                    ok=False, latency_ms=latency, proxy=endpoint.label if endpoint else None
-                )
+                self._release(lease, Outcome.ERROR, None, latency, 0)
+                self.metrics.record_request(ok=False, latency_ms=latency, proxy=lease.label)
                 if not self.retry.should_retry(error_class, attempt):
                     break
                 time.sleep(self.retry.delay_for(error_class, attempt))
@@ -168,25 +199,29 @@ class ProxiedHTTPClient:
 
             latency = int((time.perf_counter() - started) * 1000)
             status = response.status_code
+            # Decompressed length: `decode_content=True` above means this
+            # over-states what a metered vendor bills, which makes it a
+            # conservative floor for the bandwidth guard rather than an invoice.
+            bytes_in = len(body)
 
             hits = None
             if expect_selector and status == 200:
                 hits = _count(text, expect_selector)
-            verdict = blocks.classify(status, text, expect_selector_hits=hits)
+            verdict = blocks.classify(
+                status, text, expect_selector_hits=hits, signatures=self.block_signatures
+            )
 
             if status == 200 and not verdict.blocked:
-                if endpoint:
-                    self.proxies.record_success(endpoint, latency)
-                self.metrics.record_request(
-                    ok=True, latency_ms=latency, proxy=endpoint.label if endpoint else None
-                )
+                self._release(lease, Outcome.OK, status, latency, bytes_in)
+                self.metrics.record_request(ok=True, latency_ms=latency, proxy=lease.label)
                 if allow_cache and self.cache is not None and verdict.cacheable:
                     self.cache.put(url, text, ttl=cache_ttl)
                 return FetchResult(
                     url=url,
                     status_code=status,
                     text=text,
-                    proxy=endpoint.label if endpoint else None,
+                    proxy=lease.label,
+                    provider=lease.provider,
                     latency_ms=latency,
                     attempts=attempt,
                     verdict=verdict,
@@ -195,13 +230,15 @@ class ProxiedHTTPClient:
 
             # Failure, hard or soft.
             reason = verdict.reason or f"HTTP {status}"
-            if endpoint:
-                self.proxies.record_failure(endpoint, reason, blocked=verdict.blocked)
+            self._release(
+                lease,
+                Outcome.BLOCKED if verdict.blocked else Outcome.ERROR,
+                status,
+                latency,
+                bytes_in,
+            )
             self.metrics.record_request(
-                ok=False,
-                latency_ms=latency,
-                proxy=endpoint.label if endpoint else None,
-                blocked=verdict.blocked,
+                ok=False, latency_ms=latency, proxy=lease.label, blocked=verdict.blocked
             )
 
             error_class = (
@@ -217,7 +254,8 @@ class ProxiedHTTPClient:
                         url=url,
                         status_code=status,
                         text=text,
-                        proxy=endpoint.label if endpoint else None,
+                        proxy=lease.label,
+                        provider=lease.provider,
                         latency_ms=latency,
                         attempts=attempt,
                         verdict=verdict,
@@ -227,29 +265,31 @@ class ProxiedHTTPClient:
             retry_after = _retry_after(response)
             delay = self.retry.delay_for(error_class, attempt, retry_after)
             log.info(
-                "%s on attempt %d (%s); retrying in %.1fs",
-                reason,
-                attempt,
-                endpoint.label if endpoint else "direct",
-                delay,
+                "%s on attempt %d (%s); retrying in %.1fs", reason, attempt, lease.label, delay
             )
             time.sleep(delay)
 
         message = f"Giving up on {url} after {attempt} attempts: {last_error}"
         log.warning(message)
-        raise (
-            BlockedError(message) if isinstance(last_error, BlockedError) else BlockedError(message)
-        )
+        raise BlockedError(message)
 
     # ------------------------------------------------------------- support
 
-    def _direct(self) -> requests.Session:
-        if self._direct_session is None:
-            from .user_agents import DEFAULT_PROFILE
+    def _release(
+        self, lease: Lease, outcome: Outcome, status: int | None, latency_ms: int, bytes_in: int
+    ) -> None:
+        """Always called, on every path, including the exception path.
 
-            self._direct_session = requests.Session()
-            self._direct_session.headers.update(DEFAULT_PROFILE.as_dict())
-        return self._direct_session
+        A provider that is told about successes and not failures blacklists
+        nothing and reports itself healthy forever.
+        """
+        self.policy.release(
+            lease, outcome=outcome, status=status, latency_ms=float(latency_ms), bytes_in=bytes_in
+        )
+
+    def drain_degradations(self):
+        """Degradation notices recorded since the last drain. See ``NetworkPolicy``."""
+        return self.policy.drain_notices()
 
 
 def _count(html: str, selector: str) -> int:

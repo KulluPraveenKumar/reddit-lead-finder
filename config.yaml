@@ -123,10 +123,110 @@ orchestration:
   enabled: true
 
 # ---------------------------------------------------------------------------
+# Network policy (P4) — egress is a policy, not a mandate (AD-25)
+#
+# Two axes, deliberately separate:
+#
+#   policy  decides which providers are ELIGIBLE
+#   ladder  decides the ORDER the eligible ones are tried in
+#
+# They are separate because the measurement that sets the order is independent
+# of the rule that sets eligibility. P0 measured the direct connection at 100%
+# success / 0% blocks and the Webshare datacenter pool at 71.4% / 28.6%,
+# reproduced twice (docs/SPRINT-0-MEASUREMENTS §1.2), so the shipped ladder puts
+# direct first. Re-measuring later is a one-line change here rather than a code
+# change — which is the whole point of keeping order out of `policy`.
+#
+# ⚠️ ROLLBACK: `policy: proxy_only` + `on_pool_exhausted: fail_run` reproduces
+# the exact pre-P4 behaviour (every request through the pool; stop when the pool
+# dies). Deleting this whole block also works: the legacy `proxy:` block below
+# then drives a single pool exactly as it did in P3.
+# ---------------------------------------------------------------------------
+network:
+  # direct_only  — never use a proxy.
+  # prefer_proxy — every provider is eligible; `ladder` decides the order.
+  # proxy_only   — proxies only. The operator's own address is never used for
+  #                the classes below, whatever the ladder says.
+  policy: prefer_proxy
+
+  direct:
+    enabled: true
+
+    # A hard governor on the operator's own IP, per process and per rolling
+    # hour. ARCHITECTURE_FREEZE §6 fixes this at 120; steady-state collection is
+    # measured at ≤80 requests a DAY, so this is a runaway guard, not a
+    # throttle. Reaching it is reported on the run page, never absorbed
+    # silently — an invisible cap gets blamed on the target.
+    max_requests_per_hour: 120
+
+    # Always direct, whatever `policy` says. This is frozen architecture (R18),
+    # not a preference:
+    #   rss     — a published feed, polled at low volume
+    #   health  — a canary must reflect the real path
+    #   website — the customer's OWN site. Crawling it from ten rotating
+    #             datacenter IPs looks like an attack; it should arrive from one
+    #             stable, identifiable address.
+    # You may add classes here. Removing one of these three is ignored and
+    # logged: a config edit cannot switch off a freeze rule.
+    classes: [rss, health, website]
+
+  # Every provider is a block here, and a vendor swap is a config change rather
+  # than a code change. Types: direct, managed_list, managed_gateway,
+  # null_provider. (`null_provider` and not a bare `null`, which YAML parses as
+  # no value at all.)
+  providers:
+    - name: direct
+      type: direct
+      max_requests_per_hour: 120
+      classes: [rss, health, website, html, comments, validation]
+
+    - name: dc
+      type: managed_list
+      # Blank on purpose, exactly as `proxy.file` below: this file is committed,
+      # and a path here names one person's machine. Set PROXY_FILE in .env.
+      file: '${PROXY_FILE}'
+      allow_empty: true
+      classes: [html, comments, validation]
+
+    # A managed residential gateway, when one is bought. Left commented out
+    # because P0's measurement says buy nothing yet (docs/29 §5.3). Uncommenting
+    # it and putting it at the front of the ladder is the entire integration.
+    #
+    # - name: resi
+    #   type: managed_gateway
+    #   gateway: "p.webshare.io:80"
+    #   username: "${PROXY_USER}"     # NEVER a literal credential — this file
+    #   password: "${PROXY_PASS}"     # is committed.
+    #   session_param: "-session-{key}"   # vendor-specific sticky syntax
+    #   metered: true
+    #   bandwidth_budget_gb: 1.0
+    #   bandwidth_floor_gb: 0.05          # below this it reports unhealthy and
+    #   classes: [html, comments, validation]   # the ladder steps down
+
+  # Degradation order. First rung that is healthy and serves the request class
+  # wins. `[direct, dc]` is P0's measured order.
+  ladder: [direct, dc]
+
+  # What happens when every eligible provider is unusable:
+  #   degrade_to_direct — continue on the direct connection under the hourly cap
+  #                       and log a visible warning to the run timeline. Default:
+  #                       a truncated run is worse than a slower one.
+  #   pause_run         — fail retryably; resume when the pool recovers. Choose
+  #                       this when IP exposure matters more than latency.
+  #   fail_run          — the pre-P4 `fail_closed` behaviour. Kept for
+  #                       compliance situations.
+  on_pool_exhausted: degrade_to_direct
+
+# ---------------------------------------------------------------------------
 # Proxy / transport (Phase 2)
 #
 # The proxy FILE path is here; the credentials are only ever in that file, which
 # is gitignored. Nothing writes them to the database or a log.
+#
+# ⚠️ P4: this block is now the *fallback*. When `network:` above is present it
+# drives egress, and these keys configure the legacy single-pool path used when
+# it is not. Both are kept so an installation upgrading from P3 keeps working
+# without editing a file.
 # ---------------------------------------------------------------------------
 proxy:
   enabled: true

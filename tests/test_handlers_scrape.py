@@ -9,6 +9,7 @@ queue as well would prove only that the handler's body runs.
 from __future__ import annotations
 
 import json
+from contextlib import contextmanager
 
 import pytest
 from sqlalchemy.orm import Session
@@ -411,6 +412,203 @@ def test_the_handler_holds_no_pending_writes_when_the_scrape_starts(session, tem
 
     assert seen["dirty"] is False, "a modified row is pending; the scrape will flush it under lock"
     assert seen["new"] is False, "an unwritten row is pending; the scrape will flush it under lock"
+
+
+# ------------------------------------------- P4: egress degradation reporting
+
+
+def _degrading_scraper(seen: dict, *, cancel_run: bool = False):
+    """A scraper that reproduces **both** properties under test.
+
+    P3's F4 and F7 are the same lesson twice: a fake that is easier than reality
+    tests the fake. This one therefore:
+
+    * **queries the database**, so SQLAlchemy autoflush fires exactly where
+      ``LeadScorer`` makes it fire in production -- which is what takes SQLite's
+      single write lock if the session is dirty; and
+    * **causes an egress degradation** while it is running, so the new P4 write
+      path is actually exercised. A fake that skipped this would test the old
+      code path and pass for the wrong reason.
+    """
+    from src.net.egress import get_policy
+    from src.net.policy import RequestClass
+
+    class DegradingScraper:
+        def run(self, handler_session, subreddits=None, run_id=None):
+            # Read BEFORE the query, not after. The query is itself the autoflush
+            # point, so it clears `.new` on its way -- measuring afterwards would
+            # report a clean session precisely in the case where the lock was
+            # just taken, which is the failure this test exists to catch.
+            seen["dirty_during_scrape"] = bool(handler_session.dirty or handler_session.new)
+
+            # What LeadScorer's constructor does. Autoflush fires here, and with
+            # a dirty session that is the moment the write lock is taken.
+            handler_session.query(Settings).all()
+
+            # A real degradation, produced by a real exhausted pool walking a
+            # real ladder -- not a hand-appended notice.
+            get_policy().acquire(RequestClass.HTML.value)
+
+            if cancel_run:
+                with Session(bind=database.ENGINE, expire_on_commit=False) as other:
+                    RunService(other, JobQueue(database.ENGINE)).cancel(run_id)
+                    other.commit()
+                seen["cancelled"] = True
+            return 0
+
+    return DegradingScraper()
+
+
+@pytest.fixture
+def degrading_policy():
+    """A process-wide policy whose proxy rung is dead, so the ladder must step."""
+    from src.net.egress import get_policy, reset_policy
+
+    reset_policy()
+    policy = get_policy(
+        {
+            "network": {
+                "policy": "prefer_proxy",
+                "direct": {"classes": ["rss", "health", "website"]},
+                "providers": [
+                    {
+                        "name": "dc",
+                        "type": "managed_list",
+                        "allow_empty": True,
+                        "classes": ["html"],
+                    },
+                    {"name": "direct", "type": "direct", "classes": ["html"]},
+                ],
+                "ladder": ["dc", "direct"],
+                "on_pool_exhausted": "degrade_to_direct",
+            }
+        }
+    )
+    yield policy
+    reset_policy()
+
+
+def test_a_degradation_lands_on_the_run_timeline(session, temp_db, degrading_policy):
+    """AC3. Degradation must be *visible*, or P4 has shipped the unbounded silent
+    fallback that ``docs/08`` §7 rejected and ``docs/29`` §2.2 answered."""
+    seen = {}
+    with _swapped_scraper(_degrading_scraper(seen)):
+        run = _start_run(session, ("saas",))
+        job = session.query(Job).filter(Job.run_id == run.id).one()
+        REGISTRY["scrape_subreddit"](session, job)
+        session.commit()
+
+    events = (
+        session.query(RunEvent)
+        .filter(RunEvent.run_id == run.id, RunEvent.event == "net.degraded")
+        .all()
+    )
+    assert len(events) == 1, "exactly one degradation entry per ladder step"
+    assert events[0].level == "warning"
+    assert "dc" in events[0].message and "direct" in events[0].message
+
+
+def test_the_session_is_clean_during_a_scrape_that_degrades(session, temp_db, degrading_policy):
+    """RK-1. P4 adds a write inside the window that produced P3's HTTP 500.
+
+    **A notice is left pending before the handler runs, and that is the whole
+    point of the setup.** Without it this test cannot fail: with the drain moved
+    before the scrape there would be nothing to drain yet -- the degradation is
+    caused *by* the scrape -- so the session would stay clean and the mutation
+    would pass. The real shape is the second subreddit of a run whose first one
+    already degraded, so the test reproduces that: notices pending on entry.
+
+    Mutation-verified: moving ``_record_egress_degradations`` above
+    ``scraper.run()`` makes this fail.
+    """
+    from src.net.policy import RequestClass
+
+    seen = {}
+    # Degrade once *before* the handler is entered, exactly as an earlier
+    # subreddit in the same run would have.
+    degrading_policy.acquire(RequestClass.HTML.value)
+    assert degrading_policy.peek_notices(), "the fixture did not actually degrade"
+
+    with _swapped_scraper(_degrading_scraper(seen)):
+        run = _start_run(session, ("saas",))
+        job = session.query(Job).filter(Job.run_id == run.id).one()
+        REGISTRY["scrape_subreddit"](session, job)
+        session.commit()
+
+    assert seen["dirty_during_scrape"] is False, (
+        "the handler held pending writes while the scrape ran -- the scrape's next "
+        "query will flush them under SQLite's write lock (P3 F7)"
+    )
+
+
+def test_cancel_still_works_during_a_scrape_that_degrades(session, temp_db, degrading_policy):
+    """P3's blocking defect, re-run against P4's new write path."""
+    seen = {}
+    with _swapped_scraper(_degrading_scraper(seen, cancel_run=True)):
+        run = _start_run(session, ("saas", "startups"))
+        job = session.query(Job).filter(Job.run_id == run.id).order_by(Job.id).first()
+        REGISTRY["scrape_subreddit"](session, job)
+        session.commit()
+
+    assert seen.get("cancelled"), "the cancel never completed -- the write lock was held"
+    session.expire_all()
+    assert session.query(Run).filter(Run.id == run.id).one().state == RunState.CANCELLED.value
+
+
+def test_a_second_degradation_to_the_same_rung_adds_no_second_event(
+    session, temp_db, degrading_policy
+):
+    """AS-7. One entry per ladder step per run, not one per request."""
+    seen = {}
+    with _swapped_scraper(_degrading_scraper(seen)):
+        _start_run(session, ("saas", "startups"))
+        for job in session.query(Job).filter(Job.job_type == "scrape_subreddit").all():
+            REGISTRY["scrape_subreddit"](session, job)
+        session.commit()
+
+    events = session.query(RunEvent).filter(RunEvent.event == "net.degraded").count()
+    assert events == 1, "two subreddits degraded the same way should read as one fact"
+
+
+def test_a_scrape_that_does_not_degrade_writes_no_degradation_event(session, temp_db, fake_scraper):
+    run = _start_run(session, ("saas",))
+    job = session.query(Job).filter(Job.run_id == run.id).one()
+    REGISTRY["scrape_subreddit"](session, job)
+    session.commit()
+
+    assert session.query(RunEvent).filter(RunEvent.event == "net.degraded").count() == 0
+
+
+def test_a_broken_policy_does_not_fail_the_scrape(session, temp_db, monkeypatch):
+    """Telemetry must never be able to fail the work it describes."""
+    import src.net.egress as egress_module
+
+    monkeypatch.setattr(egress_module, "get_policy", _raise)
+    with _swapped_scraper(FakeScraper()):
+        run = _start_run(session, ("saas",))
+        job = session.query(Job).filter(Job.run_id == run.id).one()
+        result = REGISTRY["scrape_subreddit"](session, job)
+        session.commit()
+
+    assert result["subreddit"] == "saas"
+
+
+@contextmanager
+def _swapped_scraper(scraper):
+    """Replace the one network seam, and always put it back.
+
+    ``build_scraper`` keeps its name and one-argument shape (P3 T2): roughly a
+    dozen tests across four files patch it by name.
+    """
+    import src.orchestration.handlers.scrape as handler_module
+
+    original_build, original_config = handler_module.build_scraper, handler_module.load_config
+    handler_module.build_scraper = lambda config: scraper
+    handler_module.load_config = lambda: {}
+    try:
+        yield
+    finally:
+        handler_module.build_scraper, handler_module.load_config = original_build, original_config
 
 
 # -------------------------------------------------------------- cancellation

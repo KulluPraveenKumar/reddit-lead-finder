@@ -316,7 +316,15 @@ need; none is a silent omission, and each is cheap to add later if a real sympto
 - [ ] **Half-open probe** — a blacklisted proxy simply re-enters rotation when its cooldown
       expires, and its next real request is the probe. A dedicated probe would spend an extra
       request per proxy to learn the same thing.
-- [ ] **`exclude=tried` guaranteeing a different proxy** — LRU ordering already yields a
+- [x] **`exclude=tried` guaranteeing a different proxy** — ✅ **DELIVERED IN P4.**
+      `ProxyManager.acquire(exclude=…)` now filters explicitly and raises when every usable exit has
+      already been tried for this request. The reasoning below was right that LRU *usually* produces
+      the same outcome, and wrong that this makes enforcement unnecessary: the case it misses is a
+      paced pool where the excluded exit is the only one ready, and there ordering hands back the IP
+      that just failed. [29 §4.2](29-network-and-proxy-strategy.md) called this "the classic
+      rotating-proxy bug"; mutation testing in P4 confirmed that removing the filter breaks four
+      tests and that *no* pre-P4 test noticed. The original note is kept below.
+- [ ] ~~**`exclude=tried` guaranteeing a different proxy**~~ — LRU ordering already yields a
       different proxy on retry (asserted in the AC8 test), but it is an emergent property, not
       an enforced one. Worth making explicit if a single-proxy pool ever misbehaves.
 - [ ] **Adapter `max_retries=0`** — not set explicitly; `requests`' default already performs no

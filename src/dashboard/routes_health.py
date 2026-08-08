@@ -33,15 +33,58 @@ def _pool():
     return get_proxy_manager()
 
 
+def _policy():
+    from .app import get_network_policy
+
+    return get_network_policy()
+
+
+def _egress_payload() -> dict:
+    """The egress policy: which providers exist, in what order, and what happens
+    when they run out.
+
+    Additive to the pre-P4 payload -- every key that existed still does, with the
+    same meaning -- because this endpoint is read by a page, a test and an
+    operator, and removing a field breaks all three for no gain.
+    """
+    from src.net.egress import policy_error
+
+    try:
+        policy = _policy()
+    except Exception as exc:  # noqa: BLE001 - /health must not 500
+        log.warning("health: egress policy unavailable: %s", exc)
+        return {"error": str(exc)}
+
+    described = policy.describe()
+    direct = policy.direct_provider
+    return {
+        "error": policy_error(),
+        "policy": described["policy"],
+        "ladder": described["ladder"],
+        "on_pool_exhausted": described["on_pool_exhausted"],
+        "direct_classes": described["direct_classes"],
+        "routing": described["routing"],
+        "providers": described["providers"],
+        "direct_requests_this_hour": direct.requests_this_hour if direct else None,
+        "direct_max_requests_per_hour": direct.max_requests_per_hour if direct else None,
+        # Degradations recorded but not yet drained by a job handler. Peeked,
+        # never drained: this is a read-only view, and consuming them here would
+        # steal the timeline entry the run page is waiting for.
+        "degradations": [notice.as_data() for notice in policy.peek_notices()],
+    }
+
+
 def _pool_payload() -> dict:
     """Pool state as JSON.
 
     Every field here comes from :meth:`ProxyManager.snapshot`, which emits
     ``host:port`` labels only. No username or password reaches this payload, the
-    template that renders it, or the database behind it.
+    template that renders it, or the database behind it. The same holds for the
+    provider rows: a provider's ``describe()`` returns names, flags and counts.
     """
     from .app import proxy_manager_error
 
+    egress = _egress_payload()
     pool = _pool()
     if pool is None:
         return {
@@ -53,8 +96,10 @@ def _pool_payload() -> dict:
             "blacklisted": 0,
             "untested": 0,
             "circuit_open": False,
-            "fail_closed": None,
+            "fail_closed": _fail_closed(egress),
+            "acceptance_rate": None,
             "proxies": [],
+            **egress,
         }
 
     snap = pool.snapshot()
@@ -66,13 +111,27 @@ def _pool_payload() -> dict:
         "degraded": snap.degraded,
         "blacklisted": snap.blacklisted,
         "untested": snap.untested,
-        # Open means no proxy is currently usable. With fail_closed the next
-        # fetch stops rather than falling back to the local IP, so this is the
-        # single field that says whether scraping can run at all.
+        # Open means no proxy is currently usable, or the target is refusing the
+        # whole pool. Either way the next fetch degrades or stops per the policy,
+        # so this is the single field that says whether proxied scraping can run.
         "circuit_open": snap.circuit_open,
-        "fail_closed": pool.fail_closed,
+        "fail_closed": _fail_closed(egress),
+        "acceptance_rate": snap.acceptance_rate,
         "proxies": snap.proxies,
+        **egress,
     }
+
+
+def _fail_closed(egress: dict) -> bool | None:
+    """The pre-P4 field, derived from the setting that replaced it.
+
+    ``fail_closed`` was always the two-value form of one question: when the pool
+    is empty, stop or continue? ``on_pool_exhausted`` answers it with three
+    values. Keeping the boolean as a derivation means nothing that read it
+    breaks, and there is still exactly one source of truth.
+    """
+    action = egress.get("on_pool_exhausted")
+    return None if action is None else action == "fail_run"
 
 
 def _queue_payload() -> dict:

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from pathlib import Path
 
 import pytest
@@ -18,7 +19,7 @@ from src.net import blocks, retry
 from src.net.blocks import BlockKind
 from src.net.cache import HTTPCache
 from src.net.http_client import ProxiedHTTPClient
-from src.net.proxy_manager import ProxyManager
+from src.net.proxy_manager import ACCEPTANCE_MIN_SAMPLES, ProxyManager
 from src.net.proxy_models import (
     ProxyEndpoint,
     ProxyParseError,
@@ -27,6 +28,7 @@ from src.net.proxy_models import (
 )
 from src.net.retry import NetErrorClass, ProxyExhaustedError, RetryPolicy
 from src.net.user_agents import PROFILES, headers_for, pick_profile
+from src.reddit_client import REDDIT_SIGNATURES
 
 FIXTURES = Path(__file__).parent / "fixtures" / "reddit"
 
@@ -236,11 +238,15 @@ class TestBlockClassification:
         Without this check the scraper reports "no posts found" and caches the
         interstitial, so the block persists for the whole TTL and looks like a
         quiet subreddit.
+
+        Signatures are injected because P4 moved the Reddit-specific ones out of
+        ``src/net/`` (grep fence 4): the transport knows what a *challenge* looks
+        like, and the caller knows what *this target's* interstitial looks like.
         """
         html = (FIXTURES / "soft_block_interstitial.html").read_text(
             encoding="utf-8", errors="replace"
         )
-        verdict = blocks.classify(200, html, expect_selector_hits=0)
+        verdict = blocks.classify(200, html, expect_selector_hits=0, signatures=REDDIT_SIGNATURES)
         assert verdict.kind is BlockKind.SOFT
         assert verdict.blocked
 
@@ -250,7 +256,7 @@ class TestBlockClassification:
     # case, so a regression in one is not masked by the other.
 
     def test_soft_marker_path_alone(self):
-        marker = blocks._SOFT_MARKERS[0][0]
+        marker = blocks.GENERIC_SOFT_MARKERS[0][0]
         html = f"<html><title>ok</title><body>{marker}</body></html>"
         assert blocks.classify(200, html, expect_selector_hits=5).kind is BlockKind.SOFT
 
@@ -258,15 +264,21 @@ class TestBlockClassification:
         """ "Welcome to Reddit" served in place of a subreddit -- 200, real HTML,
         no posts. This is the exact shape observed live."""
         html = "<html><title>Welcome to Reddit</title><body><p>hi</p></body></html>"
-        assert blocks.classify(200, html, expect_selector_hits=0).kind is BlockKind.SOFT
+        verdict = blocks.classify(200, html, expect_selector_hits=0, signatures=REDDIT_SIGNATURES)
+        assert verdict.kind is BlockKind.SOFT
 
     def test_new_reddit_marker_path_alone(self):
         html = "<html><title>r/SaaS</title><body><shreddit-app></shreddit-app></body></html>"
-        assert blocks.classify(200, html, expect_selector_hits=0).kind is BlockKind.SOFT
+        verdict = blocks.classify(200, html, expect_selector_hits=0, signatures=REDDIT_SIGNATURES)
+        assert verdict.kind is BlockKind.SOFT
 
     def test_a_block_is_never_cacheable(self):
         for kind_html, hits in ((403, ""), (200, "<html>shreddit-app</html>")):
-            verdict = blocks.classify(kind_html, hits if isinstance(hits, str) else "")
+            verdict = blocks.classify(
+                kind_html,
+                hits if isinstance(hits, str) else "",
+                signatures=REDDIT_SIGNATURES,
+            )
             if verdict.blocked:
                 assert not verdict.cacheable
 
@@ -278,7 +290,67 @@ class TestBlockClassification:
 
     def test_new_reddit_markers_only_count_when_content_is_missing(self):
         html = "<html><body><shreddit-app></shreddit-app><div class='thing'>p</div></body></html>"
-        assert blocks.classify(200, html, expect_selector_hits=12).kind is BlockKind.NONE
+        verdict = blocks.classify(200, html, expect_selector_hits=12, signatures=REDDIT_SIGNATURES)
+        assert verdict.kind is BlockKind.NONE
+
+    # ---------------------------------------------------------- fence 4 (P4)
+
+    def test_the_production_client_is_actually_wired_to_the_reddit_signatures(self):
+        """The wiring, not just the mechanism.
+
+        Every other transport test builds its client through ``_client_with``,
+        which passes the signatures explicitly. So all of them would keep passing
+        if ``_default_client`` stopped passing them -- and the product would
+        silently lose soft-block detection, whose own module docstring says a
+        false negative "poisons the cache and the lead table".
+
+        Mutation-verified: deleting ``block_signatures=REDDIT_SIGNATURES`` from
+        ``_default_client`` fails this test and nothing else.
+        """
+        from src.net.egress import reset_policy
+        from src.reddit_client import RedditClient
+
+        reset_policy()
+        try:
+            client = RedditClient({}).http
+            assert client.block_signatures is REDDIT_SIGNATURES
+
+            # ...and it behaves, so the assertion above is about wiring rather
+            # than about an attribute nobody reads.
+            interstitial = (FIXTURES / "soft_block_interstitial.html").read_text(
+                encoding="utf-8", errors="replace"
+            )
+            verdict = blocks.classify(
+                200,
+                interstitial,
+                expect_selector_hits=0,
+                signatures=client.block_signatures,
+            )
+            assert verdict.kind is BlockKind.SOFT
+        finally:
+            reset_policy()
+
+    def test_the_transport_alone_does_not_recognise_a_target_specific_page(self):
+        """The point of the move, asserted directly.
+
+        Without the caller's signatures, a page whose only tell is a Reddit
+        marker is *not* classified as a block. That is correct: ``src/net/`` is
+        the layer that also fetches a customer's own website, and applying one
+        site's markup heuristics to an unrelated page is a false positive.
+        """
+        html = "<html><title>r/SaaS</title><body><shreddit-app></shreddit-app></body></html>"
+        assert blocks.classify(200, html, expect_selector_hits=0).kind is BlockKind.EMPTY
+
+    def test_generic_challenge_is_detected_with_no_signatures_supplied(self):
+        """...and the generic half still works for any target, which is what
+        Phase 13's website fetcher will rely on."""
+        html = "<html><title>x</title><body>Just a moment...</body></html>"
+        assert blocks.classify(200, html, expect_selector_hits=5).kind is BlockKind.SOFT
+
+    def test_caller_signatures_extend_rather_than_replace_the_generic_set(self):
+        html = "<html><title>x</title><body>checking your browser</body></html>"
+        verdict = blocks.classify(200, html, expect_selector_hits=5, signatures=REDDIT_SIGNATURES)
+        assert verdict.kind is BlockKind.SOFT
 
 
 # --------------------------------------------------------------------- retry
@@ -357,6 +429,150 @@ class TestProxyManager:
         endpoint = _endpoint()
         pool = ProxyManager([endpoint], delay_range=(0.0, 0.0), blacklist_threshold=1)
         pool.record_failure(endpoint, "dead")
+        with pytest.raises(ProxyExhaustedError):
+            pool.acquire()
+
+    # ------------------------------------------------- P4: exclude=tried (A8)
+    #
+    # "Retrying the same failing IP is the classic rotating-proxy bug"
+    # (docs/29 §4.2). docs/12 §14 recorded exclusion as an *emergent* property of
+    # LRU ordering rather than an enforced one, and P4's task 7 is to make it
+    # explicit. These tests assert the contract directly, because a test that
+    # merely counts distinct exits over N attempts passes on LRU alone and would
+    # not notice the enforcement being removed.
+
+    def test_an_excluded_proxy_is_never_returned(self):
+        a, b = _endpoint("10.0.0.1"), _endpoint("10.0.0.2")
+        pool = ProxyManager([a, b], delay_range=(0.0, 0.0))
+        for _ in range(10):
+            assert pool.acquire(exclude={a.label}).label == b.label
+
+    def test_exclusion_wins_over_readiness(self):
+        """The case LRU cannot cover, and the reason this must be enforced.
+
+        The excluded proxy is the one that is ready; the alternative is still
+        inside its pacing window. Ordering alone would hand back the exit that
+        just failed, because it is the only one available -- which is exactly the
+        retry that must not happen.
+        """
+        a, b = _endpoint("10.0.0.1"), _endpoint("10.0.0.2")
+        pool = ProxyManager([a, b], delay_range=(0.0, 0.0))
+        pool.stats_for(b).next_allowed_at = time.monotonic() + 30
+
+        with pytest.raises(ProxyExhaustedError):
+            pool.acquire(exclude={a.label}, wait=False)
+
+    def test_excluding_everything_raises_rather_than_reusing(self):
+        a, b = _endpoint("10.0.0.1"), _endpoint("10.0.0.2")
+        pool = ProxyManager([a, b], delay_range=(0.0, 0.0))
+        with pytest.raises(ProxyExhaustedError) as excinfo:
+            pool.acquire(exclude={a.label, b.label})
+        assert "already been tried" in str(excinfo.value)
+
+    def test_the_transport_excludes_each_exit_it_has_already_tried(self, no_sleep):
+        """End to end: three blocked attempts must use three distinct exits, and
+        the exclusion -- not the ordering -- is what guarantees it."""
+        endpoints = [_endpoint(f"10.0.0.{i}") for i in range(3)]
+        client, pool, _ = _client_with([_FakeResponse(403, "no")] * 3, endpoints=endpoints)
+        with pytest.raises(retry.BlockedError):
+            client.get("https://old.reddit.com/r/SaaS/new/")
+        used = [row["proxy"] for row in pool.snapshot().proxies if row["requests"]]
+        assert len(used) == 3, f"an exit was retried instead of rotated: {used}"
+
+    # ---------------------------------------------- P4: target acceptance (A5)
+
+    def test_acceptance_is_unknown_rather_than_zero_before_any_traffic(self):
+        """``0.0`` would conflate "this exit is rejected" with "nobody has tried
+        yet", and the difference is the whole value of the signal."""
+        pool = ProxyManager([_endpoint()], delay_range=(0.0, 0.0))
+        assert pool.stats_for(pool.endpoints[0]).acceptance_rate is None
+        assert pool.acceptance_rate is None
+
+    def test_the_health_probe_does_not_count_as_target_acceptance(self):
+        """The probe hits an IP echo service, not the site being scraped.
+        Counting it would report a proxy as accepted on the strength of a request
+        the target never saw -- which is the blind spot this signal closes."""
+        endpoint = _endpoint()
+        pool = ProxyManager([endpoint], delay_range=(0.0, 0.0))
+        pool.record_success(endpoint, 10, target=False)
+        assert pool.stats_for(endpoint).acceptance_rate is None
+
+    def test_a_block_lowers_acceptance_but_a_timeout_does_not(self):
+        """A refusal says this exit is unwelcome; a timeout says the transport
+        failed. Collapsing them would retire good exits on a flaky network."""
+        endpoint = _endpoint()
+        pool = ProxyManager([endpoint], delay_range=(0.0, 0.0), blacklist_threshold=99)
+        pool.record_success(endpoint, 10)
+        pool.record_failure(endpoint, "timeout")
+        assert pool.stats_for(endpoint).acceptance_rate == 1.0
+
+        pool.record_failure(endpoint, "HTTP 403", blocked=True)
+        assert pool.stats_for(endpoint).acceptance_rate == 0.5
+
+    def test_selection_ignores_acceptance_until_there_is_enough_evidence(self):
+        """P-3. One early success must not pin the pool to a single exit; below
+        the sample floor the ordering stays plain LRU and keeps the spread."""
+        endpoints = [_endpoint(f"10.0.1.{i}") for i in range(3)]
+        pool = ProxyManager(endpoints, delay_range=(0.0, 0.0))
+        pool.record_success(endpoints[0], 10)  # one sample: not a measurement
+
+        seen = {pool.acquire().label for _ in range(3)}
+        assert len(seen) == 3, f"one lucky success collapsed the pool: {seen}"
+
+    def test_a_measured_pool_prefers_the_exit_the_target_accepts(self):
+        good, bad = _endpoint("10.0.2.1"), _endpoint("10.0.2.2")
+        pool = ProxyManager([good, bad], delay_range=(0.0, 0.0))
+        for _ in range(ACCEPTANCE_MIN_SAMPLES):
+            pool.record_success(good, 10)
+            pool.record_failure(bad, "HTTP 403", blocked=True, target=True)
+        pool.stats_for(bad).state = ProxyState.DEGRADED
+
+        assert pool.acquire().label == good.label
+
+    def test_the_circuit_opens_when_the_target_refuses_the_whole_pool(self):
+        """docs/29 §4.1's second trigger. Individual blacklisting needs three
+        consecutive failures each, so a ten-proxy pool spends thirty requests
+        learning what this knows after ten."""
+        endpoints = [_endpoint(f"10.0.3.{i}") for i in range(3)]
+        pool = ProxyManager(endpoints, delay_range=(0.0, 0.0), blacklist_threshold=99)
+        assert not pool.circuit_open
+
+        for _ in range(4):
+            for endpoint in endpoints:
+                pool.record_failure(endpoint, "HTTP 403", blocked=True)
+
+        assert pool.acceptance_collapsed
+        assert pool.circuit_open, "the pool is reachable and refused, and must say so"
+
+    # ------------------------------------------------- P4: cooldown floor (P-1)
+
+    def test_the_cooldown_shrinks_under_pool_pressure(self):
+        """docs/29 §4.3: when almost nothing is accepted, waiting longer buys no
+        information. At 2 of 10 healthy a 900 s cooldown becomes 180 s."""
+        endpoints = [_endpoint(f"10.0.4.{i}") for i in range(10)]
+        pool = ProxyManager(endpoints, delay_range=(0.0, 0.0), blacklist_cooldown=900.0)
+        assert pool.effective_cooldown() == 900.0
+
+        for endpoint in endpoints[:8]:
+            pool.stats_for(endpoint).state = ProxyState.BLACKLISTED
+        assert pool.effective_cooldown() == pytest.approx(180.0)
+
+    def test_the_cooldown_never_reaches_zero_however_much_pressure_there_is(self):
+        """**Without a floor the mechanism defeats itself.** At zero healthy the
+        formula yields zero, every blacklisted proxy returns to rotation
+        instantly, ``_usable()`` is never empty -- and so ``ProxyExhaustedError``
+        can never be raised and the whole P4 degradation ladder never fires.
+        """
+        endpoints = [_endpoint(f"10.0.5.{i}") for i in range(3)]
+        pool = ProxyManager(
+            endpoints, delay_range=(0.0, 0.0), blacklist_threshold=1, blacklist_cooldown=900.0
+        )
+        for endpoint in endpoints:
+            pool.record_failure(endpoint, "dead")
+
+        assert pool.healthy_count == 0
+        assert pool.effective_cooldown() > 0
+        assert pool.circuit_open
         with pytest.raises(ProxyExhaustedError):
             pool.acquire()
 
@@ -459,12 +675,19 @@ def no_sleep(monkeypatch):
 
 
 def _client_with(script, **pool_kwargs):
-    """A client whose pool hands out a scripted fake session."""
+    """A client whose pool hands out a scripted fake session.
+
+    ``block_signatures`` is supplied because ``_default_client`` supplies it in
+    production: after P4 the transport carries only the generic challenge
+    markers, and the target-specific ones belong to ``RedditClient``. A fake
+    without them would classify a live-shaped interstitial as merely empty --
+    testing the fake rather than the product.
+    """
     endpoints = pool_kwargs.pop("endpoints", None) or [_endpoint("9.9.9.1"), _endpoint("9.9.9.2")]
     pool = ProxyManager(endpoints, delay_range=(0.0, 0.0), **pool_kwargs)
     session = _FakeSession(script)
     pool.session_for = lambda endpoint: session  # noqa: ARG005
-    return ProxiedHTTPClient(pool), pool, session
+    return ProxiedHTTPClient(pool, block_signatures=REDDIT_SIGNATURES), pool, session
 
 
 class TestTransport:
@@ -682,19 +905,28 @@ class TestTransport:
         assert "Just a moment" not in (cache.get(url) or "")
 
     def test_every_request_exits_through_a_proxy(self, no_sleep):
-        """AC2. Zero requests may leave from the local IP."""
+        """AC2. Zero requests may leave from the local IP.
+
+        Three exits, not two: P4 enforces ``exclude=tried``, so a third attempt
+        needs a third untried proxy. Before P4 the third attempt silently reused
+        one of the first two -- which is the bug the exclusion exists to prevent,
+        and this fixture was quietly relying on it.
+        """
         client, pool, session = _client_with(
             [
                 _FakeResponse(403, "no"),
                 _FakeResponse(403, "no"),
                 _FakeResponse(200, "<div class='thing'>ok</div>"),
-            ]
+            ],
+            endpoints=[_endpoint("9.9.9.1"), _endpoint("9.9.9.2"), _endpoint("9.9.9.3")],
         )
         client.get("https://old.reddit.com/r/SaaS/new/")
         assert len(session.calls) == 3
         for call in session.calls:
             assert call["proxies"], "a request went out with no proxy configured"
-            assert call["proxies"]["https"].endswith(("9.9.9.1:8080", "9.9.9.2:8080"))
+            assert call["proxies"]["https"].endswith(
+                ("9.9.9.1:8080", "9.9.9.2:8080", "9.9.9.3:8080")
+            )
 
     def test_blacklisting_one_proxy_mid_run_does_not_fail_the_run(self, no_sleep):
         """AC3. Losing a proxy must degrade throughput, not the run."""

@@ -38,13 +38,37 @@ from urllib.parse import quote_plus, urljoin
 from bs4 import BeautifulSoup
 from rich.console import Console
 
-from .net import BlockedError, ProxiedHTTPClient, ProxyExhaustedError
+from .net import BlockedError, BlockSignatures, ProxiedHTTPClient, ProxyExhaustedError
+from .net.blocks import GENERIC_BAD_TITLES, GENERIC_SOFT_MARKERS
 
 console = Console()
 log = logging.getLogger(__name__)
 
 BASE_URL = "https://old.reddit.com"
 DISPLAY_URL = "https://www.reddit.com"
+
+#: What an interstitial from *this* target looks like.
+#:
+#: These live here rather than in ``src/net/`` because they are knowledge about
+#: Reddit, and the transport layer is required to have none (R5, grep fence 4).
+#: The generic challenge markers are inherited and extended, not replaced -- a
+#: Cloudflare page in front of this target is still a Cloudflare page.
+#:
+#: Measured on 2026-07-31: ``old.reddit.com`` answered with HTTP 200, 311 KB and
+#: the *new* Reddit interstitial containing zero ``div.thing`` elements. Without
+#: detection that page is cached as valid, parsed to zero posts, and reported as
+#: "no new submissions" -- a silent, plausible, completely wrong answer.
+REDDIT_SIGNATURES = BlockSignatures(
+    soft_markers=(
+        *GENERIC_SOFT_MARKERS,
+        ("whoa there, pardner", "Reddit rate-limit interstitial"),
+    ),
+    bad_titles=(*GENERIC_BAD_TITLES, "welcome to reddit"),
+    #: The new-Reddit web app. On an old.reddit URL its presence means we were
+    #: bounced off the HTML site we asked for, whatever the status code says.
+    app_markers=("shreddit-app", "<faceplate-", "shreddit-async-loader"),
+    app_marker_reason="served the new Reddit app instead of old HTML",
+)
 
 #: Old Reddit serves 25 items per page. Used only to bound pagination.
 PAGE_SIZE = 25
@@ -429,42 +453,28 @@ def _parse_time_element(element):
 def _default_client(config) -> ProxiedHTTPClient:
     """Build the transport from configuration.
 
-    Proxying degrades rather than fails: with no proxy file the client runs
+    Egress degrades rather than fails: with no proxy file the policy runs
     direct, which is what keeps `python main.py scrape` working on a machine
     that has never been given one.
+
+    The policy is resolved **process-wide** rather than per client. The hourly
+    direct governor and the pool's blacklist are budgets over a machine, not
+    over an object: one policy per scrape job would give twelve subreddits
+    twelve independent 120-request allowances, and reset the blacklist between
+    each. See `src/net/egress.py`.
     """
-    from .net import HTTPCache, NetMetrics, ProxyManager
-    from .net.proxy_models import parse_proxy_file
+    from .net import HTTPCache, NetMetrics
+    from .net.egress import get_policy
 
     proxy_config = (config or {}).get("proxy", {}) or {}
-    endpoints = []
-    proxy_file = proxy_config.get("file")
-    if proxy_file:
-        try:
-            endpoints = parse_proxy_file(proxy_file)
-        except Exception as exc:
-            log.warning("proxy file unusable (%s); continuing without proxies", exc)
-
-    manager = ProxyManager(
-        endpoints,
-        delay_range=(
-            float(proxy_config.get("delay_min", 3.0)),
-            float(proxy_config.get("delay_max", 7.0)),
-        ),
-        blacklist_threshold=int(proxy_config.get("blacklist_threshold", 3)),
-        blacklist_cooldown=float(proxy_config.get("blacklist_cooldown", 900.0)),
-        # Only fail closed when proxies were actually configured; otherwise a
-        # machine with no proxy file could not scrape at all.
-        fail_closed=bool(proxy_config.get("fail_closed", True)) and bool(endpoints),
-        enabled=bool(proxy_config.get("enabled", True)),
-    )
 
     return ProxiedHTTPClient(
-        manager,
+        get_policy(config),
         cache=HTTPCache(ttl=int(proxy_config.get("cache_ttl", 900))),
         metrics=NetMetrics(),
         timeout=(
             float(proxy_config.get("connect_timeout", 10.0)),
             float(proxy_config.get("read_timeout", 30.0)),
         ),
+        block_signatures=REDDIT_SIGNATURES,
     )

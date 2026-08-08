@@ -44,13 +44,33 @@ def reset_ai_service() -> None:
     _ai_service = None
 
 
+def get_network_policy():
+    """The process-wide :class:`NetworkPolicy`, shared with the scraper.
+
+    Deliberately the **same object** the scrapers use (``src/net/egress.py``).
+    Before P4 this process built one pool for the health page and every scrape
+    job built another, so ``/health/proxies`` reported a pool that had never
+    served a request. Two counters for one machine is not a display bug; the
+    hourly direct governor and the blacklist are budgets, and a second copy
+    means neither is enforced.
+    """
+    from src.net.egress import get_policy
+
+    try:
+        from src.config import load_config
+
+        yaml_config = load_config()
+    except Exception:
+        yaml_config = {}
+    return get_policy(yaml_config)
+
+
 def get_proxy_manager():
     """Process-wide :class:`ProxyManager`, or ``None`` when proxying is off.
 
-    Same lazy construction as the AI service, for the same reason: reading the
-    proxy file at import time would make a missing or unreadable file break the
-    dashboard, when the correct outcome is a health page that says the pool is
-    unavailable and why.
+    Now a **view onto the policy** rather than a second pool -- see
+    :func:`get_network_policy`. Retained because the health page and its tests
+    were written against a single pool and still ask for one.
 
     Returning ``None`` -- rather than an empty pool -- keeps "proxying is
     disabled" distinguishable from "proxying is enabled and every proxy is
@@ -58,23 +78,19 @@ def get_proxy_manager():
     """
     global _proxy_manager
     if _proxy_manager is None and not _proxy_manager_failed[0]:
-        from src.net.proxy_manager import build_from_settings
-        from src.settings import get_settings
-
         try:
-            from src.config import load_config
-
-            yaml_config = load_config()
-        except Exception:
-            yaml_config = {}
-        try:
-            _proxy_manager = build_from_settings(get_settings(yaml_config))
+            _proxy_manager = get_network_policy().pool
         except Exception as exc:
             # Cached so a broken proxy file is not re-read on every request.
             _proxy_manager_failed[0] = True
             _proxy_manager_error[0] = str(exc)
             log.warning("proxy pool unavailable: %s", exc)
             return None
+        if _proxy_manager is None:
+            _proxy_manager_failed[0] = True
+            from src.net.egress import policy_error
+
+            _proxy_manager_error[0] = policy_error() or "no proxy pool is configured"
     return _proxy_manager
 
 
@@ -84,11 +100,14 @@ def proxy_manager_error() -> str | None:
 
 
 def reset_proxy_manager() -> None:
-    """Test hook."""
+    """Test hook. Drops the policy too -- they are one object now."""
     global _proxy_manager
+    from src.net.egress import reset_policy
+
     _proxy_manager = None
     _proxy_manager_failed[0] = False
     _proxy_manager_error[0] = None
+    reset_policy()
 
 
 def create_app(*, run_migrations: bool = True):

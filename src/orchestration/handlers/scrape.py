@@ -22,6 +22,13 @@ Phase 6 work. So a block does not reach this handler as an exception, and a
 ``except BlockedError: raise RetryableError`` clause here would be a branch that
 cannot execute. When the transport starts raising, the mapping belongs here.
 
+**P4 note.** ``NetworkPolicy.on_pool_exhausted`` now carries the operator's
+answer to "what should happen when every exit is unusable", and
+``EgressExhausted.retryable`` says which of the three it was. That is the input
+the mapping above will need -- but it still cannot execute while the client
+swallows, so it is *not* written here. Writing it now would be a branch with no
+path to it, which is the dead code the quality bar forbids.
+
 Specification: ``docs/13-phase-03.md`` §9.2, ``docs/04-system-design.md`` §2.4.
 """
 
@@ -32,7 +39,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from src.db.models import Job
+from src.db.models import Job, RunEvent
 from src.obs.events import emit_event
 from src.orchestration.job_queue import JobQueue, payload_of
 from src.orchestration.run_service import FINALIZE_JOB, SCRAPE_JOB, RunService
@@ -144,6 +151,8 @@ def handle_scrape_subreddit(session: Session, job: Job) -> dict[str, Any]:
     leads = scraper.run(session, subreddits=[subreddit], run_id=run_id)
     leads = int(leads or 0)
 
+    _record_egress_degradations(session, run_id)
+
     service.note_subreddit_finished(run_id, leads)
 
     emit_event(
@@ -165,6 +174,67 @@ def handle_scrape_subreddit(session: Session, job: Job) -> dict[str, Any]:
         )
 
     return {"subreddit": subreddit, "leads": leads}
+
+
+def _record_egress_degradations(session: Session, run_id: int) -> None:
+    """Put any egress degradation on the run's timeline.
+
+    **Called after the scrape returns, and that placement is the design.**
+    ``emit_event`` adds to this session without committing, so calling it while
+    the scraper is still working would leave the session dirty across a
+    multi-minute fetch -- the scraper's next query would autoflush, take
+    SQLite's single write lock, and hold it until the scrape finished. That is
+    exactly the defect that made cancelling a run return HTTP 500 during P3's
+    manual testing (``PHASE-03-COMPLETION-REPORT`` §5.0), and the reason
+    ``NetworkPolicy`` accumulates notices as value objects instead of writing
+    them itself.
+
+    The delay costs one subreddit's worth of latency on the run page. The log
+    line is emitted the instant it happens either way, so nothing is hidden --
+    only the timeline row waits.
+    """
+    from src.net.egress import get_policy
+
+    try:
+        notices = get_policy().drain_notices()
+    except Exception as exc:  # noqa: BLE001 - telemetry must not fail a scrape
+        log.warning("could not read egress degradations: %s", exc)
+        return
+    if not notices:
+        return
+
+    # Deduplicated against the run's own timeline, not inside the policy.
+    #
+    # The policy deliberately knows nothing about runs -- that is what lets it
+    # report degradation without a database session (see the docstring above) --
+    # so it can only dedup within one drain. A twelve-subreddit run is twelve
+    # drains, and the requirement is one entry per ladder step per *run*. The
+    # timeline is where "this run" is known, so the check belongs here.
+    #
+    # Matching on the rendered message rather than on (from, to) is deliberate:
+    # the same step failing for a different reason -- "every proxy is
+    # blacklisted" versus "the target is refusing the pool" -- is a different
+    # fact and earns its own entry.
+    already = {
+        message
+        for (message,) in session.query(RunEvent.message).filter(
+            RunEvent.run_id == run_id, RunEvent.event == "net.degraded"
+        )
+    }
+
+    for notice in notices:
+        message = notice.message()
+        if message in already:
+            continue
+        already.add(message)
+        emit_event(
+            session,
+            run_id,
+            "net.degraded",
+            level="warning",
+            message=message,
+            **notice.as_data(),
+        )
 
 
 def _is_last_scrape_job(session: Session, run_id: int, current_job_id: int) -> bool:

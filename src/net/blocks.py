@@ -47,24 +47,52 @@ class BlockVerdict:
         return self.kind is BlockKind.NONE
 
 
-#: Phrases that only appear on a challenge or interstitial page.
-_SOFT_MARKERS: tuple[tuple[str, str], ...] = (
+#: Phrases that only appear on a challenge or interstitial page, whoever is
+#: serving it. These are **target-agnostic**: a Cloudflare challenge looks the
+#: same in front of any site, which is why they can live in the transport.
+GENERIC_SOFT_MARKERS: tuple[tuple[str, str], ...] = (
     ("just a moment", "Cloudflare challenge"),
-    ("whoa there, pardner", "Reddit rate-limit interstitial"),
     ("checking your browser", "browser check"),
     ("enable javascript and cookies to continue", "JS challenge"),
     ("verifying you are human", "bot check"),
     ("access to this page has been denied", "denial page"),
 )
 
-#: The new-Reddit web app. On an old.reddit URL its presence means we were
-#: bounced off the HTML site we asked for, whatever the status code says.
-_NEW_REDDIT_MARKERS = ("shreddit-app", "<faceplate-", "shreddit-async-loader")
+#: Titles no content page serves, whatever the site.
+GENERIC_BAD_TITLES: tuple[str, ...] = ("blocked", "too many requests", "just a moment")
 
 _TITLE = re.compile(r"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
 
-#: Titles the old HTML site never serves for a content page.
-_BAD_TITLES = ("welcome to reddit", "blocked", "too many requests", "just a moment")
+
+@dataclass(frozen=True)
+class BlockSignatures:
+    """What an interstitial looks like *for one target*.
+
+    **Target-specific signatures are the caller's knowledge, not this layer's.**
+    ``src/net/`` is a reusable egress layer with no knowledge of what is being
+    fetched (R5, and the grep fence that enforces it); a detector that hard-coded
+    one site's markup would be that knowledge, in the one module most likely to
+    need editing when that site changes.
+
+    It also matters for correctness, not only tidiness: the same client fetches a
+    customer's own website, and applying one site's "you were bounced to the
+    wrong app" heuristic to an unrelated page is a false positive waiting to
+    happen. A caller supplies the signatures for the target it is talking to;
+    everyone else gets the generic set.
+
+    ``app_markers`` are matched **only** when the caller's own selector found no
+    content: on their own they could be a legitimately embedded widget.
+    """
+
+    soft_markers: tuple[tuple[str, str], ...] = GENERIC_SOFT_MARKERS
+    bad_titles: tuple[str, ...] = GENERIC_BAD_TITLES
+    app_markers: tuple[str, ...] = ()
+    app_marker_reason: str = "served a different application than the one requested"
+
+
+#: Used when a caller supplies nothing. Detects challenge pages and nothing
+#: target-specific -- correct for any target, complete for none.
+DEFAULT_SIGNATURES = BlockSignatures()
 
 
 def _title(html: str) -> str:
@@ -77,13 +105,19 @@ def classify(
     html: str,
     *,
     expect_selector_hits: int | None = None,
+    signatures: BlockSignatures | None = None,
 ) -> BlockVerdict:
     """Classify a response.
 
     ``expect_selector_hits`` is how many content elements the caller's parser
     found. Supplying it turns "200 with no content and a suspicious title" from
     a guess into a determination.
+
+    ``signatures`` describes what an interstitial looks like for *this* target.
+    Omitted, the generic challenge set is used.
     """
+    signatures = signatures or DEFAULT_SIGNATURES
+
     if status_code in (403, 429):
         return BlockVerdict(BlockKind.HARD, f"HTTP {status_code}")
     if status_code >= 500:
@@ -93,21 +127,21 @@ def classify(
 
     lowered = html[:200_000].lower()
 
-    for marker, reason in _SOFT_MARKERS:
+    for marker, reason in signatures.soft_markers:
         if marker in lowered:
             return BlockVerdict(BlockKind.SOFT, reason)
 
     title = _title(html)
-    if any(bad in title for bad in _BAD_TITLES):
+    if any(bad in title for bad in signatures.bad_titles):
         return BlockVerdict(BlockKind.SOFT, f"interstitial title: {title[:60]!r}")
 
-    # New-Reddit markers only matter when we expected old-Reddit content and
-    # got none. On their own they could be a legitimately embedded widget.
-    if expect_selector_hits == 0 and any(m in lowered for m in _NEW_REDDIT_MARKERS):
-        return BlockVerdict(BlockKind.SOFT, "served the new Reddit app instead of old HTML")
+    # App markers only matter when we expected content and got none. On their
+    # own they could be a legitimately embedded widget.
+    if expect_selector_hits == 0 and any(m in lowered for m in signatures.app_markers):
+        return BlockVerdict(BlockKind.SOFT, signatures.app_marker_reason)
 
     if expect_selector_hits == 0:
-        # Shape is right, content is absent. A genuinely empty subreddit looks
+        # Shape is right, content is absent. A genuinely empty listing looks
         # exactly like this, so it is reported rather than judged.
         return BlockVerdict(BlockKind.EMPTY, "200 with no matching content elements")
 
