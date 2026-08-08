@@ -36,6 +36,73 @@ unaffected.
 
 ---
 
+## 2a. Feed surface — RSS *(P5)*
+
+Every endpoint above also answers `.rss`, in **Atom 1.0**. `RedditClient.get_feed()` reads it and
+returns the same post dict `_extract_post` returns. Parsing lives in
+`src/discovery/feed_parser.py`, never in `src/net/` (R5, grep fence 4).
+
+| Purpose | URL | Items | Paginates |
+|---|---|---|---|
+| Multireddit listing | `/r/a+b+c/{sort}/.rss?limit=100` | **up to 100, many subreddits** | ❌ no `next` link |
+| Boolean search | `/search.rss?q=(subreddit:a OR subreddit:b) AND "kw"&sort=new&limit=100` | up to 100 | ❌ |
+
+`sort` ∈ `new | hot | top | rising`. Host is `old.reddit.com` (§1; U6 confirmed parity with `www`).
+
+### 2a.1 Why it is one request and never paginated
+
+P0 measured the RSS budget at **1 request per ~60 s per IP** (U1) — per *address*, not per feed, so
+a second request costs a minute of wall clock. A feed carries 100 items against a listing page's 25
+(U5) and offers no `next` link. **Combining subreddits into one multireddit URL is therefore
+mandatory, not an optimisation**: twelve subreddits polled individually cost twelve minutes.
+
+`get_feed` sends `request_class="rss"`, which is direct under every policy value — frozen
+architecture ([R18](ARCHITECTURE_FREEZE.md)), not configuration — and `allow_cache=False`, because a
+cached feed cannot advance a watermark ([28 §11 D5](28-discovery-redesign.md)).
+
+### 2a.2 What a feed carries, and what it does not
+
+**Measured 2026-08-08 against live Reddit** ([freeze §11](ARCHITECTURE_FREEZE.md)); the differences
+are properties of the endpoints, not defects in either parser:
+
+| Field | HTML listing | HTML search | Feed |
+|---|---|---|---|
+| id, title, author, subreddit, `created_utc` | ✅ | ✅ | ✅ |
+| **selftext body** | ⛔ **never** — the expando is lazy-loaded, `div.expando .md` matches nothing | ✅ inline | ✅ **~97% of posts** |
+| **score** | ✅ | ⛔ | ⛔ |
+| **comment count** | ✅ | ✅ | ⛔ |
+| **permalink** | destination for link/media posts | permalink, on `old.reddit.com` | permalink, always |
+
+⚠️ **The listing's missing body is the correction that matters.** [28 §2.2](28-discovery-redesign.md)
+claimed the listing carried one, and P6's density heuristic was designed around that claim. It does
+not. The feed is the only bulk source of selftext; the permalink page is the only per-post one.
+
+`score` and `num_comments` are **`None`** on the feed path, never `0` — the same distinction §4.1
+draws for search-sourced scores. `0` would be a fabricated fact.
+
+### 2a.3 Failure modes, kept separate
+
+| Condition | Behaviour |
+|---|---|
+| Valid feed, no entries | `[]` — a quiet subreddit |
+| **Malformed or non-Atom response** | **raises `FeedParseError`** |
+| Transport failure, block, non-200 | `[]`, matching `_get`'s contract *(P6 makes this raise)* |
+| `discovery.rss_enabled: false` | raises `FeedDisabled`, makes no request |
+
+**The first two must never be confused.** A damaged feed read as `[]` is indistinguishable from a
+subreddit with nothing new, so every poll would report silence and every poll would be believed.
+
+### 2a.4 Rate limiting
+
+A 429 carries **`x-ratelimit-reset`** rather than `Retry-After` — in **seconds remaining** (P0
+measured 17–48; a live check on 2026-08-08 returned 32). `_retry_after` reads it after `Retry-After`
+and **clamps** it: the epoch reading of the same number would sleep for decades.
+
+There is **no conditional GET**. Reddit sends neither `ETag` nor `Last-Modified` on `.rss`
+([freeze §11](ARCHITECTURE_FREEZE.md), U4), so an idle poll costs one full request, ~56 KB.
+
+---
+
 ## 3. Pagination — corrected
 
 ### 3.1 Verified markup

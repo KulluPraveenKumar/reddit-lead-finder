@@ -1,5 +1,6 @@
 import sys
 import time
+from pathlib import Path
 
 import schedule
 from rich.console import Console
@@ -187,6 +188,114 @@ def cmd_worker(config):
     console.print("[yellow]Worker stopped.[/yellow]")
 
 
+def _arg(args, name, default=None):
+    """Value following `--name`, or `default`. Matches the style already here."""
+    if name in args:
+        idx = args.index(name)
+        if idx + 1 < len(args):
+            return args[idx + 1]
+    return default
+
+
+def cmd_feed(config, args):
+    """Read one Reddit feed and print what it contains.
+
+    This exists so the feed reader can be *observed* rather than inferred from a
+    passing test — [35 §6](docs/35-testing-strategy.md) requires the P5 manual
+    guide to fetch a feed by CLI, and a non-developer cannot be handed a
+    multi-line `python -c`.
+
+    Two options are here for the manual guide specifically, and both earn their
+    place:
+
+    ``--file``   parses a local Atom file and makes **no** network call, which
+                 is what lets every deterministic step of the guide run offline
+                 and give the same answer every time.
+    ``--config`` reads settings from another file, which is what lets the
+                 rollback test (`rss_enabled: false`) run against a temporary
+                 file instead of editing the project's own `config.yaml`.
+    """
+    from src.discovery import FeedParseError, parse_feed
+    from src.reddit_client import FeedDisabled, RedditClient
+
+    config_path = _arg(args, "--config")
+    if config_path:
+        config = load_config(config_path)
+
+    source = _arg(args, "--file")
+    subreddits = [s for s in (_arg(args, "--subreddits", "") or "").split(",") if s.strip()]
+    sort = _arg(args, "--sort", "new")
+    query = _arg(args, "--query")
+    raw_limit = _arg(args, "--limit")
+
+    try:
+        if source:
+            posts = parse_feed(Path(source).read_bytes())
+            if raw_limit:
+                posts = posts[: max(1, int(raw_limit))]
+            console.print(f"[dim]Read from file: {source} (no network request)[/dim]")
+        else:
+            if not subreddits:
+                console.print(
+                    "[red]Usage: python main.py feed --subreddits a,b,c[/red]\n"
+                    "[dim]   or: python main.py feed --file path\\to\\feed.xml[/dim]"
+                )
+                sys.exit(2)
+            client = RedditClient(config)
+            posts = client.get_feed(
+                subreddits,
+                sort=sort,
+                limit=int(raw_limit) if raw_limit else None,
+                query=query,
+            )
+            console.print(f"[dim]Fetched live from Reddit · sort={sort}[/dim]")
+    except FeedDisabled as exc:
+        # The operator's rollback switch. Loud on purpose: a disabled collector
+        # that printed "0 posts" would be indistinguishable from a quiet one.
+        console.print(f"[yellow]{exc}[/yellow]")
+        sys.exit(1)
+    except FeedParseError as exc:
+        # Caught rather than left to propagate: an unhandled raise also exits
+        # non-zero, but it prints a traceback where the reader needs a sentence.
+        console.print(f"[red]Could not parse the feed: {exc}[/red]")
+        sys.exit(1)
+    except (ValueError, OSError) as exc:
+        console.print(f"[red]{exc}[/red]")
+        sys.exit(2)
+
+    _print_feed(posts)
+
+
+def _print_feed(posts):
+    """One block per post rather than a table.
+
+    Seven columns of post metadata do not fit an 80-column terminal: `rich`
+    folds them mid-word and the reader is left decoding `t3_a00010 / 1`. The
+    manual guide asks a non-developer to check specific fields, so each field
+    gets its own labelled place and the layout survives any window width.
+    """
+    for post in posts:
+        console.print(
+            f"[bold]{post['id']}[/bold]  r/{post['subreddit']}  "
+            f"by {post['author']}  {post['created_utc'] or '(no timestamp)'}"
+        )
+        console.print(f"  {post['title']}")
+        console.print(
+            f"  [dim]score:[/dim] {'None' if post['score'] is None else post['score']}   "
+            f"[dim]comments:[/dim] "
+            f"{'None' if post['num_comments'] is None else post['num_comments']}   "
+            f"[dim]body:[/dim] {len(post['body'])} characters"
+        )
+        console.print(f"  [dim]{post['url']}[/dim]")
+
+    with_body = sum(1 for p in posts if p["body"])
+    console.print(f"\n[dim]{with_body} of {len(posts)} carry a body[/dim]")
+    # `score` and `comments` read None on every row because a feed carries
+    # neither. Said here so the reader does not report it as a defect.
+    console.print("[dim]score and comments are None: a feed does not carry them[/dim]")
+    console.print(f"[bold]{len(posts)} posts[/bold]")
+
+
 def cmd_add_user(config, username):
     init_db()
     session = get_session()
@@ -283,6 +392,7 @@ def print_help():
 
 [bold cyan]Usage:[/bold cyan]
   python main.py scrape \[--scraper TYPE]   Run scrapers (keyword|subreddit|user|all)
+  python main.py feed --subreddits a,b     Read a Reddit feed (add --file to read a saved one)
   python main.py dashboard                 Start web dashboard
   python main.py worker                    Run the job worker in the foreground
   python main.py schedule                  Run scrapers on a schedule
@@ -293,6 +403,10 @@ def print_help():
 [bold cyan]Examples:[/bold cyan]
   python main.py scrape                    Run all scrapers
   python main.py scrape --scraper keyword  Run keyword scraper only
+  python main.py feed --subreddits SaaS,startups --limit 25
+                                           One request, both subreddits, 25 posts
+  python main.py feed --file tests\fixtures\atom\listing_multireddit.xml
+                                           Read a saved feed; makes no request
   python main.py worker                    Process queued jobs until stopped
   python main.py schedule                  Auto-scrape every 60 min
   python main.py add-user some_redditor    Track a specific user
@@ -331,6 +445,9 @@ def main():
             if idx + 1 < len(args):
                 scraper_type = args[idx + 1]
         cmd_scrape(config, scraper_type)
+
+    elif command == "feed":
+        cmd_feed(config, args)
 
     elif command == "dashboard":
         cmd_dashboard(config)

@@ -123,6 +123,42 @@ orchestration:
   enabled: true
 
 # ---------------------------------------------------------------------------
+# Discovery (P5) — reading Reddit's published feeds instead of its web pages
+#
+# Every subreddit publishes an Atom feed. One feed request returns up to 100
+# posts across MANY subreddits at once; one web page returns 25 from one
+# subreddit. P0 measured the difference and the limits (docs/SPRINT-0-MEASUREMENTS §2):
+#
+#   • the feed carries the full post body       → no second fetch for text
+#   • `?limit=100` is honoured                  → sets `rss_limit` below
+#   • one request per ~60 seconds PER IP        → many subreddits must be
+#                                                 combined into one request,
+#                                                 which get_feed does for you
+#   • old.reddit.com serves feeds identically   → sets `rss_host` below
+#   • no ETag and no Last-Modified are sent     → there is no "nothing changed"
+#                                                 shortcut, and none is built
+#
+# Nothing calls this yet. P5 builds the reader; P6 wires it into collection.
+#
+# ⚠️ ROLLBACK: `rss_enabled: false` switches feed collection off entirely. The
+# HTML path is untouched and keeps working. Deleting this whole block also
+# works — the defaults below are what the code assumes when it is absent.
+# ---------------------------------------------------------------------------
+discovery:
+  # The off switch. `false` makes any feed request refuse loudly rather than
+  # return nothing, so a disabled collector can never be mistaken for a quiet
+  # subreddit.
+  rss_enabled: true
+
+  # Posts per feed request. 100 is Reddit's measured ceiling; asking for more
+  # returns 100 anyway.
+  rss_limit: 100
+
+  # Where feeds are fetched from. `old.reddit.com` is the only host this project
+  # is permitted to use (docs/07 §1), and P0 confirmed it serves feeds.
+  rss_host: "https://old.reddit.com"
+
+# ---------------------------------------------------------------------------
 # Network policy (P4) — egress is a policy, not a mandate (AD-25)
 #
 # Two axes, deliberately separate:

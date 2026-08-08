@@ -272,6 +272,27 @@ class RedditClient:
             return None                               # preserves existing caller contract
 ```
 
+### 5.0 `get_feed` — the seventh method *(P5, additive)*
+
+```python
+def get_feed(self, subreddits, *, sort="new", limit=None, query=None) -> list[dict]:
+    """One Atom feed -> posts in `_extract_post`'s shape. AD-2: additive only."""
+```
+
+Deliberately **not** paginated, unlike every other method here: a feed has no `next` link, carries
+100 items in one response, and P0 measured the budget at one request per ~60 s **per IP**, so a
+second request costs a minute. Many subreddits go in one multireddit URL for the same reason.
+
+Routing is `request_class="rss"` → always direct ([R18](ARCHITECTURE_FREEZE.md)) and
+`allow_cache=False` ([28 D5](28-discovery-redesign.md)). Parsing is
+`src/discovery/feed_parser.py`; a malformed feed raises `FeedParseError` while a transport failure
+returns `[]`, and the two must stay distinguishable. Field mapping and the four measured differences
+from the HTML paths: [07 §2a](07-scraping-pipeline.md).
+
+> ◐ The `_get` sketch above is the pre-P4 design, not the shipped signature. The shipped method is
+> `_get(self, url, *, expect_selector=None)` and it **swallows** `ProxyExhaustedError`, returning
+> `None`. Making it raise is P6's, with the handler that maps the exception to a run outcome.
+
 ### 5.1 Pagination fix
 
 ```python

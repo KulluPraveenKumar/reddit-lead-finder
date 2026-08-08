@@ -301,11 +301,47 @@ def _count(html: str, selector: str) -> int:
         return 0
 
 
+#: No sane server asks us to wait longer than this, and a value that does is far
+#: more likely to be a unit we misread than an instruction. Capping turns a
+#: possible multi-year sleep into a long-but-survivable one, and the retry loop
+#: gives up long before it matters.
+MAX_RETRY_DELAY_SECONDS = 300.0
+
+
 def _retry_after(response: Any) -> float | None:
-    raw = response.headers.get("Retry-After") if hasattr(response, "headers") else None
-    if not raw:
+    """How long the server asked us to wait, in seconds.
+
+    ``Retry-After`` first because it is the standard header and is what a proxy
+    or CDN in front of the target will set.
+
+    ``x-ratelimit-reset`` second, because the target this project was built for
+    sends it *instead* on a rate-limited feed. Reading it is what turns a 429
+    into a wait of the length the server actually named rather than a fixed
+    backoff guess.
+
+    **Its unit is seconds remaining, not an epoch timestamp**, and the two are
+    not distinguishable by inspection -- one reading gives a 30-second pause and
+    the other a 55-year one. This is measured, not assumed: P0 recorded
+    ``x-ratelimit-reset: 17-48`` across a run
+    ([SPRINT-0 §2.2](../../docs/SPRINT-0-MEASUREMENTS.md)), and a live check on
+    2026-08-08 returned ``32``. The clamp below is what keeps the wrong reading
+    survivable if a future server ever disagrees.
+    """
+    headers = getattr(response, "headers", None)
+    if headers is None:
         return None
-    try:
-        return float(raw)
-    except (TypeError, ValueError):
-        return None
+
+    for name in ("Retry-After", "x-ratelimit-reset"):
+        raw = headers.get(name)
+        if not raw:
+            continue
+        try:
+            seconds = float(raw)
+        except (TypeError, ValueError):
+            continue
+        if seconds <= 0:
+            # `x-ratelimit-reset: 0` means "the window is open", which is a
+            # reason not to wait rather than a reason to wait forever.
+            return None
+        return min(seconds, MAX_RETRY_DELAY_SECONDS)
+    return None

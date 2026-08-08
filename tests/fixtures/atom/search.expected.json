@@ -1,0 +1,31 @@
+{
+  "_comment": [
+    "The second entry has no <content> element. body must be \"\", not an error.",
+    "That is the difference between 'this post has no selftext' and 'this feed",
+    "is broken', and only the second one is allowed to raise."
+  ],
+  "posts": [
+    {
+      "id": "t3_a000201",
+      "title": "Looking for a billing provider",
+      "url": "https://www.reddit.com/r/SaaS/comments/a000201/looking_for_a_billing_provider/",
+      "author": "redditor_0031",
+      "subreddit": "SaaS",
+      "score": null,
+      "num_comments": null,
+      "body": "Looking for a billing provider that will approve a scraping tool.",
+      "created_utc": "2026-08-08 11:19:04"
+    },
+    {
+      "id": "t3_a000202",
+      "title": "Looking for a technical cofounder",
+      "url": "https://www.reddit.com/r/startups/comments/a000202/looking_for_a_technical_cofounder/",
+      "author": "redditor_0007",
+      "subreddit": "startups",
+      "score": null,
+      "num_comments": null,
+      "body": "",
+      "created_utc": "2026-08-08 10:58:11"
+    }
+  ]
+}

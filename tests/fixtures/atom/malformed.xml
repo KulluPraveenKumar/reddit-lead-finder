@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A truncated feed. There is deliberately NO malformed.expected.json: this
+  fixture's expectation is an EXCEPTION, not a value, and the test says so
+  (tests/test_feed_parser.py::test_a_malformed_feed_raises).
+
+  Why truncation specifically: it is what a real interrupted transfer, a proxy
+  that cuts a response short, or a 200-with-a-partial-body actually produces.
+  The document below stops in the middle of an entry: <content> is never
+  closed and <feed> is never closed.
+
+  The failure this guards is not a crash. It is a damaged feed being read as
+  "no new posts", which is indistinguishable from a quiet subreddit and is
+  therefore believed forever. See empty.xml for the other half of the pair.
+-->
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <category term="SaaS" label="r/SaaS"/>
+  <updated>2026-08-08T11:00:00+00:00</updated>
+  <id>/r/SaaS/new/.rss</id>
+  <title>newest submissions : SaaS</title>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0023</name>
+    </author>
+    <category term="SaaS" label="r/SaaS"/>
+    <id>t3_a000301</id>
+    <link href="https://old.reddit.com/r/SaaS/comments/a000301/a_post_that_never_finished_downloading/"/>
+    <updated>2026-08-08T10:59:00+00:00</updated>
+    <title>A post that never finished downloading</title>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;This response was cut off in

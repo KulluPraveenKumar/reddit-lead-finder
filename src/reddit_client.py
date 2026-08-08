@@ -38,7 +38,8 @@ from urllib.parse import quote_plus, urljoin
 from bs4 import BeautifulSoup
 from rich.console import Console
 
-from .net import BlockedError, BlockSignatures, ProxiedHTTPClient, ProxyExhaustedError
+from .discovery import parse_feed
+from .net import BlockedError, BlockSignatures, ProxiedHTTPClient, ProxyExhaustedError, RequestClass
 from .net.blocks import GENERIC_BAD_TITLES, GENERIC_SOFT_MARKERS
 
 console = Console()
@@ -75,6 +76,25 @@ PAGE_SIZE = 25
 #: Hard ceiling on pages per call, whatever `limit` asks for. A safety net
 #: against a cursor that never terminates, not a product limit.
 MAX_PAGES = 40
+
+#: Where feeds are fetched from. `old.reddit.com` because 07 §1 permits only
+#: that host, and P0's U6 measured it serving RSS identically to `www`.
+DEFAULT_RSS_HOST = BASE_URL
+#: P0's U5 measured `?limit=100` as honoured, returning 100 entries. It is the
+#: real ceiling per request, and asking for more gets 100 anyway.
+MAX_FEED_LIMIT = 100
+DEFAULT_FEED_LIMIT = MAX_FEED_LIMIT
+#: The sorts a feed accepts, mirroring the site's own.
+FEED_SORTS = frozenset({"new", "hot", "top", "rising"})
+
+
+class FeedDisabled(RuntimeError):
+    """``discovery.rss_enabled`` is false.
+
+    Raised rather than returning ``[]`` so the operator's rollback switch is
+    visible in a log instead of looking like a subreddit with nothing new --
+    the same reason a malformed feed raises. See P5's rollback level 1.
+    """
 
 
 class RedditClient:
@@ -208,6 +228,106 @@ class RedditClient:
         if not html:
             return None
         return self._parse_subreddit_about(html, subreddit_name)
+
+    # ---------------------------------------------------------------- feeds
+
+    def get_feed(self, subreddits, *, sort="new", limit=None, query=None):
+        """Fetch one Atom feed and return posts in ``_extract_post``'s shape.
+
+        **Additive.** The six methods above keep their signatures and return
+        shapes ([AD-2](../docs/ARCHITECTURE_FREEZE.md)); this is a seventh, and
+        nothing calls it until P6.
+
+        Why it does not paginate, unlike everything else here: a feed carries up
+        to 100 items in one response (U5) and offers no `next` link, and P0
+        measured the RSS budget at **one request per ~60 seconds per IP** (U1) --
+        so a second request would cost a minute of wall clock to fetch a page
+        that does not exist. Many subreddits go in **one** multireddit URL for
+        the same reason; combining is mandatory, not an optimisation.
+
+        Egress is `rss`, which is direct under every policy value -- frozen
+        architecture (R18), not configuration. The cache is bypassed: a 15-minute
+        TTL serving a stale feed to a 15-minute poll means the watermark never
+        advances and new posts are silently lost ([28 §11 D5](../docs/28-discovery-redesign.md)).
+
+        Failures are deliberately separated. A **transport** failure returns
+        `[]`, matching `_get`'s long-standing contract, because the caller
+        already handles "nothing came back". A **parse** failure raises
+        `FeedParseError`, because "the feed is broken" and "the subreddit is
+        quiet" must never look the same.
+        """
+        discovery = (self.config or {}).get("discovery", {}) or {}
+        if not discovery.get("rss_enabled", True):
+            raise FeedDisabled(
+                "feed collection is disabled (discovery.rss_enabled: false); "
+                "the HTML path is unaffected"
+            )
+
+        if limit is None:
+            limit = discovery.get("rss_limit", DEFAULT_FEED_LIMIT)
+        limit = _clamp_feed_limit(limit)
+
+        url = self._feed_url(
+            subreddits,
+            sort=sort,
+            limit=limit,
+            query=query,
+            host=discovery.get("rss_host") or DEFAULT_RSS_HOST,
+        )
+
+        try:
+            result = self.http.get(
+                url,
+                request_class=RequestClass.RSS.value,
+                allow_cache=False,
+            )
+        except ProxyExhaustedError as exc:
+            console.print(f"[red]Proxy pool exhausted: {exc}[/red]")
+            return []
+        except BlockedError as exc:
+            console.print(f"[yellow]Blocked: {exc}[/yellow]")
+            return []
+        except Exception as exc:  # noqa: BLE001 - one feed must not kill a run
+            log.warning("feed request failed for %s: %s", url, exc)
+            console.print(f"[red]Feed request failed: {exc}[/red]")
+            return []
+
+        if not result.ok:
+            console.print(f"[yellow]{url} -> {result.status_code} {result.verdict.reason}[/yellow]")
+            return []
+
+        return parse_feed(result.text)[:limit]
+
+    def _feed_url(self, subreddits, *, sort="new", limit=DEFAULT_FEED_LIMIT, query=None, host=None):
+        """Build the feed URL.
+
+        Separate from :meth:`get_feed` so every URL shape is testable without a
+        network call -- the same reason `_search_url` is separate, and the same
+        bug class it exists to prevent: an unencoded `&` or `#` in a query
+        silently searches for the fragment before it and returns plausible
+        results for the wrong search.
+
+        Two shapes, both measured in P0:
+
+        * **listing** -- ``/r/a+b+c/new/.rss?limit=100``. One request, many
+          subreddits (U1 makes combining mandatory).
+        * **search** -- ``/search.rss?q=(subreddit:a OR subreddit:b) AND "kw"``.
+          U3 confirmed boolean multi-subreddit search works, which is what turns
+          120 keyword requests into 12. The boolean form is used even for a
+          single subreddit, so there is one search path rather than two.
+        """
+        names = _feed_subreddits(subreddits)
+        if sort not in FEED_SORTS:
+            raise ValueError(f"sort must be one of {sorted(FEED_SORTS)}, not {sort!r}")
+        limit = _clamp_feed_limit(limit)
+        base = (host or DEFAULT_RSS_HOST).rstrip("/")
+
+        if query:
+            clause = " OR ".join(f"subreddit:{name}" for name in names)
+            expression = f'({clause}) AND "{query}"'
+            return f"{base}/search.rss?q={quote_plus(expression)}&sort={sort}&limit={limit}"
+
+        return f"{base}/r/{'+'.join(names)}/{sort}/.rss?limit={limit}"
 
     # ------------------------------------------------------------ parsing
 
@@ -434,6 +554,37 @@ class RedditClient:
             }
         except Exception:
             return {"name": name, "description": "", "subscribers": 0}
+
+
+def _feed_subreddits(subreddits) -> list[str]:
+    """Normalise the caller's list into names a feed URL can carry.
+
+    Accepts a bare string as well as a list, because ``get_feed("SaaS")`` is
+    what a caller writes by accident and iterating it would build
+    ``/r/S+a+a+S/``. That URL is valid, returns a feed, and is silently wrong --
+    the failure mode worth ten lines of normalisation.
+    """
+    if isinstance(subreddits, str):
+        subreddits = [subreddits]
+    names = []
+    for raw in subreddits or []:
+        name = str(raw).strip().strip("/")
+        if name.lower().startswith("r/"):
+            name = name[2:]
+        if name:
+            names.append(name)
+    if not names:
+        raise ValueError("get_feed needs at least one subreddit")
+    return names
+
+
+def _clamp_feed_limit(limit) -> int:
+    """1..100. Above 100 Reddit returns 100 anyway (U5); below 1 returns nothing."""
+    try:
+        value = int(limit)
+    except (TypeError, ValueError):
+        return DEFAULT_FEED_LIMIT
+    return max(1, min(MAX_FEED_LIMIT, value))
 
 
 def _parse_time_element(element):

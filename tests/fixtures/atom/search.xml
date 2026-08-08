@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A search feed, which is the shape P6's stage 5 uses.
+
+  Reddit's search endpoint answers `.rss` too, and P0 measured that a BOOLEAN
+  multi-subreddit query works (U3: 50 entries spanning 2 subreddits), which is
+  what turns 120 keyword requests into 12 (docs/28 §3, stage 5).
+
+  Structurally this is the same Atom document as a listing feed. The only
+  difference is the feed-level <title> and <id>. That is worth a fixture rather
+  than an assumption: if search ever diverged, one parser would have to become
+  two.
+
+  Note the second entry has NO <content> element at all. Search results are
+  where that occurs, and the parser must produce body "" rather than raising.
+-->
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <category term="reddit.com" label="reddit.com"/>
+  <updated>2026-08-08T11:20:00+00:00</updated>
+  <id>/search.rss?q=%28subreddit%3ASaaS+OR+subreddit%3Astartups%29+AND+%22looking+for%22&amp;sort=new</id>
+  <link rel="self" href="https://old.reddit.com/search.rss?q=%28subreddit%3ASaaS+OR+subreddit%3Astartups%29+AND+%22looking+for%22&amp;sort=new" type="application/atom+xml"/>
+  <title>reddit.com: search results</title>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0031</name>
+      <uri>https://old.reddit.com/user/redditor_0031</uri>
+    </author>
+    <category term="SaaS" label="r/SaaS"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Looking for a billing provider that will approve a scraping tool.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0031"&gt; /u/redditor_0031 &lt;/a&gt;</content>
+    <id>t3_a000201</id>
+    <link href="https://old.reddit.com/r/SaaS/comments/a000201/looking_for_a_billing_provider/"/>
+    <updated>2026-08-08T11:19:04+00:00</updated>
+    <published>2026-08-08T11:19:04+00:00</published>
+    <title>Looking for a billing provider</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0007</name>
+      <uri>https://old.reddit.com/user/redditor_0007</uri>
+    </author>
+    <category term="startups" label="r/startups"/>
+    <id>t3_a000202</id>
+    <link href="https://old.reddit.com/r/startups/comments/a000202/looking_for_a_technical_cofounder/"/>
+    <updated>2026-08-08T10:58:11+00:00</updated>
+    <published>2026-08-08T10:58:11+00:00</published>
+    <title>Looking for a technical cofounder</title>
+  </entry>
+
+</feed>

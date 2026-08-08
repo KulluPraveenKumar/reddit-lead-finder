@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<!--
+  The HTML half of the P5 parity pair. Its Atom twin is
+  tests/fixtures/atom/listing_multireddit.xml: the same three posts, described
+  by the other endpoint.
+
+  Structure copied from the real captured listing at listing_page1.html -- the
+  same attribute set, the same container nesting, the same expando markup old
+  Reddit emits for a self post. Only the values are invented, because this
+  repository is public (EXECUTION_MODE_LOCK.md §5.1 H2).
+
+  Derivation direction matters and runs one way only: this file is modelled on
+  real HTML, and the Atom twin is modelled on a real Atom capture. Authoring
+  either one to match the other would make the parity test pass by construction
+  (P4 finding F3/F5).
+
+  ┌─ The expandos below are EMPTY, and that is the whole point. ──────────────┐
+  │ Old Reddit does not put selftext in a listing page. It renders            │
+  │                                                                          │
+  │   <div class="expando expando-uninitialized" style="display: none">       │
+  │     <span class="error">loading...</span></div>                          │
+  │                                                                          │
+  │ and fetches the body over AJAX when a reader clicks. `_extract_post`      │
+  │ reads `div.expando .md`, which matches ZERO elements on a real page, so   │
+  │ every listing-sourced lead has had `body == ""` since before P5.          │
+  │                                                                          │
+  │ Measured three ways on 2026-08-08 (ARCHITECTURE_FREEZE.md §11):           │
+  │   live /r/startups/new/           25 expandos, 0 with .md                 │
+  │   listing_page1.html (P0 capture) 25 expandos, 0 with .md                 │
+  │   search_page1.html               22 bodies, via .search-result-body .md  │
+  │                                                                          │
+  │ ⚠️ An earlier version of THIS file carried populated expandos, copied     │
+  │ from how the markup is documented rather than from how it is served.      │
+  │ The parity test passed against markup Reddit does not send. Do not        │
+  │ "fix" the empty expandos below: they are the site's actual output, and    │
+  │ populating them re-creates a test that cannot fail.                       │
+  └──────────────────────────────────────────────────────────────────────────┘
+
+  The three posts are chosen to exercise what the parsers must reconcile:
+    t3_a000101  self post, lazy expando    -- body "" on the HTML side only
+    t3_a000102  link post, no expando      -- body "" on BOTH sides
+    t3_a000103  self post, OTHER subreddit -- multireddit subreddit extraction
+
+  Body parity is proved where HTML genuinely carries a body: the SEARCH pair,
+  search_matched.html against atom/search.xml. See tests/test_feed_parity.py.
+-->
+<html lang="en">
+<head><title>newest submissions</title></head>
+<body class="listing-page">
+<div class="content" role="main">
+  <div id="siteTable" class="sitetable linklisting">
+
+    <div class="thing id-t3_a000101 odd link self"
+         data-author="redditor_0023"
+         data-author-fullname="t2_a0000017"
+         data-comments-count="4"
+         data-context="listing"
+         data-domain="self.SaaS"
+         data-fullname="t3_a000101"
+         data-permalink="/r/SaaS/comments/a000101/looking_for_advice_on_early_customer_discovery/"
+         data-rank="1"
+         data-score="12"
+         data-subreddit="SaaS"
+         data-subreddit-prefixed="r/SaaS"
+         data-timestamp="1786187863000"
+         data-type="link"
+         data-url="/r/SaaS/comments/a000101/looking_for_advice_on_early_customer_discovery/"
+         id="thing_t3_a000101">
+      <span class="rank">1</span>
+      <div class="entry unvoted">
+        <p class="title">
+          <a class="title may-blank"
+             href="/r/SaaS/comments/a000101/looking_for_advice_on_early_customer_discovery/">Looking for advice on early customer discovery</a>
+          <span class="domain">(<a href="/r/SaaS/">self.SaaS</a>)</span>
+        </p>
+        <p class="tagline">
+          <time class="live-timestamp" datetime="2026-08-08T11:17:43+00:00">3 hours ago</time>
+          <span class="submitted-by">submitted by <a class="author" href="/user/redditor_0023">redditor_0023</a></span>
+        </p>
+        <ul class="flat-list buttons">
+          <li class="first"><a class="bylink comments may-blank"
+             href="/r/SaaS/comments/a000101/looking_for_advice_on_early_customer_discovery/">4 comments</a></li>
+        </ul>
+        <div class="expando expando-uninitialized"
+             data-pin-condition="function() {return this.style.display != 'none';}"
+             style="display: none"><span class="error">loading...</span></div>
+      </div>
+    </div>
+
+    <div class="thing id-t3_a000102 even link"
+         data-author="redditor_0019"
+         data-author-fullname="t2_a0000008"
+         data-comments-count="0"
+         data-context="listing"
+         data-domain="example.invalid"
+         data-fullname="t3_a000102"
+         data-permalink="/r/SaaS/comments/a000102/we_shipped_our_public_launch_page/"
+         data-rank="2"
+         data-score="3"
+         data-subreddit="SaaS"
+         data-subreddit-prefixed="r/SaaS"
+         data-timestamp="1786187100000"
+         data-type="link"
+         data-url="https://example.invalid/launch"
+         id="thing_t3_a000102">
+      <span class="rank">2</span>
+      <div class="entry unvoted">
+        <p class="title">
+          <!-- A link post's title links to the DESTINATION, not the permalink.
+               Real listings put `https://v.redd.it/…`, `https://i.redd.it/….png`
+               or an external site here; `_extract_post` reads this href, so
+               `url` means "where the title points". The feed's <link href> is
+               always the permalink. Measured 2026-08-08 on r/SaaS: 3 of 25. -->
+          <a class="title may-blank"
+             href="https://example.invalid/launch">We shipped our public launch page</a>
+          <span class="domain">(<a href="/domain/example.invalid/">example.invalid</a>)</span>
+        </p>
+        <p class="tagline">
+          <time class="live-timestamp" datetime="2026-08-08T11:05:00+00:00">3 hours ago</time>
+          <span class="submitted-by">submitted by <a class="author" href="/user/redditor_0019">redditor_0019</a></span>
+        </p>
+        <ul class="flat-list buttons">
+          <li class="first"><a class="bylink comments may-blank"
+             href="/r/SaaS/comments/a000102/we_shipped_our_public_launch_page/">comment</a></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="thing id-t3_a000103 odd link self"
+         data-author="redditor_0004"
+         data-author-fullname="t2_a0000024"
+         data-comments-count="9"
+         data-context="listing"
+         data-domain="self.startups"
+         data-fullname="t3_a000103"
+         data-permalink="/r/startups/comments/a000103/pricing_lessons_from_a_small_saas/"
+         data-rank="3"
+         data-score="41"
+         data-subreddit="startups"
+         data-subreddit-prefixed="r/startups"
+         data-timestamp="1786185739000"
+         data-type="link"
+         data-url="/r/startups/comments/a000103/pricing_lessons_from_a_small_saas/"
+         id="thing_t3_a000103">
+      <span class="rank">3</span>
+      <div class="entry unvoted">
+        <p class="title">
+          <a class="title may-blank"
+             href="/r/startups/comments/a000103/pricing_lessons_from_a_small_saas/">Pricing lessons from a small SaaS</a>
+          <span class="domain">(<a href="/r/startups/">self.startups</a>)</span>
+        </p>
+        <p class="tagline">
+          <time class="live-timestamp" datetime="2026-08-08T10:42:19+00:00">4 hours ago</time>
+          <span class="submitted-by">submitted by <a class="author" href="/user/redditor_0004">redditor_0004</a></span>
+        </p>
+        <ul class="flat-list buttons">
+          <li class="first"><a class="bylink comments may-blank"
+             href="/r/startups/comments/a000103/pricing_lessons_from_a_small_saas/">9 comments</a></li>
+        </ul>
+        <div class="expando expando-uninitialized"
+             data-pin-condition="function() {return this.style.display != 'none';}"
+             style="display: none"><span class="error">loading...</span></div>
+      </div>
+    </div>
+
+  </div>
+  <div class="nav-buttons"><span class="nextprev">view more:
+    <span class="next-button">
+      <a href="https://old.reddit.com/r/SaaS/new/?count=25&amp;after=t3_a000103" rel="nofollow next">next &rsaquo;</a>
+    </span>
+  </span></div>
+</div>
+</body>
+</html>

@@ -14,6 +14,7 @@ under the process in [docs/EXECUTION_MODE_LOCK.md](docs/EXECUTION_MODE_LOCK.md).
 
 ## [Unreleased]
 
+**P5 — RSS client & Atom parser** ([docs/PHASE-05-COMPLETION-REPORT.md](docs/PHASE-05-COMPLETION-REPORT.md)),
 **P4 — network provider abstraction** ([docs/PHASE-04-COMPLETION-REPORT.md](docs/PHASE-04-COMPLETION-REPORT.md)),
 **P3 — run service, run API, run pages** ([docs/PHASE-03-COMPLETION-REPORT.md](docs/PHASE-03-COMPLETION-REPORT.md))
 and **P2 — job queue, worker, structured logging** ([docs/PHASE-02-COMPLETION-REPORT.md](docs/PHASE-02-COMPLETION-REPORT.md)),
@@ -21,6 +22,37 @@ plus the process and hygiene work completed after `v0.1.0-p1`.
 
 > Not yet tagged. [EXECUTION_MODE_LOCK §6.2](docs/EXECUTION_MODE_LOCK.md) forbids tagging a phase
 > whose manual sign-off table is unsigned.
+
+### Added — P5
+
+- **`RedditClient.get_feed()`** reads Reddit's Atom feeds. One request returns up to **100 posts
+  across many subreddits**, where the HTML path returned 25 from one. Additive: the six existing
+  methods are unchanged, and nothing calls `get_feed()` until P6.
+- **`src/discovery/feed_parser.py`** — Atom 1.0 into the same post dict the HTML extractor produces.
+  No new dependency: `lxml` was already a direct pin.
+- **`python main.py feed`** — read a feed from Reddit, or with `--file`, from a saved one with no
+  network request at all.
+- **`scripts/validate_feed_parity.py`** — fetches the same subreddit over both HTML and RSS and
+  compares them field by field. Run it deliberately; it is the only check that notices Reddit
+  changing underneath the project, and it is not part of `pytest` because the suite makes no live
+  calls.
+- **`x-ratelimit-reset` is now honoured** on a rate-limited response, in seconds-remaining and
+  clamped. Reddit sends it on feeds instead of `Retry-After`.
+- Configuration: `discovery.rss_enabled` / `rss_limit` / `rss_host`, all defaulted.
+
+### ⚠️ Corrected — P5, a documented fact that was wrong
+
+- **An HTML listing page does not contain post text.** Old Reddit renders the body area as
+  `loading...` and fetches the text over AJAX when a reader clicks, so the project has never
+  extracted a body from a listing page. Measured live, and confirmed against the capture taken in
+  P0. [docs/28 §2.2](docs/28-discovery-redesign.md) said the opposite and has been corrected;
+  two amendments are recorded in [docs/ARCHITECTURE_FREEZE.md §11](docs/ARCHITECTURE_FREEZE.md).
+  **Feeds carry the body for ~97% of posts, and HTML *search* still carries it inline** — so no
+  data is lost, but the next phase's design assumed otherwise and must be revisited.
+  Found by `scripts/validate_feed_parity.py` on its first run.
+- **Conditional GET was removed from the plan, not built.** Reddit sends neither `ETag` nor
+  `Last-Modified` on `.rss`; P0 measured this and the architecture deleted the layer, but four
+  documents still described it as work to do.
 
 ### ⚠️ Changed — P4, behaviour an operator will notice
 

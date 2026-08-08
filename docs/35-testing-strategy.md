@@ -295,7 +295,7 @@ Beyond the universal gate. Only the additions are listed.
 | **P2** | **Claim race (2 workers), lease expiry, SIGTERM < 30 s, 10-min soak with 0 lock errors**, full-log secret grep | Start worker; kill it mid-job; restart; job completes once |
 | **P3** | Progress < 50 ms at 5,000 jobs; `/api/scrape` contract replay | Click Run Scraper; watch progress; cancel; restart process; run resumes |
 | **P4** | All 251 `src/net/` tests; provider construction from config ×5; leak detection | `/health/proxies`: 10 rows, **no credentials**; force pool exhaustion; see the degradation warning |
-| **P5** | Atom fixtures field-by-field; 304 handling; malformed feed raises | Fetch one feed by CLI; compare entry count to the site |
+| **P5** | Atom fixtures field-by-field; ~~304 handling~~ ⛔ *(deleted — U4 refuted in P0; [freeze §11.1](ARCHITECTURE_FREEZE.md))*; malformed feed raises; **RSS↔HTML parity on a matched fixture pair**; `x-ratelimit-reset` clamped | Fetch one feed by CLI; compare entry count to the site. **Plus `scripts/validate_feed_parity.py`** — a live HTML-vs-RSS field comparison, run deliberately and recorded in the completion report, because fixtures freeze the day they were captured and cannot detect drift |
 | **P6** | **Overflow fixture (150 posts)**; idle poll = 1 request; statement counter for cache bypass | Run a poll twice; second finds nothing and costs one request |
 | **P7** | **Token cost = 0**; duplicate = 0 over 20 replays; transport-down path | Complete a run; **receive one Telegram message**; check `ai_calls` for zero agent rows |
 | **P8** | Migration ordering; 459 rows get correct defaults | Confirm the four new columns and their values on a legacy lead |

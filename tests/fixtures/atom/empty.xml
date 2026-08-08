@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A valid Atom document with zero entries: what a quiet subreddit sends.
+
+  This is the fixture that keeps "nothing new" and "something is broken" apart.
+  Atom 1.0 requires no <entry> elements, so this document is correct, and the
+  parser must return [] without complaint. Its twin is malformed.xml, which must
+  raise. Getting these two the wrong way round is how a scraper dies silently:
+  every poll reports "no new posts" and every poll is believed.
+-->
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <category term="SaaS" label="r/SaaS"/>
+  <updated>2026-08-08T11:00:00+00:00</updated>
+  <id>/r/SaaS/new/.rss</id>
+  <link rel="self" href="https://old.reddit.com/r/SaaS/new/.rss" type="application/atom+xml"/>
+  <link rel="alternate" href="https://old.reddit.com/r/SaaS/new/" type="text/html"/>
+  <title>newest submissions : SaaS</title>
+</feed>

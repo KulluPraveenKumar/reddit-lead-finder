@@ -1,0 +1,1428 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  100 entries — the ceiling P0 measured as honoured (U5: `?limit=100` returned
+  100 entries, 228,639 bytes).
+
+  GENERATED, and deliberately repetitive: this fixture exists for volume, not
+  for variety. Two assertions need it and nothing else does.
+
+    * `limit=100` really yields 100 posts, and a smaller limit really trims
+    * 100 entries parse in under 50 ms (docs/34 §P5 Metrics)
+
+  Every *behavioural* edge (the SC_OFF wrapper, the /u/ prefix, the host
+  normalisation, the missing <published>, the absent <content>) lives in
+  listing_multireddit.xml and search.xml, which are hand-authored against a live
+  capture. Do not add edge cases here; they would be invisible among 100 rows.
+
+  Five subreddits rotate through the entries, so this is also a multireddit
+  feed, which is the only shape P6 stage 1 ever requests (U1: the per-IP rate
+  limit makes combining mandatory).
+-->
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <category term="SaaS+startups+Entrepreneur+marketing+smallbusiness" label="r/SaaS+startups+Entrepreneur+marketing+smallbusiness"/>
+  <updated>2026-08-08T12:00:00+00:00</updated>
+  <id>/r/SaaS+startups+Entrepreneur+marketing+smallbusiness/new/.rss</id>
+  <link rel="self" href="https://old.reddit.com/r/SaaS+startups+Entrepreneur+marketing+smallbusiness/new/.rss" type="application/atom+xml"/>
+  <title>newest submissions : SaaS+startups+Entrepreneur+marketing+smallbusiness</title>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0002</name>
+      <uri>https://old.reddit.com/user/redditor_0002</uri>
+    </author>
+    <category term="startups" label="r/startups"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 001.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0002"&gt; /u/redditor_0002 &lt;/a&gt;</content>
+    <id>t3_b000001</id>
+    <link href="https://old.reddit.com/r/startups/comments/b000001/generated_post_001/"/>
+    <updated>2026-08-08T11:59:00+00:00</updated>
+    <published>2026-08-08T11:59:00+00:00</published>
+    <title>Generated post 001</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0003</name>
+      <uri>https://old.reddit.com/user/redditor_0003</uri>
+    </author>
+    <category term="Entrepreneur" label="r/Entrepreneur"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 002.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0003"&gt; /u/redditor_0003 &lt;/a&gt;</content>
+    <id>t3_b000002</id>
+    <link href="https://old.reddit.com/r/Entrepreneur/comments/b000002/generated_post_002/"/>
+    <updated>2026-08-08T11:58:00+00:00</updated>
+    <published>2026-08-08T11:58:00+00:00</published>
+    <title>Generated post 002</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0004</name>
+      <uri>https://old.reddit.com/user/redditor_0004</uri>
+    </author>
+    <category term="marketing" label="r/marketing"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 003.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0004"&gt; /u/redditor_0004 &lt;/a&gt;</content>
+    <id>t3_b000003</id>
+    <link href="https://old.reddit.com/r/marketing/comments/b000003/generated_post_003/"/>
+    <updated>2026-08-08T11:57:00+00:00</updated>
+    <published>2026-08-08T11:57:00+00:00</published>
+    <title>Generated post 003</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0005</name>
+      <uri>https://old.reddit.com/user/redditor_0005</uri>
+    </author>
+    <category term="smallbusiness" label="r/smallbusiness"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 004.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0005"&gt; /u/redditor_0005 &lt;/a&gt;</content>
+    <id>t3_b000004</id>
+    <link href="https://old.reddit.com/r/smallbusiness/comments/b000004/generated_post_004/"/>
+    <updated>2026-08-08T11:56:00+00:00</updated>
+    <published>2026-08-08T11:56:00+00:00</published>
+    <title>Generated post 004</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0006</name>
+      <uri>https://old.reddit.com/user/redditor_0006</uri>
+    </author>
+    <category term="SaaS" label="r/SaaS"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 005.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0006"&gt; /u/redditor_0006 &lt;/a&gt;</content>
+    <id>t3_b000005</id>
+    <link href="https://old.reddit.com/r/SaaS/comments/b000005/generated_post_005/"/>
+    <updated>2026-08-08T11:55:00+00:00</updated>
+    <published>2026-08-08T11:55:00+00:00</published>
+    <title>Generated post 005</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0007</name>
+      <uri>https://old.reddit.com/user/redditor_0007</uri>
+    </author>
+    <category term="startups" label="r/startups"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 006.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0007"&gt; /u/redditor_0007 &lt;/a&gt;</content>
+    <id>t3_b000006</id>
+    <link href="https://old.reddit.com/r/startups/comments/b000006/generated_post_006/"/>
+    <updated>2026-08-08T11:54:00+00:00</updated>
+    <published>2026-08-08T11:54:00+00:00</published>
+    <title>Generated post 006</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0008</name>
+      <uri>https://old.reddit.com/user/redditor_0008</uri>
+    </author>
+    <category term="Entrepreneur" label="r/Entrepreneur"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 007.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0008"&gt; /u/redditor_0008 &lt;/a&gt;</content>
+    <id>t3_b000007</id>
+    <link href="https://old.reddit.com/r/Entrepreneur/comments/b000007/generated_post_007/"/>
+    <updated>2026-08-08T11:53:00+00:00</updated>
+    <published>2026-08-08T11:53:00+00:00</published>
+    <title>Generated post 007</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0009</name>
+      <uri>https://old.reddit.com/user/redditor_0009</uri>
+    </author>
+    <category term="marketing" label="r/marketing"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 008.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0009"&gt; /u/redditor_0009 &lt;/a&gt;</content>
+    <id>t3_b000008</id>
+    <link href="https://old.reddit.com/r/marketing/comments/b000008/generated_post_008/"/>
+    <updated>2026-08-08T11:52:00+00:00</updated>
+    <published>2026-08-08T11:52:00+00:00</published>
+    <title>Generated post 008</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0010</name>
+      <uri>https://old.reddit.com/user/redditor_0010</uri>
+    </author>
+    <category term="smallbusiness" label="r/smallbusiness"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 009.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0010"&gt; /u/redditor_0010 &lt;/a&gt;</content>
+    <id>t3_b000009</id>
+    <link href="https://old.reddit.com/r/smallbusiness/comments/b000009/generated_post_009/"/>
+    <updated>2026-08-08T11:51:00+00:00</updated>
+    <published>2026-08-08T11:51:00+00:00</published>
+    <title>Generated post 009</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0011</name>
+      <uri>https://old.reddit.com/user/redditor_0011</uri>
+    </author>
+    <category term="SaaS" label="r/SaaS"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 010.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0011"&gt; /u/redditor_0011 &lt;/a&gt;</content>
+    <id>t3_b000010</id>
+    <link href="https://old.reddit.com/r/SaaS/comments/b000010/generated_post_010/"/>
+    <updated>2026-08-08T11:50:00+00:00</updated>
+    <published>2026-08-08T11:50:00+00:00</published>
+    <title>Generated post 010</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0012</name>
+      <uri>https://old.reddit.com/user/redditor_0012</uri>
+    </author>
+    <category term="startups" label="r/startups"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 011.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0012"&gt; /u/redditor_0012 &lt;/a&gt;</content>
+    <id>t3_b000011</id>
+    <link href="https://old.reddit.com/r/startups/comments/b000011/generated_post_011/"/>
+    <updated>2026-08-08T11:49:00+00:00</updated>
+    <published>2026-08-08T11:49:00+00:00</published>
+    <title>Generated post 011</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0013</name>
+      <uri>https://old.reddit.com/user/redditor_0013</uri>
+    </author>
+    <category term="Entrepreneur" label="r/Entrepreneur"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 012.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0013"&gt; /u/redditor_0013 &lt;/a&gt;</content>
+    <id>t3_b000012</id>
+    <link href="https://old.reddit.com/r/Entrepreneur/comments/b000012/generated_post_012/"/>
+    <updated>2026-08-08T11:48:00+00:00</updated>
+    <published>2026-08-08T11:48:00+00:00</published>
+    <title>Generated post 012</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0014</name>
+      <uri>https://old.reddit.com/user/redditor_0014</uri>
+    </author>
+    <category term="marketing" label="r/marketing"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 013.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0014"&gt; /u/redditor_0014 &lt;/a&gt;</content>
+    <id>t3_b000013</id>
+    <link href="https://old.reddit.com/r/marketing/comments/b000013/generated_post_013/"/>
+    <updated>2026-08-08T11:47:00+00:00</updated>
+    <published>2026-08-08T11:47:00+00:00</published>
+    <title>Generated post 013</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0015</name>
+      <uri>https://old.reddit.com/user/redditor_0015</uri>
+    </author>
+    <category term="smallbusiness" label="r/smallbusiness"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 014.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0015"&gt; /u/redditor_0015 &lt;/a&gt;</content>
+    <id>t3_b000014</id>
+    <link href="https://old.reddit.com/r/smallbusiness/comments/b000014/generated_post_014/"/>
+    <updated>2026-08-08T11:46:00+00:00</updated>
+    <published>2026-08-08T11:46:00+00:00</published>
+    <title>Generated post 014</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0016</name>
+      <uri>https://old.reddit.com/user/redditor_0016</uri>
+    </author>
+    <category term="SaaS" label="r/SaaS"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 015.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0016"&gt; /u/redditor_0016 &lt;/a&gt;</content>
+    <id>t3_b000015</id>
+    <link href="https://old.reddit.com/r/SaaS/comments/b000015/generated_post_015/"/>
+    <updated>2026-08-08T11:45:00+00:00</updated>
+    <published>2026-08-08T11:45:00+00:00</published>
+    <title>Generated post 015</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0017</name>
+      <uri>https://old.reddit.com/user/redditor_0017</uri>
+    </author>
+    <category term="startups" label="r/startups"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 016.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0017"&gt; /u/redditor_0017 &lt;/a&gt;</content>
+    <id>t3_b000016</id>
+    <link href="https://old.reddit.com/r/startups/comments/b000016/generated_post_016/"/>
+    <updated>2026-08-08T11:44:00+00:00</updated>
+    <published>2026-08-08T11:44:00+00:00</published>
+    <title>Generated post 016</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0018</name>
+      <uri>https://old.reddit.com/user/redditor_0018</uri>
+    </author>
+    <category term="Entrepreneur" label="r/Entrepreneur"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 017.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0018"&gt; /u/redditor_0018 &lt;/a&gt;</content>
+    <id>t3_b000017</id>
+    <link href="https://old.reddit.com/r/Entrepreneur/comments/b000017/generated_post_017/"/>
+    <updated>2026-08-08T11:43:00+00:00</updated>
+    <published>2026-08-08T11:43:00+00:00</published>
+    <title>Generated post 017</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0019</name>
+      <uri>https://old.reddit.com/user/redditor_0019</uri>
+    </author>
+    <category term="marketing" label="r/marketing"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 018.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0019"&gt; /u/redditor_0019 &lt;/a&gt;</content>
+    <id>t3_b000018</id>
+    <link href="https://old.reddit.com/r/marketing/comments/b000018/generated_post_018/"/>
+    <updated>2026-08-08T11:42:00+00:00</updated>
+    <published>2026-08-08T11:42:00+00:00</published>
+    <title>Generated post 018</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0020</name>
+      <uri>https://old.reddit.com/user/redditor_0020</uri>
+    </author>
+    <category term="smallbusiness" label="r/smallbusiness"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 019.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0020"&gt; /u/redditor_0020 &lt;/a&gt;</content>
+    <id>t3_b000019</id>
+    <link href="https://old.reddit.com/r/smallbusiness/comments/b000019/generated_post_019/"/>
+    <updated>2026-08-08T11:41:00+00:00</updated>
+    <published>2026-08-08T11:41:00+00:00</published>
+    <title>Generated post 019</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0021</name>
+      <uri>https://old.reddit.com/user/redditor_0021</uri>
+    </author>
+    <category term="SaaS" label="r/SaaS"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 020.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0021"&gt; /u/redditor_0021 &lt;/a&gt;</content>
+    <id>t3_b000020</id>
+    <link href="https://old.reddit.com/r/SaaS/comments/b000020/generated_post_020/"/>
+    <updated>2026-08-08T11:40:00+00:00</updated>
+    <published>2026-08-08T11:40:00+00:00</published>
+    <title>Generated post 020</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0022</name>
+      <uri>https://old.reddit.com/user/redditor_0022</uri>
+    </author>
+    <category term="startups" label="r/startups"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 021.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0022"&gt; /u/redditor_0022 &lt;/a&gt;</content>
+    <id>t3_b000021</id>
+    <link href="https://old.reddit.com/r/startups/comments/b000021/generated_post_021/"/>
+    <updated>2026-08-08T11:39:00+00:00</updated>
+    <published>2026-08-08T11:39:00+00:00</published>
+    <title>Generated post 021</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0023</name>
+      <uri>https://old.reddit.com/user/redditor_0023</uri>
+    </author>
+    <category term="Entrepreneur" label="r/Entrepreneur"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 022.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0023"&gt; /u/redditor_0023 &lt;/a&gt;</content>
+    <id>t3_b000022</id>
+    <link href="https://old.reddit.com/r/Entrepreneur/comments/b000022/generated_post_022/"/>
+    <updated>2026-08-08T11:38:00+00:00</updated>
+    <published>2026-08-08T11:38:00+00:00</published>
+    <title>Generated post 022</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0024</name>
+      <uri>https://old.reddit.com/user/redditor_0024</uri>
+    </author>
+    <category term="marketing" label="r/marketing"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 023.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0024"&gt; /u/redditor_0024 &lt;/a&gt;</content>
+    <id>t3_b000023</id>
+    <link href="https://old.reddit.com/r/marketing/comments/b000023/generated_post_023/"/>
+    <updated>2026-08-08T11:37:00+00:00</updated>
+    <published>2026-08-08T11:37:00+00:00</published>
+    <title>Generated post 023</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0025</name>
+      <uri>https://old.reddit.com/user/redditor_0025</uri>
+    </author>
+    <category term="smallbusiness" label="r/smallbusiness"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 024.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0025"&gt; /u/redditor_0025 &lt;/a&gt;</content>
+    <id>t3_b000024</id>
+    <link href="https://old.reddit.com/r/smallbusiness/comments/b000024/generated_post_024/"/>
+    <updated>2026-08-08T11:36:00+00:00</updated>
+    <published>2026-08-08T11:36:00+00:00</published>
+    <title>Generated post 024</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0026</name>
+      <uri>https://old.reddit.com/user/redditor_0026</uri>
+    </author>
+    <category term="SaaS" label="r/SaaS"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 025.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0026"&gt; /u/redditor_0026 &lt;/a&gt;</content>
+    <id>t3_b000025</id>
+    <link href="https://old.reddit.com/r/SaaS/comments/b000025/generated_post_025/"/>
+    <updated>2026-08-08T11:35:00+00:00</updated>
+    <published>2026-08-08T11:35:00+00:00</published>
+    <title>Generated post 025</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0027</name>
+      <uri>https://old.reddit.com/user/redditor_0027</uri>
+    </author>
+    <category term="startups" label="r/startups"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 026.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0027"&gt; /u/redditor_0027 &lt;/a&gt;</content>
+    <id>t3_b000026</id>
+    <link href="https://old.reddit.com/r/startups/comments/b000026/generated_post_026/"/>
+    <updated>2026-08-08T11:34:00+00:00</updated>
+    <published>2026-08-08T11:34:00+00:00</published>
+    <title>Generated post 026</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0028</name>
+      <uri>https://old.reddit.com/user/redditor_0028</uri>
+    </author>
+    <category term="Entrepreneur" label="r/Entrepreneur"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 027.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0028"&gt; /u/redditor_0028 &lt;/a&gt;</content>
+    <id>t3_b000027</id>
+    <link href="https://old.reddit.com/r/Entrepreneur/comments/b000027/generated_post_027/"/>
+    <updated>2026-08-08T11:33:00+00:00</updated>
+    <published>2026-08-08T11:33:00+00:00</published>
+    <title>Generated post 027</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0029</name>
+      <uri>https://old.reddit.com/user/redditor_0029</uri>
+    </author>
+    <category term="marketing" label="r/marketing"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 028.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0029"&gt; /u/redditor_0029 &lt;/a&gt;</content>
+    <id>t3_b000028</id>
+    <link href="https://old.reddit.com/r/marketing/comments/b000028/generated_post_028/"/>
+    <updated>2026-08-08T11:32:00+00:00</updated>
+    <published>2026-08-08T11:32:00+00:00</published>
+    <title>Generated post 028</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0030</name>
+      <uri>https://old.reddit.com/user/redditor_0030</uri>
+    </author>
+    <category term="smallbusiness" label="r/smallbusiness"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 029.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0030"&gt; /u/redditor_0030 &lt;/a&gt;</content>
+    <id>t3_b000029</id>
+    <link href="https://old.reddit.com/r/smallbusiness/comments/b000029/generated_post_029/"/>
+    <updated>2026-08-08T11:31:00+00:00</updated>
+    <published>2026-08-08T11:31:00+00:00</published>
+    <title>Generated post 029</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0031</name>
+      <uri>https://old.reddit.com/user/redditor_0031</uri>
+    </author>
+    <category term="SaaS" label="r/SaaS"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 030.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0031"&gt; /u/redditor_0031 &lt;/a&gt;</content>
+    <id>t3_b000030</id>
+    <link href="https://old.reddit.com/r/SaaS/comments/b000030/generated_post_030/"/>
+    <updated>2026-08-08T11:30:00+00:00</updated>
+    <published>2026-08-08T11:30:00+00:00</published>
+    <title>Generated post 030</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0032</name>
+      <uri>https://old.reddit.com/user/redditor_0032</uri>
+    </author>
+    <category term="startups" label="r/startups"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 031.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0032"&gt; /u/redditor_0032 &lt;/a&gt;</content>
+    <id>t3_b000031</id>
+    <link href="https://old.reddit.com/r/startups/comments/b000031/generated_post_031/"/>
+    <updated>2026-08-08T11:29:00+00:00</updated>
+    <published>2026-08-08T11:29:00+00:00</published>
+    <title>Generated post 031</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0033</name>
+      <uri>https://old.reddit.com/user/redditor_0033</uri>
+    </author>
+    <category term="Entrepreneur" label="r/Entrepreneur"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 032.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0033"&gt; /u/redditor_0033 &lt;/a&gt;</content>
+    <id>t3_b000032</id>
+    <link href="https://old.reddit.com/r/Entrepreneur/comments/b000032/generated_post_032/"/>
+    <updated>2026-08-08T11:28:00+00:00</updated>
+    <published>2026-08-08T11:28:00+00:00</published>
+    <title>Generated post 032</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0034</name>
+      <uri>https://old.reddit.com/user/redditor_0034</uri>
+    </author>
+    <category term="marketing" label="r/marketing"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 033.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0034"&gt; /u/redditor_0034 &lt;/a&gt;</content>
+    <id>t3_b000033</id>
+    <link href="https://old.reddit.com/r/marketing/comments/b000033/generated_post_033/"/>
+    <updated>2026-08-08T11:27:00+00:00</updated>
+    <published>2026-08-08T11:27:00+00:00</published>
+    <title>Generated post 033</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0035</name>
+      <uri>https://old.reddit.com/user/redditor_0035</uri>
+    </author>
+    <category term="smallbusiness" label="r/smallbusiness"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 034.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0035"&gt; /u/redditor_0035 &lt;/a&gt;</content>
+    <id>t3_b000034</id>
+    <link href="https://old.reddit.com/r/smallbusiness/comments/b000034/generated_post_034/"/>
+    <updated>2026-08-08T11:26:00+00:00</updated>
+    <published>2026-08-08T11:26:00+00:00</published>
+    <title>Generated post 034</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0036</name>
+      <uri>https://old.reddit.com/user/redditor_0036</uri>
+    </author>
+    <category term="SaaS" label="r/SaaS"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 035.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0036"&gt; /u/redditor_0036 &lt;/a&gt;</content>
+    <id>t3_b000035</id>
+    <link href="https://old.reddit.com/r/SaaS/comments/b000035/generated_post_035/"/>
+    <updated>2026-08-08T11:25:00+00:00</updated>
+    <published>2026-08-08T11:25:00+00:00</published>
+    <title>Generated post 035</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0037</name>
+      <uri>https://old.reddit.com/user/redditor_0037</uri>
+    </author>
+    <category term="startups" label="r/startups"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 036.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0037"&gt; /u/redditor_0037 &lt;/a&gt;</content>
+    <id>t3_b000036</id>
+    <link href="https://old.reddit.com/r/startups/comments/b000036/generated_post_036/"/>
+    <updated>2026-08-08T11:24:00+00:00</updated>
+    <published>2026-08-08T11:24:00+00:00</published>
+    <title>Generated post 036</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0001</name>
+      <uri>https://old.reddit.com/user/redditor_0001</uri>
+    </author>
+    <category term="Entrepreneur" label="r/Entrepreneur"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 037.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0001"&gt; /u/redditor_0001 &lt;/a&gt;</content>
+    <id>t3_b000037</id>
+    <link href="https://old.reddit.com/r/Entrepreneur/comments/b000037/generated_post_037/"/>
+    <updated>2026-08-08T11:23:00+00:00</updated>
+    <published>2026-08-08T11:23:00+00:00</published>
+    <title>Generated post 037</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0002</name>
+      <uri>https://old.reddit.com/user/redditor_0002</uri>
+    </author>
+    <category term="marketing" label="r/marketing"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 038.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0002"&gt; /u/redditor_0002 &lt;/a&gt;</content>
+    <id>t3_b000038</id>
+    <link href="https://old.reddit.com/r/marketing/comments/b000038/generated_post_038/"/>
+    <updated>2026-08-08T11:22:00+00:00</updated>
+    <published>2026-08-08T11:22:00+00:00</published>
+    <title>Generated post 038</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0003</name>
+      <uri>https://old.reddit.com/user/redditor_0003</uri>
+    </author>
+    <category term="smallbusiness" label="r/smallbusiness"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 039.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0003"&gt; /u/redditor_0003 &lt;/a&gt;</content>
+    <id>t3_b000039</id>
+    <link href="https://old.reddit.com/r/smallbusiness/comments/b000039/generated_post_039/"/>
+    <updated>2026-08-08T11:21:00+00:00</updated>
+    <published>2026-08-08T11:21:00+00:00</published>
+    <title>Generated post 039</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0004</name>
+      <uri>https://old.reddit.com/user/redditor_0004</uri>
+    </author>
+    <category term="SaaS" label="r/SaaS"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 040.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0004"&gt; /u/redditor_0004 &lt;/a&gt;</content>
+    <id>t3_b000040</id>
+    <link href="https://old.reddit.com/r/SaaS/comments/b000040/generated_post_040/"/>
+    <updated>2026-08-08T11:20:00+00:00</updated>
+    <published>2026-08-08T11:20:00+00:00</published>
+    <title>Generated post 040</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0005</name>
+      <uri>https://old.reddit.com/user/redditor_0005</uri>
+    </author>
+    <category term="startups" label="r/startups"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 041.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0005"&gt; /u/redditor_0005 &lt;/a&gt;</content>
+    <id>t3_b000041</id>
+    <link href="https://old.reddit.com/r/startups/comments/b000041/generated_post_041/"/>
+    <updated>2026-08-08T11:19:00+00:00</updated>
+    <published>2026-08-08T11:19:00+00:00</published>
+    <title>Generated post 041</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0006</name>
+      <uri>https://old.reddit.com/user/redditor_0006</uri>
+    </author>
+    <category term="Entrepreneur" label="r/Entrepreneur"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 042.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0006"&gt; /u/redditor_0006 &lt;/a&gt;</content>
+    <id>t3_b000042</id>
+    <link href="https://old.reddit.com/r/Entrepreneur/comments/b000042/generated_post_042/"/>
+    <updated>2026-08-08T11:18:00+00:00</updated>
+    <published>2026-08-08T11:18:00+00:00</published>
+    <title>Generated post 042</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0007</name>
+      <uri>https://old.reddit.com/user/redditor_0007</uri>
+    </author>
+    <category term="marketing" label="r/marketing"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 043.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0007"&gt; /u/redditor_0007 &lt;/a&gt;</content>
+    <id>t3_b000043</id>
+    <link href="https://old.reddit.com/r/marketing/comments/b000043/generated_post_043/"/>
+    <updated>2026-08-08T11:17:00+00:00</updated>
+    <published>2026-08-08T11:17:00+00:00</published>
+    <title>Generated post 043</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0008</name>
+      <uri>https://old.reddit.com/user/redditor_0008</uri>
+    </author>
+    <category term="smallbusiness" label="r/smallbusiness"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 044.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0008"&gt; /u/redditor_0008 &lt;/a&gt;</content>
+    <id>t3_b000044</id>
+    <link href="https://old.reddit.com/r/smallbusiness/comments/b000044/generated_post_044/"/>
+    <updated>2026-08-08T11:16:00+00:00</updated>
+    <published>2026-08-08T11:16:00+00:00</published>
+    <title>Generated post 044</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0009</name>
+      <uri>https://old.reddit.com/user/redditor_0009</uri>
+    </author>
+    <category term="SaaS" label="r/SaaS"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 045.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0009"&gt; /u/redditor_0009 &lt;/a&gt;</content>
+    <id>t3_b000045</id>
+    <link href="https://old.reddit.com/r/SaaS/comments/b000045/generated_post_045/"/>
+    <updated>2026-08-08T11:15:00+00:00</updated>
+    <published>2026-08-08T11:15:00+00:00</published>
+    <title>Generated post 045</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0010</name>
+      <uri>https://old.reddit.com/user/redditor_0010</uri>
+    </author>
+    <category term="startups" label="r/startups"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 046.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0010"&gt; /u/redditor_0010 &lt;/a&gt;</content>
+    <id>t3_b000046</id>
+    <link href="https://old.reddit.com/r/startups/comments/b000046/generated_post_046/"/>
+    <updated>2026-08-08T11:14:00+00:00</updated>
+    <published>2026-08-08T11:14:00+00:00</published>
+    <title>Generated post 046</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0011</name>
+      <uri>https://old.reddit.com/user/redditor_0011</uri>
+    </author>
+    <category term="Entrepreneur" label="r/Entrepreneur"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 047.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0011"&gt; /u/redditor_0011 &lt;/a&gt;</content>
+    <id>t3_b000047</id>
+    <link href="https://old.reddit.com/r/Entrepreneur/comments/b000047/generated_post_047/"/>
+    <updated>2026-08-08T11:13:00+00:00</updated>
+    <published>2026-08-08T11:13:00+00:00</published>
+    <title>Generated post 047</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0012</name>
+      <uri>https://old.reddit.com/user/redditor_0012</uri>
+    </author>
+    <category term="marketing" label="r/marketing"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 048.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0012"&gt; /u/redditor_0012 &lt;/a&gt;</content>
+    <id>t3_b000048</id>
+    <link href="https://old.reddit.com/r/marketing/comments/b000048/generated_post_048/"/>
+    <updated>2026-08-08T11:12:00+00:00</updated>
+    <published>2026-08-08T11:12:00+00:00</published>
+    <title>Generated post 048</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0013</name>
+      <uri>https://old.reddit.com/user/redditor_0013</uri>
+    </author>
+    <category term="smallbusiness" label="r/smallbusiness"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 049.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0013"&gt; /u/redditor_0013 &lt;/a&gt;</content>
+    <id>t3_b000049</id>
+    <link href="https://old.reddit.com/r/smallbusiness/comments/b000049/generated_post_049/"/>
+    <updated>2026-08-08T11:11:00+00:00</updated>
+    <published>2026-08-08T11:11:00+00:00</published>
+    <title>Generated post 049</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0014</name>
+      <uri>https://old.reddit.com/user/redditor_0014</uri>
+    </author>
+    <category term="SaaS" label="r/SaaS"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 050.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0014"&gt; /u/redditor_0014 &lt;/a&gt;</content>
+    <id>t3_b000050</id>
+    <link href="https://old.reddit.com/r/SaaS/comments/b000050/generated_post_050/"/>
+    <updated>2026-08-08T11:10:00+00:00</updated>
+    <published>2026-08-08T11:10:00+00:00</published>
+    <title>Generated post 050</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0015</name>
+      <uri>https://old.reddit.com/user/redditor_0015</uri>
+    </author>
+    <category term="startups" label="r/startups"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 051.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0015"&gt; /u/redditor_0015 &lt;/a&gt;</content>
+    <id>t3_b000051</id>
+    <link href="https://old.reddit.com/r/startups/comments/b000051/generated_post_051/"/>
+    <updated>2026-08-08T11:09:00+00:00</updated>
+    <published>2026-08-08T11:09:00+00:00</published>
+    <title>Generated post 051</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0016</name>
+      <uri>https://old.reddit.com/user/redditor_0016</uri>
+    </author>
+    <category term="Entrepreneur" label="r/Entrepreneur"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 052.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0016"&gt; /u/redditor_0016 &lt;/a&gt;</content>
+    <id>t3_b000052</id>
+    <link href="https://old.reddit.com/r/Entrepreneur/comments/b000052/generated_post_052/"/>
+    <updated>2026-08-08T11:08:00+00:00</updated>
+    <published>2026-08-08T11:08:00+00:00</published>
+    <title>Generated post 052</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0017</name>
+      <uri>https://old.reddit.com/user/redditor_0017</uri>
+    </author>
+    <category term="marketing" label="r/marketing"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 053.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0017"&gt; /u/redditor_0017 &lt;/a&gt;</content>
+    <id>t3_b000053</id>
+    <link href="https://old.reddit.com/r/marketing/comments/b000053/generated_post_053/"/>
+    <updated>2026-08-08T11:07:00+00:00</updated>
+    <published>2026-08-08T11:07:00+00:00</published>
+    <title>Generated post 053</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0018</name>
+      <uri>https://old.reddit.com/user/redditor_0018</uri>
+    </author>
+    <category term="smallbusiness" label="r/smallbusiness"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 054.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0018"&gt; /u/redditor_0018 &lt;/a&gt;</content>
+    <id>t3_b000054</id>
+    <link href="https://old.reddit.com/r/smallbusiness/comments/b000054/generated_post_054/"/>
+    <updated>2026-08-08T11:06:00+00:00</updated>
+    <published>2026-08-08T11:06:00+00:00</published>
+    <title>Generated post 054</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0019</name>
+      <uri>https://old.reddit.com/user/redditor_0019</uri>
+    </author>
+    <category term="SaaS" label="r/SaaS"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 055.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0019"&gt; /u/redditor_0019 &lt;/a&gt;</content>
+    <id>t3_b000055</id>
+    <link href="https://old.reddit.com/r/SaaS/comments/b000055/generated_post_055/"/>
+    <updated>2026-08-08T11:05:00+00:00</updated>
+    <published>2026-08-08T11:05:00+00:00</published>
+    <title>Generated post 055</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0020</name>
+      <uri>https://old.reddit.com/user/redditor_0020</uri>
+    </author>
+    <category term="startups" label="r/startups"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 056.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0020"&gt; /u/redditor_0020 &lt;/a&gt;</content>
+    <id>t3_b000056</id>
+    <link href="https://old.reddit.com/r/startups/comments/b000056/generated_post_056/"/>
+    <updated>2026-08-08T11:04:00+00:00</updated>
+    <published>2026-08-08T11:04:00+00:00</published>
+    <title>Generated post 056</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0021</name>
+      <uri>https://old.reddit.com/user/redditor_0021</uri>
+    </author>
+    <category term="Entrepreneur" label="r/Entrepreneur"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 057.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0021"&gt; /u/redditor_0021 &lt;/a&gt;</content>
+    <id>t3_b000057</id>
+    <link href="https://old.reddit.com/r/Entrepreneur/comments/b000057/generated_post_057/"/>
+    <updated>2026-08-08T11:03:00+00:00</updated>
+    <published>2026-08-08T11:03:00+00:00</published>
+    <title>Generated post 057</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0022</name>
+      <uri>https://old.reddit.com/user/redditor_0022</uri>
+    </author>
+    <category term="marketing" label="r/marketing"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 058.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0022"&gt; /u/redditor_0022 &lt;/a&gt;</content>
+    <id>t3_b000058</id>
+    <link href="https://old.reddit.com/r/marketing/comments/b000058/generated_post_058/"/>
+    <updated>2026-08-08T11:02:00+00:00</updated>
+    <published>2026-08-08T11:02:00+00:00</published>
+    <title>Generated post 058</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0023</name>
+      <uri>https://old.reddit.com/user/redditor_0023</uri>
+    </author>
+    <category term="smallbusiness" label="r/smallbusiness"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 059.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0023"&gt; /u/redditor_0023 &lt;/a&gt;</content>
+    <id>t3_b000059</id>
+    <link href="https://old.reddit.com/r/smallbusiness/comments/b000059/generated_post_059/"/>
+    <updated>2026-08-08T11:01:00+00:00</updated>
+    <published>2026-08-08T11:01:00+00:00</published>
+    <title>Generated post 059</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0024</name>
+      <uri>https://old.reddit.com/user/redditor_0024</uri>
+    </author>
+    <category term="SaaS" label="r/SaaS"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 060.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0024"&gt; /u/redditor_0024 &lt;/a&gt;</content>
+    <id>t3_b000060</id>
+    <link href="https://old.reddit.com/r/SaaS/comments/b000060/generated_post_060/"/>
+    <updated>2026-08-08T11:00:00+00:00</updated>
+    <published>2026-08-08T11:00:00+00:00</published>
+    <title>Generated post 060</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0025</name>
+      <uri>https://old.reddit.com/user/redditor_0025</uri>
+    </author>
+    <category term="startups" label="r/startups"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 061.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0025"&gt; /u/redditor_0025 &lt;/a&gt;</content>
+    <id>t3_b000061</id>
+    <link href="https://old.reddit.com/r/startups/comments/b000061/generated_post_061/"/>
+    <updated>2026-08-08T10:59:00+00:00</updated>
+    <published>2026-08-08T10:59:00+00:00</published>
+    <title>Generated post 061</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0026</name>
+      <uri>https://old.reddit.com/user/redditor_0026</uri>
+    </author>
+    <category term="Entrepreneur" label="r/Entrepreneur"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 062.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0026"&gt; /u/redditor_0026 &lt;/a&gt;</content>
+    <id>t3_b000062</id>
+    <link href="https://old.reddit.com/r/Entrepreneur/comments/b000062/generated_post_062/"/>
+    <updated>2026-08-08T10:58:00+00:00</updated>
+    <published>2026-08-08T10:58:00+00:00</published>
+    <title>Generated post 062</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0027</name>
+      <uri>https://old.reddit.com/user/redditor_0027</uri>
+    </author>
+    <category term="marketing" label="r/marketing"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 063.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0027"&gt; /u/redditor_0027 &lt;/a&gt;</content>
+    <id>t3_b000063</id>
+    <link href="https://old.reddit.com/r/marketing/comments/b000063/generated_post_063/"/>
+    <updated>2026-08-08T10:57:00+00:00</updated>
+    <published>2026-08-08T10:57:00+00:00</published>
+    <title>Generated post 063</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0028</name>
+      <uri>https://old.reddit.com/user/redditor_0028</uri>
+    </author>
+    <category term="smallbusiness" label="r/smallbusiness"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 064.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0028"&gt; /u/redditor_0028 &lt;/a&gt;</content>
+    <id>t3_b000064</id>
+    <link href="https://old.reddit.com/r/smallbusiness/comments/b000064/generated_post_064/"/>
+    <updated>2026-08-08T10:56:00+00:00</updated>
+    <published>2026-08-08T10:56:00+00:00</published>
+    <title>Generated post 064</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0029</name>
+      <uri>https://old.reddit.com/user/redditor_0029</uri>
+    </author>
+    <category term="SaaS" label="r/SaaS"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 065.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0029"&gt; /u/redditor_0029 &lt;/a&gt;</content>
+    <id>t3_b000065</id>
+    <link href="https://old.reddit.com/r/SaaS/comments/b000065/generated_post_065/"/>
+    <updated>2026-08-08T10:55:00+00:00</updated>
+    <published>2026-08-08T10:55:00+00:00</published>
+    <title>Generated post 065</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0030</name>
+      <uri>https://old.reddit.com/user/redditor_0030</uri>
+    </author>
+    <category term="startups" label="r/startups"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 066.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0030"&gt; /u/redditor_0030 &lt;/a&gt;</content>
+    <id>t3_b000066</id>
+    <link href="https://old.reddit.com/r/startups/comments/b000066/generated_post_066/"/>
+    <updated>2026-08-08T10:54:00+00:00</updated>
+    <published>2026-08-08T10:54:00+00:00</published>
+    <title>Generated post 066</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0031</name>
+      <uri>https://old.reddit.com/user/redditor_0031</uri>
+    </author>
+    <category term="Entrepreneur" label="r/Entrepreneur"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 067.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0031"&gt; /u/redditor_0031 &lt;/a&gt;</content>
+    <id>t3_b000067</id>
+    <link href="https://old.reddit.com/r/Entrepreneur/comments/b000067/generated_post_067/"/>
+    <updated>2026-08-08T10:53:00+00:00</updated>
+    <published>2026-08-08T10:53:00+00:00</published>
+    <title>Generated post 067</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0032</name>
+      <uri>https://old.reddit.com/user/redditor_0032</uri>
+    </author>
+    <category term="marketing" label="r/marketing"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 068.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0032"&gt; /u/redditor_0032 &lt;/a&gt;</content>
+    <id>t3_b000068</id>
+    <link href="https://old.reddit.com/r/marketing/comments/b000068/generated_post_068/"/>
+    <updated>2026-08-08T10:52:00+00:00</updated>
+    <published>2026-08-08T10:52:00+00:00</published>
+    <title>Generated post 068</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0033</name>
+      <uri>https://old.reddit.com/user/redditor_0033</uri>
+    </author>
+    <category term="smallbusiness" label="r/smallbusiness"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 069.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0033"&gt; /u/redditor_0033 &lt;/a&gt;</content>
+    <id>t3_b000069</id>
+    <link href="https://old.reddit.com/r/smallbusiness/comments/b000069/generated_post_069/"/>
+    <updated>2026-08-08T10:51:00+00:00</updated>
+    <published>2026-08-08T10:51:00+00:00</published>
+    <title>Generated post 069</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0034</name>
+      <uri>https://old.reddit.com/user/redditor_0034</uri>
+    </author>
+    <category term="SaaS" label="r/SaaS"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 070.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0034"&gt; /u/redditor_0034 &lt;/a&gt;</content>
+    <id>t3_b000070</id>
+    <link href="https://old.reddit.com/r/SaaS/comments/b000070/generated_post_070/"/>
+    <updated>2026-08-08T10:50:00+00:00</updated>
+    <published>2026-08-08T10:50:00+00:00</published>
+    <title>Generated post 070</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0035</name>
+      <uri>https://old.reddit.com/user/redditor_0035</uri>
+    </author>
+    <category term="startups" label="r/startups"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 071.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0035"&gt; /u/redditor_0035 &lt;/a&gt;</content>
+    <id>t3_b000071</id>
+    <link href="https://old.reddit.com/r/startups/comments/b000071/generated_post_071/"/>
+    <updated>2026-08-08T10:49:00+00:00</updated>
+    <published>2026-08-08T10:49:00+00:00</published>
+    <title>Generated post 071</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0036</name>
+      <uri>https://old.reddit.com/user/redditor_0036</uri>
+    </author>
+    <category term="Entrepreneur" label="r/Entrepreneur"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 072.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0036"&gt; /u/redditor_0036 &lt;/a&gt;</content>
+    <id>t3_b000072</id>
+    <link href="https://old.reddit.com/r/Entrepreneur/comments/b000072/generated_post_072/"/>
+    <updated>2026-08-08T10:48:00+00:00</updated>
+    <published>2026-08-08T10:48:00+00:00</published>
+    <title>Generated post 072</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0037</name>
+      <uri>https://old.reddit.com/user/redditor_0037</uri>
+    </author>
+    <category term="marketing" label="r/marketing"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 073.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0037"&gt; /u/redditor_0037 &lt;/a&gt;</content>
+    <id>t3_b000073</id>
+    <link href="https://old.reddit.com/r/marketing/comments/b000073/generated_post_073/"/>
+    <updated>2026-08-08T10:47:00+00:00</updated>
+    <published>2026-08-08T10:47:00+00:00</published>
+    <title>Generated post 073</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0001</name>
+      <uri>https://old.reddit.com/user/redditor_0001</uri>
+    </author>
+    <category term="smallbusiness" label="r/smallbusiness"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 074.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0001"&gt; /u/redditor_0001 &lt;/a&gt;</content>
+    <id>t3_b000074</id>
+    <link href="https://old.reddit.com/r/smallbusiness/comments/b000074/generated_post_074/"/>
+    <updated>2026-08-08T10:46:00+00:00</updated>
+    <published>2026-08-08T10:46:00+00:00</published>
+    <title>Generated post 074</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0002</name>
+      <uri>https://old.reddit.com/user/redditor_0002</uri>
+    </author>
+    <category term="SaaS" label="r/SaaS"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 075.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0002"&gt; /u/redditor_0002 &lt;/a&gt;</content>
+    <id>t3_b000075</id>
+    <link href="https://old.reddit.com/r/SaaS/comments/b000075/generated_post_075/"/>
+    <updated>2026-08-08T10:45:00+00:00</updated>
+    <published>2026-08-08T10:45:00+00:00</published>
+    <title>Generated post 075</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0003</name>
+      <uri>https://old.reddit.com/user/redditor_0003</uri>
+    </author>
+    <category term="startups" label="r/startups"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 076.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0003"&gt; /u/redditor_0003 &lt;/a&gt;</content>
+    <id>t3_b000076</id>
+    <link href="https://old.reddit.com/r/startups/comments/b000076/generated_post_076/"/>
+    <updated>2026-08-08T10:44:00+00:00</updated>
+    <published>2026-08-08T10:44:00+00:00</published>
+    <title>Generated post 076</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0004</name>
+      <uri>https://old.reddit.com/user/redditor_0004</uri>
+    </author>
+    <category term="Entrepreneur" label="r/Entrepreneur"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 077.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0004"&gt; /u/redditor_0004 &lt;/a&gt;</content>
+    <id>t3_b000077</id>
+    <link href="https://old.reddit.com/r/Entrepreneur/comments/b000077/generated_post_077/"/>
+    <updated>2026-08-08T10:43:00+00:00</updated>
+    <published>2026-08-08T10:43:00+00:00</published>
+    <title>Generated post 077</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0005</name>
+      <uri>https://old.reddit.com/user/redditor_0005</uri>
+    </author>
+    <category term="marketing" label="r/marketing"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 078.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0005"&gt; /u/redditor_0005 &lt;/a&gt;</content>
+    <id>t3_b000078</id>
+    <link href="https://old.reddit.com/r/marketing/comments/b000078/generated_post_078/"/>
+    <updated>2026-08-08T10:42:00+00:00</updated>
+    <published>2026-08-08T10:42:00+00:00</published>
+    <title>Generated post 078</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0006</name>
+      <uri>https://old.reddit.com/user/redditor_0006</uri>
+    </author>
+    <category term="smallbusiness" label="r/smallbusiness"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 079.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0006"&gt; /u/redditor_0006 &lt;/a&gt;</content>
+    <id>t3_b000079</id>
+    <link href="https://old.reddit.com/r/smallbusiness/comments/b000079/generated_post_079/"/>
+    <updated>2026-08-08T10:41:00+00:00</updated>
+    <published>2026-08-08T10:41:00+00:00</published>
+    <title>Generated post 079</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0007</name>
+      <uri>https://old.reddit.com/user/redditor_0007</uri>
+    </author>
+    <category term="SaaS" label="r/SaaS"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 080.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0007"&gt; /u/redditor_0007 &lt;/a&gt;</content>
+    <id>t3_b000080</id>
+    <link href="https://old.reddit.com/r/SaaS/comments/b000080/generated_post_080/"/>
+    <updated>2026-08-08T10:40:00+00:00</updated>
+    <published>2026-08-08T10:40:00+00:00</published>
+    <title>Generated post 080</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0008</name>
+      <uri>https://old.reddit.com/user/redditor_0008</uri>
+    </author>
+    <category term="startups" label="r/startups"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 081.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0008"&gt; /u/redditor_0008 &lt;/a&gt;</content>
+    <id>t3_b000081</id>
+    <link href="https://old.reddit.com/r/startups/comments/b000081/generated_post_081/"/>
+    <updated>2026-08-08T10:39:00+00:00</updated>
+    <published>2026-08-08T10:39:00+00:00</published>
+    <title>Generated post 081</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0009</name>
+      <uri>https://old.reddit.com/user/redditor_0009</uri>
+    </author>
+    <category term="Entrepreneur" label="r/Entrepreneur"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 082.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0009"&gt; /u/redditor_0009 &lt;/a&gt;</content>
+    <id>t3_b000082</id>
+    <link href="https://old.reddit.com/r/Entrepreneur/comments/b000082/generated_post_082/"/>
+    <updated>2026-08-08T10:38:00+00:00</updated>
+    <published>2026-08-08T10:38:00+00:00</published>
+    <title>Generated post 082</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0010</name>
+      <uri>https://old.reddit.com/user/redditor_0010</uri>
+    </author>
+    <category term="marketing" label="r/marketing"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 083.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0010"&gt; /u/redditor_0010 &lt;/a&gt;</content>
+    <id>t3_b000083</id>
+    <link href="https://old.reddit.com/r/marketing/comments/b000083/generated_post_083/"/>
+    <updated>2026-08-08T10:37:00+00:00</updated>
+    <published>2026-08-08T10:37:00+00:00</published>
+    <title>Generated post 083</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0011</name>
+      <uri>https://old.reddit.com/user/redditor_0011</uri>
+    </author>
+    <category term="smallbusiness" label="r/smallbusiness"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 084.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0011"&gt; /u/redditor_0011 &lt;/a&gt;</content>
+    <id>t3_b000084</id>
+    <link href="https://old.reddit.com/r/smallbusiness/comments/b000084/generated_post_084/"/>
+    <updated>2026-08-08T10:36:00+00:00</updated>
+    <published>2026-08-08T10:36:00+00:00</published>
+    <title>Generated post 084</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0012</name>
+      <uri>https://old.reddit.com/user/redditor_0012</uri>
+    </author>
+    <category term="SaaS" label="r/SaaS"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 085.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0012"&gt; /u/redditor_0012 &lt;/a&gt;</content>
+    <id>t3_b000085</id>
+    <link href="https://old.reddit.com/r/SaaS/comments/b000085/generated_post_085/"/>
+    <updated>2026-08-08T10:35:00+00:00</updated>
+    <published>2026-08-08T10:35:00+00:00</published>
+    <title>Generated post 085</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0013</name>
+      <uri>https://old.reddit.com/user/redditor_0013</uri>
+    </author>
+    <category term="startups" label="r/startups"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 086.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0013"&gt; /u/redditor_0013 &lt;/a&gt;</content>
+    <id>t3_b000086</id>
+    <link href="https://old.reddit.com/r/startups/comments/b000086/generated_post_086/"/>
+    <updated>2026-08-08T10:34:00+00:00</updated>
+    <published>2026-08-08T10:34:00+00:00</published>
+    <title>Generated post 086</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0014</name>
+      <uri>https://old.reddit.com/user/redditor_0014</uri>
+    </author>
+    <category term="Entrepreneur" label="r/Entrepreneur"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 087.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0014"&gt; /u/redditor_0014 &lt;/a&gt;</content>
+    <id>t3_b000087</id>
+    <link href="https://old.reddit.com/r/Entrepreneur/comments/b000087/generated_post_087/"/>
+    <updated>2026-08-08T10:33:00+00:00</updated>
+    <published>2026-08-08T10:33:00+00:00</published>
+    <title>Generated post 087</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0015</name>
+      <uri>https://old.reddit.com/user/redditor_0015</uri>
+    </author>
+    <category term="marketing" label="r/marketing"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 088.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0015"&gt; /u/redditor_0015 &lt;/a&gt;</content>
+    <id>t3_b000088</id>
+    <link href="https://old.reddit.com/r/marketing/comments/b000088/generated_post_088/"/>
+    <updated>2026-08-08T10:32:00+00:00</updated>
+    <published>2026-08-08T10:32:00+00:00</published>
+    <title>Generated post 088</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0016</name>
+      <uri>https://old.reddit.com/user/redditor_0016</uri>
+    </author>
+    <category term="smallbusiness" label="r/smallbusiness"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 089.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0016"&gt; /u/redditor_0016 &lt;/a&gt;</content>
+    <id>t3_b000089</id>
+    <link href="https://old.reddit.com/r/smallbusiness/comments/b000089/generated_post_089/"/>
+    <updated>2026-08-08T10:31:00+00:00</updated>
+    <published>2026-08-08T10:31:00+00:00</published>
+    <title>Generated post 089</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0017</name>
+      <uri>https://old.reddit.com/user/redditor_0017</uri>
+    </author>
+    <category term="SaaS" label="r/SaaS"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 090.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0017"&gt; /u/redditor_0017 &lt;/a&gt;</content>
+    <id>t3_b000090</id>
+    <link href="https://old.reddit.com/r/SaaS/comments/b000090/generated_post_090/"/>
+    <updated>2026-08-08T10:30:00+00:00</updated>
+    <published>2026-08-08T10:30:00+00:00</published>
+    <title>Generated post 090</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0018</name>
+      <uri>https://old.reddit.com/user/redditor_0018</uri>
+    </author>
+    <category term="startups" label="r/startups"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 091.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0018"&gt; /u/redditor_0018 &lt;/a&gt;</content>
+    <id>t3_b000091</id>
+    <link href="https://old.reddit.com/r/startups/comments/b000091/generated_post_091/"/>
+    <updated>2026-08-08T10:29:00+00:00</updated>
+    <published>2026-08-08T10:29:00+00:00</published>
+    <title>Generated post 091</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0019</name>
+      <uri>https://old.reddit.com/user/redditor_0019</uri>
+    </author>
+    <category term="Entrepreneur" label="r/Entrepreneur"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 092.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0019"&gt; /u/redditor_0019 &lt;/a&gt;</content>
+    <id>t3_b000092</id>
+    <link href="https://old.reddit.com/r/Entrepreneur/comments/b000092/generated_post_092/"/>
+    <updated>2026-08-08T10:28:00+00:00</updated>
+    <published>2026-08-08T10:28:00+00:00</published>
+    <title>Generated post 092</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0020</name>
+      <uri>https://old.reddit.com/user/redditor_0020</uri>
+    </author>
+    <category term="marketing" label="r/marketing"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 093.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0020"&gt; /u/redditor_0020 &lt;/a&gt;</content>
+    <id>t3_b000093</id>
+    <link href="https://old.reddit.com/r/marketing/comments/b000093/generated_post_093/"/>
+    <updated>2026-08-08T10:27:00+00:00</updated>
+    <published>2026-08-08T10:27:00+00:00</published>
+    <title>Generated post 093</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0021</name>
+      <uri>https://old.reddit.com/user/redditor_0021</uri>
+    </author>
+    <category term="smallbusiness" label="r/smallbusiness"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 094.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0021"&gt; /u/redditor_0021 &lt;/a&gt;</content>
+    <id>t3_b000094</id>
+    <link href="https://old.reddit.com/r/smallbusiness/comments/b000094/generated_post_094/"/>
+    <updated>2026-08-08T10:26:00+00:00</updated>
+    <published>2026-08-08T10:26:00+00:00</published>
+    <title>Generated post 094</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0022</name>
+      <uri>https://old.reddit.com/user/redditor_0022</uri>
+    </author>
+    <category term="SaaS" label="r/SaaS"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 095.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0022"&gt; /u/redditor_0022 &lt;/a&gt;</content>
+    <id>t3_b000095</id>
+    <link href="https://old.reddit.com/r/SaaS/comments/b000095/generated_post_095/"/>
+    <updated>2026-08-08T10:25:00+00:00</updated>
+    <published>2026-08-08T10:25:00+00:00</published>
+    <title>Generated post 095</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0023</name>
+      <uri>https://old.reddit.com/user/redditor_0023</uri>
+    </author>
+    <category term="startups" label="r/startups"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 096.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0023"&gt; /u/redditor_0023 &lt;/a&gt;</content>
+    <id>t3_b000096</id>
+    <link href="https://old.reddit.com/r/startups/comments/b000096/generated_post_096/"/>
+    <updated>2026-08-08T10:24:00+00:00</updated>
+    <published>2026-08-08T10:24:00+00:00</published>
+    <title>Generated post 096</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0024</name>
+      <uri>https://old.reddit.com/user/redditor_0024</uri>
+    </author>
+    <category term="Entrepreneur" label="r/Entrepreneur"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 097.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0024"&gt; /u/redditor_0024 &lt;/a&gt;</content>
+    <id>t3_b000097</id>
+    <link href="https://old.reddit.com/r/Entrepreneur/comments/b000097/generated_post_097/"/>
+    <updated>2026-08-08T10:23:00+00:00</updated>
+    <published>2026-08-08T10:23:00+00:00</published>
+    <title>Generated post 097</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0025</name>
+      <uri>https://old.reddit.com/user/redditor_0025</uri>
+    </author>
+    <category term="marketing" label="r/marketing"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 098.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0025"&gt; /u/redditor_0025 &lt;/a&gt;</content>
+    <id>t3_b000098</id>
+    <link href="https://old.reddit.com/r/marketing/comments/b000098/generated_post_098/"/>
+    <updated>2026-08-08T10:22:00+00:00</updated>
+    <published>2026-08-08T10:22:00+00:00</published>
+    <title>Generated post 098</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0026</name>
+      <uri>https://old.reddit.com/user/redditor_0026</uri>
+    </author>
+    <category term="smallbusiness" label="r/smallbusiness"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 099.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0026"&gt; /u/redditor_0026 &lt;/a&gt;</content>
+    <id>t3_b000099</id>
+    <link href="https://old.reddit.com/r/smallbusiness/comments/b000099/generated_post_099/"/>
+    <updated>2026-08-08T10:21:00+00:00</updated>
+    <published>2026-08-08T10:21:00+00:00</published>
+    <title>Generated post 099</title>
+  </entry>
+
+  <entry>
+    <author>
+      <name>/u/redditor_0027</name>
+      <uri>https://old.reddit.com/user/redditor_0027</uri>
+    </author>
+    <category term="SaaS" label="r/SaaS"/>
+    <content type="html">&lt;!-- SC_OFF --&gt;&lt;div class="md"&gt;&lt;p&gt;Body of generated post 100.&lt;/p&gt;&lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href="https://old.reddit.com/user/redditor_0027"&gt; /u/redditor_0027 &lt;/a&gt;</content>
+    <id>t3_b000100</id>
+    <link href="https://old.reddit.com/r/SaaS/comments/b000100/generated_post_100/"/>
+    <updated>2026-08-08T10:20:00+00:00</updated>
+    <published>2026-08-08T10:20:00+00:00</published>
+    <title>Generated post 100</title>
+  </entry>
+
+</feed>

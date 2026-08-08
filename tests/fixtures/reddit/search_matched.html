@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<!--
+  The HTML half of the P5 SEARCH parity pair. Its Atom twin is
+  tests/fixtures/atom/search.xml: the same two posts, described by the feed.
+
+  This pair exists because of what was measured on 2026-08-08: a listing page
+  carries no selftext at all (its expando is lazy-loaded), so the listing pair
+  cannot prove that the feed parser extracts a body correctly against a real
+  HTML source. A search page CAN: it renders the body inline, in
+  `div.search-result-body .md`, which is the selector `_extract_search_post`
+  already reads.
+
+    listing_page1.html   25 results, 0 bodies   (div.expando .md)
+    search_page1.html    22 results, 22 bodies  (div.search-result-body .md)
+
+  So body parity is asserted HERE, against HTML that genuinely contains one,
+  rather than being written off as "the feed carries more". That is what keeps
+  the RSS body path proved against Reddit's own HTML instead of proved against
+  nothing -- and it is why the listing finding did not weaken this guarantee.
+
+  Structure copied from the real captured page at search_page1.html: the same
+  container classes, the same header/meta/expando nesting, the same absolute
+  hrefs. Only the values are invented (EXECUTION_MODE_LOCK.md §5.1 H2).
+
+    t3_a000201  self post, body rendered inline
+    t3_a000202  link post, no body -- "" on BOTH sides
+
+  Search HTML carries NO score (`_extract_search_post` reports None), so score
+  agrees with the feed here and the only intentional difference on this pair is
+  `num_comments`.
+-->
+<html lang="en">
+<head><title>reddit.com: search results</title></head>
+<body class="search-page">
+<div class="content" role="main">
+  <div class="search-result-group">
+
+    <div class="search-result search-result-link has-thumbnail" data-fullname="t3_a000201">
+      <a class="may-blank thumbnail self"
+         href="/r/SaaS/comments/a000201/looking_for_a_billing_provider/"></a>
+      <div>
+        <header class="search-result-header">
+          <a class="search-title may-blank"
+             href="https://old.reddit.com/r/SaaS/comments/a000201/looking_for_a_billing_provider/">Looking for a billing provider</a>
+        </header>
+        <div class="search-result-meta">
+          <a class="search-comments may-blank"
+             href="https://old.reddit.com/r/SaaS/comments/a000201/looking_for_a_billing_provider/">6 comments</a>
+          <span class="search-time">submitted
+            <time datetime="2026-08-08T11:19:04+00:00" title="Sat Aug 8 11:19:04 2026 UTC">an hour ago</time>
+          </span>
+          <span class="search-author">by
+            <a class="author may-blank" href="https://old.reddit.com/user/redditor_0031">redditor_0031</a>
+          </span>
+          <span>to <a class="search-subreddit-link may-blank"
+                      href="https://old.reddit.com/r/SaaS/">r/SaaS</a></span>
+        </div>
+        <div class="search-expando collapsed">
+          <div class="search-result-body">
+            <div class="md">
+              <p>Looking for a billing provider that will approve a scraping tool.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="search-result search-result-link" data-fullname="t3_a000202">
+      <div>
+        <header class="search-result-header">
+          <a class="search-title may-blank"
+             href="https://old.reddit.com/r/startups/comments/a000202/looking_for_a_technical_cofounder/">Looking for a technical cofounder</a>
+        </header>
+        <div class="search-result-meta">
+          <a class="search-comments may-blank"
+             href="https://old.reddit.com/r/startups/comments/a000202/looking_for_a_technical_cofounder/">2 comments</a>
+          <span class="search-time">submitted
+            <time datetime="2026-08-08T10:58:11+00:00" title="Sat Aug 8 10:58:11 2026 UTC">an hour ago</time>
+          </span>
+          <span class="search-author">by
+            <a class="author may-blank" href="https://old.reddit.com/user/redditor_0007">redditor_0007</a>
+          </span>
+          <span>to <a class="search-subreddit-link may-blank"
+                      href="https://old.reddit.com/r/startups/">r/startups</a></span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+</body>
+</html>

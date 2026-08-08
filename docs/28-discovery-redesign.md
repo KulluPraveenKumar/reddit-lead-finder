@@ -76,18 +76,33 @@ without changing a decision — an idle poll is still *one* request against the 
 | Items per request | 25 | **100** |
 | Subreddits per request | 1 | **many** |
 | Response size ◐ | ~190 KB ✅ *(measured, [00 §3](00-current-state.md))* | ~20–40 KB |
-| Title, author, permalink, timestamp | ✅ | ✅ |
-| **Selftext body** | ✅ | ✅ **measured: median 1,089 chars** (U2) |
+| Title, author, permalink, timestamp | ✅ | ✅ *(permalink: the feed always gives the post; a listing title links to the **destination** for link/media posts — [freeze §11](ARCHITECTURE_FREEZE.md), 2026-08-08)* |
+| **Selftext body** | ⛔ **NO** — corrected 2026-08-08 | ✅ **measured: median 1,089 chars** (U2) |
 | **Score** | ✅ `data-score` | ❌ |
 | **Comment count** | ✅ | ❌ |
 | Parse stability | ❌ CSS classes — [R1](10-implementation-roadmap.md), rated Critical | ✅ **stable schema** |
 | ToS posture | Scraping a rendered page | **Consuming a published feed** |
 
+> ⛔ **CORRECTED 2026-08-08 (P5) — this section's conclusion rested on a false premise.**
+> The paragraph below originally read: *"An HTML listing page carries 25 posts **with body and
+> score**… If full data is needed for more than ~25% of discovered posts, HTML listing is the cheaper
+> source."* **A listing page carries no body at all.** Old Reddit renders the expando as
+> `<span class="error">loading...</span>` and fetches the text over AJAX, so `div.expando .md`
+> matches zero elements. Measured three ways; see [freeze §11](ARCHITECTURE_FREEZE.md).
+> HTML **search** is unaffected — it renders bodies inline in `div.search-result-body .md`.
+
 ▶ **The instinct to replace HTML with RSS outright is wrong, and worth stating because it is the
-obvious move.** An HTML listing page carries 25 posts *with body and score*; an RSS feed carries 100
-posts *without score*. If full data is needed for more than ~25% of discovered posts, HTML listing is
-the cheaper source. RSS wins on **change detection, keyword search, and incremental sync** — not on
-bulk collection of a cold corpus.
+obvious move** — but for a narrower reason than this section first gave. An HTML listing page carries
+25 posts with **score and comment count**, which the feed does not; a feed carries 100 posts with
+**bodies**, which the listing does not. Neither is a superset. RSS wins on **change detection,
+keyword search, incremental sync and any body-bearing collection**; HTML listing remains the only
+source of engagement figures, and the permalink page remains the only source of comments.
+
+⚠️ **This changes [§3](#3-the-redesigned-discovery-pipeline) stage 4 and
+[34 §P6](34-implementation-plan.md) task 5.** The density-adaptive body fetch — *listing ≥25%,
+permalink <25%* — assumed a listing page could supply bodies in bulk. It cannot, at any density.
+**P6 owns the redesign**; P5 deliberately did not attempt it. See
+[PHASE-05-HANDOVER.md](PHASE-05-HANDOVER.md).
 
 The redesign below uses each for what it is good at.
 
@@ -391,10 +406,10 @@ The last row is a real behaviour change. ◐ On a cold run the pre-score is unca
 
 | Layer | Behaviour |
 |---|---|
-| `http_cache` (15 min, 60 min for search) | Serves the feed; **zero network** |
+| `http_cache` (15 min, 60 min for search) | ⛔ **Corrected 2026-08-08 (P5): discovery bypasses it.** [§11 D5](#11-risks) is the governing rule and names the reason — a 15-minute TTL serving a stale feed to a 15-minute poll leaves the watermark permanently unadvanced. `get_feed` passes `allow_cache=False` |
 | Watermark | Unchanged; no new items |
 | `ai_cache` | `already_analyzed` on every item |
-| **Cost** | **0 requests, $0.00** — matching [06c §5](06c-local-first-pipeline.md)'s existing guarantee, now extended from enrichment to collection |
+| **Cost** | **1 request, $0.00.** Not zero: the feed is fetched, and with no conditional GET (U4) it transfers in full. The $0.00 half stands — [06c §5](06c-local-first-pipeline.md)'s guarantee is about AI spend, and no model is called |
 
 ### 7.3 Steady state — the design target
 
@@ -558,8 +573,8 @@ ALTER TABLE prescores ADD COLUMN stage VARCHAR(20) NOT NULL DEFAULT 'full';
 
 | Module | Change |
 |---|---|
-| `src/net/http_client.py` | `if_none_match` / `if_modified_since`; treat **304 as success with no body** |
-| `src/reddit_client.py` | `+ get_feed(subreddits, sort, limit, since)` — Atom parse. **Public API otherwise frozen** ([AD-2](03-architecture.md)) |
+| `src/net/http_client.py` | ~~`if_none_match` / `if_modified_since`; treat **304 as success with no body**~~ ⛔ **DELETED — U4 refuted in P0** ([freeze §11](ARCHITECTURE_FREEZE.md)). Reddit sends neither header, so the branch could never be taken. What P5 actually added here is **`x-ratelimit-reset`** handling, in seconds-remaining, clamped |
+| `src/reddit_client.py` | `+ get_feed(subreddits, sort, limit, query)` — Atom parse. **Public API otherwise frozen** ([AD-2](03-architecture.md)). *(`since` was never a parameter: with no conditional GET there is nothing to send it in, and the watermark diff is P6's, done on the returned ids)* |
 | `src/discovery/feed_parser.py` | **New.** Atom → the same post dict shape `_extract_post` returns, with `score=None`, `num_comments=None` |
 | `src/discovery/watermarks.py` | **New.** Read, diff, advance, overflow detection |
 | `src/discovery/policy.py` | **New.** §8 — deterministic, grep-fenced from `src.ai` |
@@ -575,7 +590,10 @@ and HTML is a strategy swap rather than a second pipeline.
 ## 11. Acceptance criteria
 
 - [ ] **D-AC1** — A poll with no new posts issues **exactly one** request and creates zero rows
-- [ ] **D-AC2** — With U4 supported, an unchanged feed returns **304** and transfers no body
+- [x] ~~**D-AC2** — With U4 supported, an unchanged feed returns **304** and transfers no body~~
+      ⛔ **VOID BY ITS OWN PRECONDITION.** U4 was *not* supported: Reddit sends neither `ETag` nor
+      `Last-Modified` on `.rss` (P0, re-observed 2026-08-08). There is no 304 to test. An unchanged
+      feed costs one full request, ~56 KB — which is what [§4.3](#43-request-arithmetic) now says
 - [ ] **D-AC3** — Watermark overflow is **detected and logged as an error**, and triggers an HTML fallback walk (fixture: 150 new posts between polls)
 - [ ] **D-AC4** — Steady-state daily requests ≤ **80** for the 10-subreddit / 12-keyword scenario
 - [ ] **D-AC5** — Cold start collects ≥ 95% of the posts the current HTML design collects, from the same subreddits and window

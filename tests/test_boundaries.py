@@ -143,6 +143,75 @@ def test_the_network_layer_has_no_reddit_knowledge():
     )
 
 
+def test_discovery_makes_no_ai_calls():
+    """P6 makes this an acceptance criterion; P5 establishes it while it is free.
+
+    Discovery decides *what to look at*. Deciding what a post is *worth* is the
+    enrichment pipeline's job, behind a budget and a gate. The moment discovery
+    can call a model, the per-run cost stops being predictable from the number
+    of subreddits -- and the cheapest time to hold that line is when the package
+    has one file in it.
+    """
+    discovery = SRC / "discovery"
+    if not discovery.exists():  # pragma: no cover - P5 creates it
+        pytest.skip("src/discovery/ does not exist yet")
+
+    offenders = []
+    for path in _python_files(discovery):
+        tokens = _executable_tokens(path)
+        if re.search(r"\bsrc\.ai\b|\bfrom \.\.ai\b", tokens) or "src.ai" in tokens:
+            offenders.append(str(path.relative_to(PROJECT_ROOT)))
+    assert offenders == [], f"src/discovery/ imports the AI layer: {offenders}"
+
+
+def test_conditional_get_has_not_been_reintroduced():
+    """P0's U4 refuted it; ARCHITECTURE_FREEZE §11 deleted the layer.
+
+    This exists because the *plan* still described it. [34 §P5] listed
+    `if_none_match` / `if_modified_since` / 304 handling as deliverables, and a
+    later reader following that row would reasonably build it. Reddit sends
+    neither `ETag` nor `Last-Modified` on `.rss` -- measured on four feeds and
+    two hosts in P0, and re-observed on 2026-08-08 -- so the branch could never
+    be taken and no test could ever prove it worked.
+
+    See docs/P5-DECISION-ANALYSIS.md §D1.
+    """
+    pattern = re.compile(r"if_none_match|if_modified_since|If-None-Match|If-Modified-Since")
+    offenders = [
+        str(path.relative_to(PROJECT_ROOT))
+        for path in _python_files(SRC)
+        if pattern.search(path.read_text(encoding="utf-8"))
+    ]
+    assert offenders == [], (
+        "conditional GET does not exist on Reddit's feeds (U4, refuted in P0) and "
+        f"the layer was deleted from the architecture. Found in: {offenders}"
+    )
+
+
+def test_atom_fixtures_carry_no_real_identities():
+    """[lock §5.1 H2]: this repository is public.
+
+    The Atom fixtures are modelled on a live capture, and a live capture is full
+    of real usernames and real permalinks. The invented ones follow one shape,
+    asserted here so a future fixture cannot be pasted in raw.
+    """
+    fixtures = sorted((PROJECT_ROOT / "tests" / "fixtures" / "atom").glob("*.xml"))
+    assert fixtures, "the Atom fixtures are missing"
+
+    allowed_author = re.compile(r"^/u/redditor_\d+$")
+    offenders = []
+    for path in fixtures:
+        text = path.read_text(encoding="utf-8")
+        for author in re.findall(r"<name>([^<]*)</name>", text):
+            if not allowed_author.match(author.strip()):
+                offenders.append(f"{path.name}: author {author!r}")
+        # Every permalink id must be an invented one: a000nnn or b000nnn.
+        for link in re.findall(r"/comments/([A-Za-z0-9]+)/", text):
+            if not re.match(r"^[ab]\d{6}$", link):
+                offenders.append(f"{path.name}: permalink id {link!r}")
+    assert offenders == [], f"real-looking identities in public fixtures: {offenders}"
+
+
 def test_prompts_are_files_not_literals():
     """A literal buried in a function cannot be diffed in a review."""
     offenders = []

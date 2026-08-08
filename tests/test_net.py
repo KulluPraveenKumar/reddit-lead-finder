@@ -891,6 +891,54 @@ class TestTransport:
         assert no_sleep, "no backoff was applied to a 429"
         assert max(no_sleep) >= 30.0, f"Retry-After: 30 was ignored (slept {no_sleep})"
 
+    def test_429_x_ratelimit_reset_is_honoured_when_retry_after_is_absent(self, no_sleep):
+        """P5. The feed endpoint sends this header *instead* of `Retry-After`.
+
+        Without it a rate-limited feed backs off by a fixed guess rather than by
+        the length the server named, which is either wasteful or too soon.
+        """
+        client, _pool, _ = _client_with(
+            [
+                _FakeResponse(429, "slow", headers={"x-ratelimit-reset": "32"}),
+                _FakeResponse(200, "<div class='thing'>ok</div>"),
+            ]
+        )
+        client.get("https://old.reddit.com/r/SaaS/new/")
+        assert no_sleep, "no backoff was applied to a 429"
+        assert max(no_sleep) >= 32.0, f"x-ratelimit-reset: 32 was ignored (slept {no_sleep})"
+
+    def test_retry_after_wins_when_both_headers_are_present(self):
+        """The standard header first; the vendor one is the fallback."""
+        from src.net.http_client import _retry_after
+
+        response = _FakeResponse(429, "", headers={"Retry-After": "10", "x-ratelimit-reset": "99"})
+        assert _retry_after(response) == 10.0
+
+    def test_an_implausible_reset_value_is_clamped(self):
+        """Guards the units.
+
+        `x-ratelimit-reset` is *seconds remaining* (P0 measured 17-48; a live
+        check on 2026-08-08 returned 32). If a server ever sent an epoch
+        timestamp instead, an unclamped read would sleep for roughly 55 years.
+        """
+        from src.net.http_client import MAX_RETRY_DELAY_SECONDS, _retry_after
+
+        epoch_shaped = _FakeResponse(429, "", headers={"x-ratelimit-reset": "1786187863"})
+        assert _retry_after(epoch_shaped) == MAX_RETRY_DELAY_SECONDS
+
+    def test_a_zero_or_negative_reset_means_do_not_wait(self):
+        """`0` means the window is already open, not "wait forever"."""
+        from src.net.http_client import _retry_after
+
+        assert _retry_after(_FakeResponse(429, "", headers={"x-ratelimit-reset": "0"})) is None
+        assert _retry_after(_FakeResponse(429, "", headers={"x-ratelimit-reset": "-5"})) is None
+
+    def test_a_non_numeric_reset_is_ignored(self):
+        from src.net.http_client import _retry_after
+
+        assert _retry_after(_FakeResponse(429, "", headers={"x-ratelimit-reset": "soon"})) is None
+        assert _retry_after(_FakeResponse(429, "", headers={})) is None
+
     def test_cloudflare_interstitial_is_neither_parsed_nor_cached(self, no_sleep):
         """AC9. "Just a moment" arrives with HTTP 200 and looks like a real page."""
         cache = HTTPCache(memory_only=True)

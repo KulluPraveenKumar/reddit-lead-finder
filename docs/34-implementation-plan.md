@@ -243,17 +243,33 @@ predecessor has not been approved. The `.claude/skills/phase-manager` skill enfo
 | | |
 |---|---|
 | **Objective** | Reddit feeds are fetched and parsed into the same post shape the HTML extractor produces |
-| **Deliverables** | `RedditClient.get_feed()`; `src/discovery/feed_parser.py` using **`lxml`, no new dependency**; golden Atom fixtures; conditional-GET support |
-| **Files** | `src/discovery/{__init__,feed_parser}.py` +; `src/reddit_client.py` ~ (**additive only**); `src/net/http_client.py` ~ (`if_none_match`, `if_modified_since`, 304 handling); `tests/fixtures/atom/*.xml` + `.expected.json` + |
+| **Deliverables** | `RedditClient.get_feed()`; `src/discovery/feed_parser.py` using **`lxml`, no new dependency**; golden Atom fixtures; ~~conditional-GET support~~ ⛔ **STRUCK — U4 refuted in P0** ([freeze §11.1](ARCHITECTURE_FREEZE.md)). Replaced by `scripts/validate_feed_parity.py`, a live drift detector |
+| **Files** | `src/discovery/{__init__,feed_parser}.py` +; `src/reddit_client.py` ~ (**additive only**); `src/net/http_client.py` ~ (~~`if_none_match`, `if_modified_since`, 304 handling~~ ⛔ struck — **`x-ratelimit-reset` instead**); `tests/fixtures/atom/*.xml` + `.expected.json` +; `main.py` ~ (`feed` command, additive — [35 §6](35-testing-strategy.md) requires a CLI); `scripts/validate_feed_parity.py` + |
 | **DB** | None |
 | **Config** | `discovery.rss_enabled: true`, `discovery.rss_limit: 100`, `discovery.rss_host` |
 | **Depends on** | P4, P0 (U1–U6) |
-| **Tasks** | 1. `get_feed(subreddits: list[str], sort, limit, query=None)` → multireddit or search URL<br>2. Atom parse with `lxml`: id, title, author, link, updated, content<br>3. **Return the same dict shape as `_extract_post`**, with `score=None`, `num_comments=None`<br>4. 304 handled as success-with-no-body<br>5. Capture and persist `ETag`/`Last-Modified` (used in P6)<br>6. Honour `x-ratelimit-reset` on 429<br>7. Golden fixtures: listing feed, search feed, empty feed, malformed feed |
-| **Acceptance** | RSS and HTML produce **identical `Lead` dicts** for the same `reddit_id` except `score`/`num_comments` · `limit=100` returns up to 100 entries · a 304 is success and transfers no body · a malformed feed raises `ParseError`, never a silent empty list · **no new runtime dependency** · fixtures assert field-by-field |
+| **Tasks** | 1. `get_feed(subreddits: list[str], sort, limit, query=None)` → multireddit or search URL<br>2. Atom parse with `lxml`: id, title, author, link, updated, content<br>3. **Return the same dict shape as `_extract_post`**, with `score=None`, `num_comments=None`<br>4. ~~304 handled as success-with-no-body~~ ⛔ **STRUCK**<br>5. ~~Capture and persist `ETag`/`Last-Modified`~~ ⛔ **STRUCK** — the server sends neither<br>6. Honour `x-ratelimit-reset` on 429<br>7. Golden fixtures: listing feed, search feed, empty feed, malformed feed |
+| **Acceptance** | RSS and HTML produce **identical `Lead` dicts** for the same `reddit_id` except the **four documented differences** — `score`, `num_comments`, `body` *(listing pages only: the listing carries none)* and `url` *(link/media posts only: the listing title points at the destination)*, all measured and recorded in [freeze §11](ARCHITECTURE_FREEZE.md) · `limit=100` returns up to 100 entries · ~~a 304 is success~~ ⛔ **STRUCK** · a malformed feed raises `ParseError`, never a silent empty list · **no new runtime dependency** · fixtures assert field-by-field |
 | **Metrics** | Parse 100 entries < 50 ms · 4 fixtures with `.expected.json` · `pip list` diff = 0 new packages |
 | **Time / Risk** | **2 days · Low** |
 | **Rollback** | `discovery.rss_enabled: false`; `get_feed` is additive and simply unused |
 | **Docs** | [07](07-scraping-pipeline.md) new §2a; [04 §5](04-system-design.md) `get_feed`; [00 §7](00-current-state.md) |
+
+> ✅ **DELIVERED 2026-08-08.** Report: [PHASE-05-COMPLETION-REPORT.md](PHASE-05-COMPLETION-REPORT.md) ·
+> Handover: [PHASE-05-HANDOVER.md](PHASE-05-HANDOVER.md) ·
+> Review: [P5-IMPLEMENTATION-REVIEW.md](P5-IMPLEMENTATION-REVIEW.md).
+> **Five decisions taken before implementation**, analysed in
+> [P5-DECISION-ANALYSIS.md](P5-DECISION-ANALYSIS.md): **(a)** conditional GET is **not built** — the
+> U4 amendment already deleted it, so this row's Deliverables, Files, Tasks 4–5 and one acceptance
+> criterion are struck as a [§11.1 reconciliation](ARCHITECTURE_FREEZE.md); **(b)** `get_feed`
+> bypasses `http_cache` per [28 D5](28-discovery-redesign.md); **(c)** a `feed` CLI is added because
+> [35 §6](35-testing-strategy.md) requires one; **(d)** `created_utc` prefers `<published>` over
+> `<updated>`, body comes from `div.md`; **(e)** the transport keeps returning `None` — raising is P6's.
+> **Found, and this is the phase's most consequential result:** the operator-requested live parity
+> validator failed on its first run, 25 of 25 posts, and proved that **the HTML listing page carries
+> no selftext at all** — refuting [28 §2.2](28-discovery-redesign.md) and invalidating the premise of
+> **P6 task 5's density heuristic**. Two amendments recorded in [freeze §11](ARCHITECTURE_FREEZE.md).
+> P6 owns the redesign; P5 did not attempt it.
 
 ## P6 — Watermarks & incremental discovery
 
@@ -265,7 +281,7 @@ predecessor has not been approved. The `.claude/skills/phase-manager` skill enfo
 | **DB** | `discovery_watermarks`; **`prescores`** incl. `stage` — `comment_id` created **without** a `REFERENCES` clause, FK added in `0006` |
 | **Config** | `discovery.{min_interval,max_interval,window_target,empty_backoff,empty_cap,yield_boost,density_threshold}` |
 | **Depends on** | P5 |
-| **Tasks** | 1. `0005` with watermarks + prescores<br>2. Stage 1 change detection — one multireddit request, conditional GET<br>3. Stage 2 watermark diff — single `IN` query; **overflow check**: feed's oldest newer than `last_seen_utc` → **error + HTML fallback + shorten interval**<br>4. Stage 3 metadata triage on title + snippet → provisional prescore with `stage='metadata'`<br>5. Stage 4 density-adaptive body fetch (listing ≥25%, permalink <25%, hysteresis 30/20)<br>6. Stage 5 keyword search via RSS<br>7. `policy.next_interval()` — EWMA rate, empty backoff, yield boost, clamps. **Zero AI, no `src.ai` import**<br>8. **Discovery bypasses `http_cache`** (D5) |
+| **Tasks** | 1. `0005` with watermarks + prescores<br>2. Stage 1 change detection — one multireddit request, ~~conditional GET~~ ⛔ **struck, U4 refuted**<br>3. Stage 2 watermark diff — single `IN` query; **overflow check**: feed's oldest newer than `last_seen_utc` → **error + HTML fallback + shorten interval**<br>4. Stage 3 metadata triage on title + snippet → provisional prescore with `stage='metadata'`<br>5. ⚠️ **REDESIGN REQUIRED** — ~~Stage 4 density-adaptive body fetch (listing ≥25%, permalink <25%, hysteresis 30/20)~~. **P5 measured that an HTML listing page carries no selftext**, so the "listing ≥25%" branch fetches a page with no bodies in it ([freeze §11](ARCHITECTURE_FREEZE.md), 2026-08-08). The feed already supplies bodies for ~97% of posts, so the real choice is *feed body vs permalink fetch*, not *listing vs permalink*. See [PHASE-05-HANDOVER.md](PHASE-05-HANDOVER.md) §4<br>6. Stage 5 keyword search via RSS<br>7. `policy.next_interval()` — EWMA rate, empty backoff, yield boost, clamps. **Zero AI, no `src.ai` import**<br>8. **Discovery bypasses `http_cache`** (D5) — `get_feed` already does; assert it |
 | **Acceptance** | A poll with nothing new issues **exactly one** request and creates zero rows · overflow is **logged as an error** and triggers HTML fallback (fixture: 150 new posts) · **steady-state daily requests ≤ 80** · cold start collects ≥95% of what the HTML design collects · `discovery/policy.py` makes **zero** AI calls and imports no `src.ai` · discovery bypasses `http_cache` (statement counter) · with `rss_enabled: false` the HTML path passes every test |
 | **Metrics** | Idle poll = 1 request · steady state ≤ 80 req/day · overflow detection 10/10 · policy computes an interval in < 1 ms |
 | **Time / Risk** | **3 days · High** — K9 overflow, K8 RSS dependency |

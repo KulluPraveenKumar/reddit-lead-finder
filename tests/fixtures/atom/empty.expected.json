@@ -1,0 +1,7 @@
+{
+  "_comment": [
+    "A valid feed with no entries yields an empty list and no error.",
+    "See empty.xml's header for why this fixture and malformed.xml are a pair."
+  ],
+  "posts": []
+}

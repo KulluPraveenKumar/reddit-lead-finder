@@ -242,6 +242,11 @@ must still render all 459 leads, and CSV export must still produce the same 13 c
 requests · beautifulsoup4 · lxml · SQLAlchemy>=2.0 · Flask>=3.0 · PyYAML · rich · schedule
 ```
 
+> ✅ **P5 added no dependency.** Atom parsing uses `lxml`, which was already a direct pin
+> (`requirements.txt: lxml>=5.0.0`) rather than a transitive one — and `beautifulsoup4` reads the
+> escaped HTML inside `<content>` with the same selector the HTML path uses. `pip list` diff: **0
+> new packages**. See [07 §2a](07-scraping-pipeline.md).
+
 Notably absent and required by the plan:
 
 | Need | Proposed dependency | Phase |

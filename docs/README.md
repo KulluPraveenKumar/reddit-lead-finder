@@ -48,7 +48,9 @@ the ones to read when you want to know what exists rather than what is intended.
 | **P1** — Run & job schema | ✅ complete 2026-08-05 | [PHASE-01-COMPLETION-REPORT.md](PHASE-01-COMPLETION-REPORT.md) · [PHASE-01-HANDOVER.md](PHASE-01-HANDOVER.md) · [progress/P01-COMPLETE.md](progress/P01-COMPLETE.md) | [testing/P01-testing.md](testing/P01-testing.md) |
 | **P2** — Job queue, worker, logging | ✅ complete 2026-08-06 | [PHASE-02-COMPLETION-REPORT.md](PHASE-02-COMPLETION-REPORT.md) · [PHASE-02-HANDOVER.md](PHASE-02-HANDOVER.md) · [progress/P02-COMPLETE.md](progress/P02-COMPLETE.md) | [testing/P02-testing.md](testing/P02-testing.md) |
 | **P3** — Run service, API, run pages | ✅ complete 2026-08-07 | [PHASE-03-COMPLETION-REPORT.md](PHASE-03-COMPLETION-REPORT.md) · [PHASE-03-HANDOVER.md](PHASE-03-HANDOVER.md) · [progress/P03-COMPLETE.md](progress/P03-COMPLETE.md) | [testing/P03-testing.md](testing/P03-testing.md) |
-| **P4** — Network provider abstraction | ⬜ not started | — | — |
+| **P4** — Network provider abstraction | ✅ complete 2026-08-08 | [PHASE-04-COMPLETION-REPORT.md](PHASE-04-COMPLETION-REPORT.md) · [PHASE-04-HANDOVER.md](PHASE-04-HANDOVER.md) · [progress/P04-COMPLETE.md](progress/P04-COMPLETE.md) | [testing/P04-testing.md](testing/P04-testing.md) |
+| **P5** — RSS client & Atom parser | ✅ complete 2026-08-08 | [PHASE-05-COMPLETION-REPORT.md](PHASE-05-COMPLETION-REPORT.md) · [PHASE-05-HANDOVER.md](PHASE-05-HANDOVER.md) · [progress/P05-COMPLETE.md](progress/P05-COMPLETE.md) · [P5-IMPLEMENTATION-REVIEW.md](P5-IMPLEMENTATION-REVIEW.md) · [P5-DECISION-ANALYSIS.md](P5-DECISION-ANALYSIS.md) | [testing/P05-testing.md](testing/P05-testing.md) |
+| **P6** — Watermarks & incremental discovery | ⬜ not started — ⚠️ **task 5 needs redesign**, see [PHASE-05-HANDOVER.md](PHASE-05-HANDOVER.md) §4 | — | — |
 
 **Operational records** — verification passes between phases, not phases themselves:
 [PRE-P2-VERIFICATION-REPORT.md](PRE-P2-VERIFICATION-REPORT.md) ·
