@@ -81,6 +81,12 @@ def fake_feed(monkeypatch):
             calls["count"] += 1
             return list(calls["posts"])
 
+        def get_new_posts(self, subreddit, limit=100):
+            # The overflow recovery walk. Empty by default; the tests that care
+            # about recovery supply their own client.
+            calls["html_walks"] = calls.get("html_walks", 0) + 1
+            return []
+
     from src.orchestration.handlers import discover
 
     monkeypatch.setattr(discover, "_build_client", lambda config: FakeClient())
@@ -194,7 +200,8 @@ def test_overflow_is_logged_as_an_error_on_the_timeline(session, run, fake_feed,
     session.commit()
 
     assert result["overflow"] is True
-    assert result["html_fallback"] is True
+    assert result["overflowed_subreddits"] == ["SaaS"]
+    assert fake_feed.get("html_walks") == 1, "overflow must attempt the recovery walk"
 
     events = session.query(RunEvent).filter(RunEvent.event == "discovery.overflow").all()
     assert len(events) == 1
@@ -203,6 +210,15 @@ def test_overflow_is_logged_as_an_error_on_the_timeline(session, run, fake_feed,
 
 
 def test_overflow_shortens_the_next_poll_interval(session, run, fake_feed):
+    """Asserted against the un-shortened interval, not against `max_interval`.
+
+    An earlier version asserted `next_poll_at <= now + 24h`, which `_clamp`
+    guarantees unconditionally — deleting the `shortened_after_overflow` call
+    left it passing. That is a guard that cannot fail (P5's F3). This computes
+    what the interval *would* have been and requires the stored one to be
+    strictly earlier, so removing the call fails here (mutation M12).
+    """
+    from src.discovery.policy import PolicyConfig, next_interval
     from src.discovery.watermarks import WatermarkState
 
     repo = DiscoveryRepository(session)
@@ -215,12 +231,140 @@ def test_overflow_shortens_the_next_poll_interval(session, run, fake_feed):
     session.commit()
     fake_feed["posts"] = [feed_post(f"t3_new{i:03d}", minutes=i) for i in range(100)]
 
-    handle_discover(session, make_job(session, run.id))
+    result = handle_discover(session, make_job(session, run.id))
     session.commit()
 
-    row = session.query(DiscoveryWatermark).one()
-    # Halved from whatever the rate implied, and never below the 15m floor.
-    assert row.next_poll_at <= now + datetime.timedelta(hours=24)
+    row = session.query(DiscoveryWatermark).filter_by(subreddit="SaaS").one()
+    stored = datetime.timedelta(seconds=result["next_interval_seconds"]["SaaS"])
+
+    unshortened = next_interval(
+        WatermarkState(
+            last_seen_fullname=row.last_seen_fullname,
+            last_seen_utc=row.last_seen_utc,
+            consecutive_empty=row.consecutive_empty,
+            observed_rate_per_hour=row.observed_rate_per_hour,
+        ),
+        PolicyConfig(),
+    )
+
+    assert stored < unshortened, (
+        f"overflow must shorten the interval: stored {stored}, unshortened {unshortened}"
+    )
+    assert stored == unshortened / 2
+
+
+def test_overflow_actually_performs_the_html_recovery_walk(session, run, monkeypatch):
+    """D-AC3: the fallback is *performed*, not merely reported.
+
+    An earlier version set an `html_fallback: True` flag that no code consumed,
+    while the report claimed overflow "triggers HTML fallback". This asserts the
+    walk happened and that its posts reached the result.
+    """
+    from src.discovery.watermarks import WatermarkState
+
+    now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
+    DiscoveryRepository(session).save_watermark(
+        "SaaS", "listing", WatermarkState(last_seen_utc=now - datetime.timedelta(days=2))
+    )
+    session.commit()
+
+    walked = {"count": 0}
+
+    class OverflowingClient:
+        def fetch_feed(self, subreddits, *, sort="new", limit=None, query=None):
+            return [feed_post(f"t3_new{i:03d}", minutes=i) for i in range(100)]
+
+        def get_new_posts(self, subreddit, limit=100):
+            walked["count"] += 1
+            return [feed_post("t3_recovered1", minutes=500, body="")]
+
+    from src.orchestration.handlers import discover
+
+    monkeypatch.setattr(discover, "_build_client", lambda config: OverflowingClient())
+
+    result = handle_discover(session, make_job(session, run.id))
+    session.commit()
+
+    assert walked["count"] == 1, "overflow must trigger an HTML listing walk"
+    assert result["html_recovered"] == 1
+    assert result["seen"] == 101, "the recovered post must reach the diff"
+    # And it arrives with no body, which is the documented degradation.
+    assert result["body_source_counts"]["absent"] >= 1
+
+
+def test_a_failed_recovery_walk_does_not_fail_the_poll(session, run, monkeypatch):
+    """The overflow is already an error; losing recovery must not lose the rest."""
+    from src.discovery.watermarks import WatermarkState
+
+    now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
+    DiscoveryRepository(session).save_watermark(
+        "SaaS", "listing", WatermarkState(last_seen_utc=now - datetime.timedelta(days=2))
+    )
+    session.commit()
+
+    class BrokenRecovery:
+        def fetch_feed(self, *a, **kw):
+            return [feed_post(f"t3_new{i:03d}", minutes=i) for i in range(100)]
+
+        def get_new_posts(self, subreddit, limit=100):
+            raise RuntimeError("listing walk blocked")
+
+    from src.orchestration.handlers import discover
+
+    monkeypatch.setattr(discover, "_build_client", lambda config: BrokenRecovery())
+
+    result = handle_discover(session, make_job(session, run.id))
+    session.commit()
+
+    assert result["overflow"] is True
+    assert result["html_recovered"] == 0
+    assert result["new"] == 100, "the posts the feed did carry must still be collected"
+
+
+def test_every_subreddit_in_a_multireddit_poll_gets_its_own_watermark(session, run, fake_feed):
+    """One combined request (U1), but one watermark row per subreddit.
+
+    Keying a combined poll on `subreddits[0]` would leave the others with no
+    watermark at all: never in the due-queue, never rate-measured, and unable to
+    detect overflow — which is a per-subreddit fact. A busy subreddit sharing a
+    feed with quiet ones is exactly where posts scroll away unseen.
+    """
+    saas = feed_post("t3_saas01")
+    startups = feed_post("t3_start01")
+    startups["subreddit"] = "startups"
+    fake_feed["posts"] = [saas, startups]
+
+    handle_discover(session, make_job(session, run.id, subreddits=["SaaS", "startups"]))
+    session.commit()
+
+    rows = {w.subreddit: w for w in session.query(DiscoveryWatermark).all()}
+    assert set(rows) == {"SaaS", "startups"}
+    assert rows["SaaS"].last_seen_fullname == "t3_saas01"
+    assert rows["startups"].last_seen_fullname == "t3_start01"
+
+
+def test_overflow_is_detected_per_subreddit_not_across_the_whole_feed(session, run, fake_feed):
+    """The case a single shared watermark would miss entirely."""
+    from src.discovery.watermarks import WatermarkState
+
+    now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
+    repo = DiscoveryRepository(session)
+    # SaaS is up to date; startups is two days behind.
+    repo.save_watermark("SaaS", "listing", WatermarkState(last_seen_utc=now))
+    repo.save_watermark(
+        "startups", "listing", WatermarkState(last_seen_utc=now - datetime.timedelta(days=2))
+    )
+    session.commit()
+
+    old = feed_post("t3_saas01", minutes=5)
+    fresh = feed_post("t3_start01", minutes=1)
+    fresh["subreddit"] = "startups"
+    fake_feed["posts"] = [old, fresh]
+
+    result = handle_discover(session, make_job(session, run.id, subreddits=["SaaS", "startups"]))
+    session.commit()
+
+    assert result["overflowed_subreddits"] == ["startups"]
 
 
 def test_an_ordinary_poll_raises_no_overflow_event(session, run, fake_feed):

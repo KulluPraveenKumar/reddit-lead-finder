@@ -40,8 +40,9 @@ repo.state_of(sub, "listing")     # the watermark as a detached value object
 ```
 
 The handler returns a dict P7's notifications can render **without a second query**:
-`{channel, seen, new, admitted, rejected, rejected_by_reason, overflow, html_fallback,
-body_source_counts}`. The same fields are on the `discovery.poll.done` event.
+`{channel, seen, new, admitted, rejected, rejected_by_reason, overflow, overflowed_subreddits,
+html_recovered, next_interval_seconds, body_source_counts}`. The same fields are on the
+`discovery.poll.done` event, and `overflowed_subreddits` is what an overflow alert should name.
 
 ---
 
@@ -63,7 +64,10 @@ states, three representations. Collapsing any pair re-opens D2 (watermark poison
 *before* fetching. This is asserted by a test that inspects the session from inside the fetch, and by
 mutation M10. **P7 emits notifications from handlers — this is exactly where it would be re-broken.**
 
-**G5 — overflow is an error.** R19. Ten tests, and most of them assert it stays *quiet*.
+**G5 — overflow is an error, it is detected *per subreddit*, and the recovery walk really runs.**
+R19. Twelve tests, most of which assert it stays *quiet*. One combined multireddit request still
+yields **one watermark row per subreddit** — keying it on `subreddits[0]` leaves the rest unable to
+detect overflow at all, which is a per-subreddit fact.
 
 **G6 — the watermark diffs on the id set, never on id comparison.** `t3_` fullnames look ordered and
 are not.
@@ -127,8 +131,14 @@ they had not re-opened it.
 agent runtime. Establish the fence in the first commit, as P5 did for `src/discovery/` — retrofitting
 is far more expensive.
 
-**T2 — a mutation you have not run is a test you do not have.** P6's proof: two of thirteen survived
-and exposed a design defect nothing else had caught.
+**T2 — a mutation you have not run is a test you do not have.** P6's proof: two survivors exposed a
+design defect nothing else had caught. **And three more mutations (M12–M14) were only added in
+review**, each covering a line no existing mutation touched — a green mutation run proves the
+mutations you wrote, not the ones you did not.
+
+**T2a — a returned flag is not a performed action.** P6 shipped `html_fallback: True` from a branch
+that fetched nothing, and its test asserted the flag. Assert the *effect*: that the walk happened,
+that its posts arrived.
 
 **T3 — a filter that matches nothing exits successfully.** Reproduced *again* during P6's guide
 verification: two `-k` expressions run unquoted selected zero tests and reported success. Assert the
@@ -159,15 +169,15 @@ counts were wrong until executed.
 
 | | |
 |---|---|
-| Full suite | **883 passed, 2 skipped** (P5: 803 / 2) |
-| Under `-W error::DeprecationWarning` | **883 passed, 2 skipped** |
-| New P6 tests | **+80** |
+| Full suite | **887 passed, 2 skipped** (P5: 803 / 2) |
+| Under `-W error::DeprecationWarning` | **887 passed, 2 skipped** |
+| New P6 tests | **+84** |
 | `ruff check` / `format --check` | All checks passed! / 118 files already formatted |
 | Coverage | `discovery/` **96%** · repository **98%** · handler **87%** |
 | `alembic heads` | `0005_discovery (head)` — one head |
 | `check_schema.py` | **OK — all 31 checks passed** |
 | Legacy contract | 459 baseline leads · `GET /` · 13 CSV columns · 17 endpoints |
-| Mutation testing | **13 designed, 13 detected** (2 after the defect they exposed was fixed) |
+| Mutation testing | **16 designed, 16 detected** (2 after the defect they exposed was fixed) |
 | Grep fences | 4 of 4 |
 | Live parity | r/startups **0 mismatches**, exit 0 |
 
@@ -197,6 +207,6 @@ counts were wrong until executed.
 - [ ] `TELEGRAM_BOT_TOKEN` present in `.env`, or the live half of P7 explicitly deferred
 - [ ] **T0 re-read (§5)** — P7 emits from every handler, and that is where the lock returns
 - [ ] `phase-manager` skill loaded before the first edit under `src/`
-- [ ] **The full suite recorded green before the first change** — 883 passed, 2 skipped
+- [ ] **The full suite recorded green before the first change** — 887 passed, 2 skipped
 - [ ] `git status` clean · `alembic heads` = one `0005` · `check_schema.py` 31/31
 - [ ] `gh run list` checked: P6 green on `origin/main`

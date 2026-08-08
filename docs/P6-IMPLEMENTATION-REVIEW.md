@@ -550,7 +550,7 @@ id set with itself and asserted 100% coverage — a test that could not fail, wh
 the third time in this project. Deleted rather than adjusted; **A4 is now recorded as not verified**
 (§4.1, and the completion report §10).
 
-### Mutation results — 13 designed, 13 detected
+### Mutation results — 16 designed, 16 detected
 
 M1, M2, **M2a**, M3, M4, M5, M6, M7, M8, **M8a**, M9, M10, M11. M2a and M8a were added during
 implementation: M2 alone cannot catch a dropped null-guard, because that guard's failure direction is

@@ -75,11 +75,22 @@ def handle_discover(session: Session, job: Job) -> dict[str, Any]:
 
     config = _load_config()
     repo = DiscoveryRepository(session)
+    cfg = _policy_config(config)
 
-    # The watermark is read as a detached value, so nothing below holds a row.
-    watermark_key = subreddits[0] if channel == "listing" else subreddits[0]
-    state = repo.state_of(watermark_key, channel, query)
-    previous_polled_at = _last_polled_at(repo, watermark_key, channel, query)
+    # **One watermark per subreddit, even though the request is combined.**
+    #
+    # U1 makes multireddit combining mandatory, so one request covers every
+    # subreddit in the payload -- but [28 §3.1] keeps "one row per (subreddit,
+    # channel, query)" and stage 2 diffs "per subreddit", and both are right.
+    # A single row keyed on the first subreddit would leave the other nine
+    # without a watermark: never in the due-queue, never rate-measured, and --
+    # worst -- never able to detect overflow, because overflow is a per-subreddit
+    # fact. A busy subreddit sharing a feed with nine quiet ones is exactly the
+    # case where posts scroll away unseen.
+    #
+    # States are read as detached values, so nothing below holds a row.
+    states = {sub: repo.state_of(sub, channel, query) for sub in subreddits}
+    polled_at = {sub: _last_polled_at(repo, sub, channel, query) for sub in subreddits}
 
     emit_event(
         session,
@@ -97,68 +108,116 @@ def handle_discover(session: Session, job: Job) -> dict[str, Any]:
 
     posts = _fetch(config, subreddits, channel, query)
 
+    # Per-subreddit diffs off the one combined response.
+    known = repo.known_ids([p["id"] for p in posts if p.get("id")])
+    by_sub = _group_by_subreddit(posts, subreddits)
+    results = {sub: diff(by_sub[sub], known, states[sub]) for sub in subreddits}
+    overflowed = [sub for sub in subreddits if results[sub].overflow]
+
+    # ---- the recovery walk, while the session is still clean ---------------
+    #
+    # Deliberately here and not after the events below: `_report_overflow`
+    # dirties the session, and this is a second network call (B1/T0).
+    recovered: list[dict] = []
+    if overflowed:
+        recovered = _recover_by_html(config, overflowed, query)
+        if recovered:
+            known = known | repo.known_ids([p["id"] for p in recovered if p.get("id")])
+            posts = _merge(posts, recovered)
+            by_sub = _group_by_subreddit(posts, subreddits)
+            results = {sub: diff(by_sub[sub], known, states[sub]) for sub in subreddits}
+
     # ---- everything from here is local; the lock is safe to take -----------
 
     now = _utcnow()
-    known = repo.known_ids([p["id"] for p in posts if p.get("id")])
-    result = diff(posts, known, state)
+    new_posts = [p for sub in subreddits for p in results[sub].new_posts]
+    seen = len(posts)
 
-    elapsed_hours = None
-    if previous_polled_at is not None:
-        elapsed_hours = (now - previous_polled_at).total_seconds() / 3600
+    for sub in overflowed:
+        _report_overflow(session, run_id, channel, sub, results[sub], states[sub], len(recovered))
 
-    new_state = advance(state, posts, result, elapsed_hours=elapsed_hours)
-    cfg = _policy_config(config)
-    interval = policy_module.next_interval(new_state, cfg)
+    admitted, rejected, reasons = _triage_all(new_posts, config)
 
-    fallback_requested = False
-    if result.overflow:
-        interval = policy_module.shortened_after_overflow(interval, cfg)
-        fallback_requested = True
-        _report_overflow(session, run_id, channel, subreddits, result, state)
+    intervals: dict[str, int] = {}
+    for sub in subreddits:
+        elapsed_hours = None
+        if polled_at[sub] is not None:
+            elapsed_hours = (now - polled_at[sub]).total_seconds() / 3600
 
-    admitted, rejected, reasons = _triage_all(result.new_posts, config)
+        new_state = advance(states[sub], by_sub[sub], results[sub], elapsed_hours=elapsed_hours)
+        interval = policy_module.next_interval(new_state, cfg)
+        if results[sub].overflow:
+            interval = policy_module.shortened_after_overflow(interval, cfg)
 
-    repo.save_watermark(
-        watermark_key,
-        channel,
-        new_state,
-        query=query,
-        polled_at=now,
-        next_poll_at=now + interval,
-    )
+        repo.save_watermark(
+            sub,
+            channel,
+            new_state,
+            query=query,
+            polled_at=now,
+            next_poll_at=now + interval,
+        )
+        intervals[sub] = int(interval.total_seconds())
 
     emit_event(
         session,
         run_id,
         "discovery.poll.done",
         message=(
-            f"{channel}: {len(result.new_posts)} new of {result.seen} seen "
+            f"{channel}: {len(new_posts)} new of {seen} seen "
             f"({admitted} admitted, {rejected} rejected)."
         ),
         channel=channel,
-        seen=result.seen,
-        new=len(result.new_posts),
+        seen=seen,
+        new=len(new_posts),
         admitted=admitted,
         rejected=rejected,
         # Every rejection reason, counted. This is the funnel's auditable half
         # in P6 — see `_triage_all` for why it is counters and not prescores.
         rejected_by_reason=reasons,
-        overflow=result.overflow,
-        next_interval_seconds=int(interval.total_seconds()),
+        overflow=bool(overflowed),
+        next_interval_seconds=intervals,
     )
 
     return {
         "channel": channel,
-        "seen": result.seen,
-        "new": len(result.new_posts),
+        "seen": seen,
+        "new": len(new_posts),
         "admitted": admitted,
         "rejected": rejected,
         "rejected_by_reason": reasons,
-        "overflow": result.overflow,
-        "html_fallback": fallback_requested,
-        "body_source_counts": _body_source_counts(result.new_posts),
+        "overflow": bool(overflowed),
+        "overflowed_subreddits": overflowed,
+        "html_recovered": len(recovered),
+        "next_interval_seconds": intervals,
+        "body_source_counts": _body_source_counts(new_posts),
     }
+
+
+def _group_by_subreddit(posts: list[dict], subreddits: list[str]) -> dict[str, list[dict]]:
+    """Split one combined feed into per-subreddit batches.
+
+    Matched case-insensitively because a payload says ``SaaS`` and a feed's
+    ``<category term=>`` may not agree on case. A post whose subreddit matches
+    nothing in the payload is dropped from the per-subreddit view rather than
+    guessed at -- it still counts in ``seen``.
+    """
+    index = {sub.lower(): sub for sub in subreddits}
+    grouped: dict[str, list[dict]] = {sub: [] for sub in subreddits}
+    for post in posts:
+        key = index.get(str(post.get("subreddit") or "").lower())
+        if key is not None:
+            grouped[key].append(post)
+    return grouped
+
+
+def _merge(primary: list[dict], extra: list[dict]) -> list[dict]:
+    """Union by post id, keeping the feed's copy where both carry one.
+
+    The feed's copy wins because it has a body and the HTML listing's does not.
+    """
+    seen = {p["id"] for p in primary if p.get("id")}
+    return primary + [p for p in extra if p.get("id") and p["id"] not in seen]
 
 
 # ---------------------------------------------------------------- the fetch
@@ -281,21 +340,49 @@ def _body_source_counts(posts: list[dict]) -> dict[str, int]:
 # ----------------------------------------------------------------- overflow
 
 
+def _recover_by_html(
+    config: dict[str, Any], subreddits: list[str], query: str | None
+) -> list[dict]:
+    """The overflow recovery walk. **Actually performed, not merely flagged.**
+
+    [28 §9 D1](../../../docs/28-discovery-redesign.md) requires overflow to fall
+    back to an HTML listing walk, and it is the only way to reach posts that have
+    already scrolled out of the feed's 100-item window.
+
+    ⚠️ **It restores ids, not bodies.** An old-Reddit listing page renders its
+    expandos lazily and carries no selftext (freeze §11), so every post recovered
+    here has ``body_source='absent'``. That is a real degradation and it is
+    recorded rather than hidden; a permalink fetch is the only remaining source,
+    and it belongs to P11 with comments.
+
+    Recovery failing must not fail the poll: the overflow has already been
+    reported as an error, and losing the recovery on top of it should not also
+    lose the posts the feed *did* carry.
+    """
+    try:
+        client = _build_client(config)
+        return _fetch_html(client, subreddits, query)
+    except Exception as exc:  # noqa: BLE001 - recovery is best-effort by design
+        log.error("overflow recovery walk failed for %s: %s", ", ".join(subreddits), exc)
+        return []
+
+
 def _report_overflow(
     session: Session,
     run_id: int,
     channel: str,
-    subreddits: list[str],
+    subreddit: str,
     result,
     state,
+    recovered: int,
 ) -> None:
     """R19: loud, on the timeline and in the log, never a silent gap."""
     message = (
-        f"Watermark overflow on {channel} for {', '.join(subreddits)}: the feed's "
-        f"oldest post is newer than the last one seen, so posts appeared and "
-        f"scrolled out of the 100-item window between polls. Falling back to an "
-        f"HTML listing walk to recover ids (it carries no bodies) and halving the "
-        f"poll interval."
+        f"Watermark overflow on {channel} for r/{subreddit}: the feed's oldest "
+        f"post is newer than the last one seen, so posts appeared and scrolled "
+        f"out of the 100-item window between polls. Recovered {recovered} post(s) "
+        f"by an HTML listing walk — which carries ids but no bodies — and halved "
+        f"the poll interval."
     )
     log.error(message)
     emit_event(
@@ -305,8 +392,9 @@ def _report_overflow(
         level="error",
         message=message,
         channel=channel,
-        subreddits=subreddits,
+        subreddit=subreddit,
         seen=result.seen,
+        html_recovered=recovered,
         last_seen_utc=state.last_seen_utc.isoformat() if state and state.last_seen_utc else None,
     )
 

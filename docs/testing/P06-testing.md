@@ -117,9 +117,10 @@ ones scroll out of reach and are never collected.
 .\.venv\Scripts\python.exe -m pytest tests\test_watermarks.py tests\test_discovery_handler.py -k "overflow" -v
 ```
 
-**Expected:** **10 passed** — and read that number. Most of them are the cases that must **not**
+**Expected:** **12 passed** — and read that number. Most of them are the cases that must **not**
 raise the alarm (a first-ever poll, a memory that has never advanced, an empty subreddit, an ordinary
-poll). Only two are the real gap.
+poll). The rest prove the alarm fires, that the recovery walk actually runs, and that the next poll
+happens sooner.
 
 **Why so many negatives.** An alarm that goes off constantly is an alarm nobody reads. Proving it
 stays quiet is as important as proving it fires.
@@ -198,11 +199,16 @@ This works on a **copy**, never the real database.
 ```powershell
 $scratch = Join-Path $env:TEMP "p06-downgrade"
 New-Item -ItemType Directory -Force -Path $scratch | Out-Null
-Copy-Item data\leads.db (Join-Path $scratch "leads.db")
+.\.venv\Scripts\python.exe -c "import sqlite3,sys; s=sqlite3.connect('data/leads.db'); d=sqlite3.connect(sys.argv[1]); s.backup(d); d.close(); s.close()" "$scratch\leads.db"
 $env:ALEMBIC_DB_URL = "sqlite:///$scratch/leads.db"
 .\.venv\Scripts\python.exe -m alembic downgrade 0004_orchestration
 .\.venv\Scripts\python.exe -m alembic current
 ```
+
+⚠️ **The copy uses SQLite's backup API, not `Copy-Item`, and that is not fussiness.** The database
+runs in WAL mode, which means recent changes may live in a separate `-wal` file. Copying only
+`leads.db` can produce a stale snapshot — so the test would pass against a database that is not the
+one you have. `tests/test_migrations.py::test_backup_uses_sqlite_api` exists for the same reason.
 
 **Expected:** the last line reads `0004_orchestration`. The two new tables are gone.
 
@@ -242,7 +248,7 @@ at a deleted file.
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-**Expected:** `883 passed, 2 skipped`. (P5's baseline was 803 passed, 2 skipped.)
+**Expected:** `887 passed, 2 skipped`. (P5's baseline was 803 passed, 2 skipped.)
 
 ```powershell
 .\.venv\Scripts\python.exe -m ruff check .
@@ -308,8 +314,16 @@ records a verification that did not happen.
 
 | When | Which commands | Status |
 |---|---|---|
-| 2026-08-08, post-implementation | Prerequisites · T1 · T2 · T3 · T4 · T5 · T6 · T7 · T8 · T9 · T10 | ✅ Executed and verified as written |
+| 2026-08-08, post-implementation | Prerequisites · T1 · T2 · T3 · T4 · T5 · T6 · T9 · T10 | ✅ Executed and verified as written |
+| 2026-08-08, **second pass** | **T7 and T8** — the two whose *shell* commands had not been executed | ✅ Executed verbatim, including cleanup and the `$env:ALEMBIC_DB_URL = $null` reset |
 | 2026-08-08 | **T11** | ✅ Executed against `r/startups`, exit 0 |
+
+⚠️ **T7 and T8 were marked verified before their commands had been run.** Only their `pytest` lines
+had been executed; the scratch-file mechanics of T7 and the whole copy/downgrade/upgrade sequence of
+T8 had not. That is the defect [P5-IMPLEMENTATION-REVIEW §3.3](../P5-IMPLEMENTATION-REVIEW.md) names
+in as many words — *a documented check that was never executed is worse than an absent one, because
+it is counted as coverage* — and it was caught in review rather than by the guide. Both have since
+been executed end to end, and executing T8 is what found the WAL bug below.
 
 **Every `-k` filter in this guide asserts a count**, following P5's **F5**: a filter that matches
 nothing exits successfully, so "it went green" proves nothing on its own.
@@ -319,10 +333,14 @@ exists — every one had been written from an estimate:
 
 | Step | Written | Actual |
 |---|---|---|
-| **T4** | 8 passed | **10 passed** |
+| **T4** | 8 passed | **12 passed** |
 | **T5** | 4 passed | **3 passed** |
 | **T6** | 52 passed | **33 passed** |
 | **T9** | "all pass" — not a number | **29 passed** |
+
+**And T8 was WAL-unsafe as first written.** It used `Copy-Item data\leads.db`, which copies the
+database file but not its `-wal` sidecar — so the rollback could have been proved against a stale
+snapshot. It now uses SQLite's backup API. Found by executing the step.
 
 **And the F5 defect reproduced during verification.** Two filters were first run with the `-k`
 expression unquoted; PowerShell split it on spaces and pytest selected **nothing**, reporting

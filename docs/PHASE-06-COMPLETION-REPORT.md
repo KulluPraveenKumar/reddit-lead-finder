@@ -108,7 +108,44 @@ errs toward the failure that matters — guessing too slow loses posts silently,
 costs one request — and applies only until the second poll, when the EWMA takes over. A test asserts
 that unmeasured and dead produce **different** intervals.
 
-### D6 — A test that could not fail *(found in review of my own work)*
+### D6 — Overflow reported a fallback it never performed *(found in review)*
+
+**Root cause.** The handler set `html_fallback = True`, returned it, and tested it — but nothing
+consumed the flag. `_fetch_html` was reachable only from the `rss_enabled: false` branch, so
+**overflow recovered nothing**, while this report, the review's A2 and D-AC3 all said it "triggers
+HTML fallback." A claim the code did not support: the F1 defect, again.
+
+**Resolution.** The recovery walk is now **performed** — `_recover_by_html` runs before the overflow
+event is emitted (so the session is still clean, B1), its posts are merged by id with the feed's copy
+winning, and the diff is recomputed. Recovery failure is logged and does not fail the poll, because
+the overflow is already an error and losing recovery must not also lose what the feed did carry.
+Asserted by `test_overflow_actually_performs_the_html_recovery_walk` and mutation **M13**.
+
+### D7 — Only the first subreddit of a combined poll got a watermark *(found in review)*
+
+**Root cause.** `watermark_key = subreddits[0] if channel == "listing" else subreddits[0]` — a
+ternary whose branches were identical, and a real gap behind it. U1 makes multireddit combining
+mandatory, so one request covers ten subreddits; keying one watermark on the first left the other
+nine with **no row at all** — never in the due-queue, never rate-measured, and unable to detect
+overflow, which is a per-subreddit fact. A busy subreddit sharing a feed with quiet ones is precisely
+where posts scroll away unseen.
+
+**Resolution.** One request, **one watermark per subreddit**, as [28 §3.1](28-discovery-redesign.md)
+specifies. Posts are grouped by subreddit (case-insensitively) and diffed, advanced and scheduled
+independently. Overflow is per-subreddit and the interval is shortened only for the ones that
+overflowed. Asserted by two tests and mutation **M14**.
+
+### D8 — The overflow-interval test could not fail *(found in review)*
+
+**Root cause.** It asserted `next_poll_at <= now + 24h`, which `_clamp` guarantees
+unconditionally. Deleting `shortened_after_overflow` left it green, and no mutation targeted that
+line.
+
+**Resolution.** It now computes what the interval *would* have been and requires the stored one to be
+strictly shorter (and exactly half). Mutation **M12** added. **P5's F3, fourth occurrence in this
+project** — and the second in this phase.
+
+### D9 — A test that could not fail *(found in review of my own work)*
 
 **Root cause.** The first version of the cold-start test built two synthetic id sets, compared a set
 with itself, and asserted 100% coverage. It was documentation wearing a test's clothes — P5's **F3**,
@@ -172,8 +209,8 @@ caller that needs to distinguish *blocked* from *empty*, which is what closes **
 
 | Check | Result |
 |---|---|
-| Full suite | **883 passed, 2 skipped** (P5 baseline: 803 / 2 — **+80**) |
-| `-W error::DeprecationWarning` | **883 passed, 2 skipped** |
+| Full suite | **887 passed, 2 skipped** (P5 baseline: 803 / 2 — **+84**) |
+| `-W error::DeprecationWarning` | **887 passed, 2 skipped** |
 | `ruff check .` | All checks passed! |
 | `ruff format --check .` | 118 files already formatted |
 | `alembic heads` | `0005_discovery (head)` — one head |
@@ -186,7 +223,16 @@ caller that needs to distinguish *blocked* from *empty*, which is what closes **
 
 ## 8. Mutation testing
 
-**13 designed, 13 detected** — after the two that first survived exposed D3.
+**16 designed, 16 detected** — after the two that first survived exposed D3, and three added in
+review to cover D6, D7 and D8.
+
+| # | Mutation | Detected by |
+|---|---|---|
+| M12 | Overflow no longer shortens the interval | interval test (rewritten — D8) |
+| M13 | Overflow flags but does not walk | recovery-walk test (D6) |
+| M14 | Only the first subreddit gets a watermark | per-subreddit test (D7) |
+
+The original thirteen:
 
 | # | Mutation | Detected by |
 |---|---|---|

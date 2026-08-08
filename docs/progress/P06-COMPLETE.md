@@ -31,8 +31,8 @@ posts with no selftext anywhere, and score/comments are P11's. Stage 4 is now bo
 
 ## Verification
 
-`883 passed, 2 skipped` · deprecation gate clean · ruff ×2 clean · `check_schema.py` **31/31** ·
-`alembic heads` = one `0005` · **13/13 mutations detected** · coverage 96% / 98% / 87% ·
+`887 passed, 2 skipped` · deprecation gate clean · ruff ×2 clean · `check_schema.py` **31/31** ·
+`alembic heads` = one `0005` · **16/16 mutations detected** · coverage 96% / 98% / 87% ·
 459 baseline leads intact · live parity exit 0.
 
 **Not verified:** A4 (cold start ≥95%) — needs a paired live capture; recorded as such rather than
@@ -59,4 +59,4 @@ Before the first edit under `src/`:
    [freeze §7](../ARCHITECTURE_FREEZE.md): **five** notification kinds, not nine.
 3. Confirm `TELEGRAM_BOT_TOKEN` is in `.env`, or agree to defer P7's live half (**blocker B1**).
 4. Load the `phase-manager` skill.
-5. Record the baseline green **before** the first change: `883 passed, 2 skipped`.
+5. Record the baseline green **before** the first change: `887 passed, 2 skipped`.
