@@ -219,7 +219,7 @@ caller that needs to distinguish *blocked* from *empty*, which is what closes **
 | Legacy contract | 459 baseline leads · `intent_score` fingerprint · `GET /` · 13 CSV columns · 17 endpoints |
 | Migration up/down/up | On a copy of the live DB ✅ |
 | `mypy` | **Not run — blocker B3/O2, unchanged** |
-| **GitHub Actions** | ✅ **success** — run `31270866135`, 1m41s, on `origin/main` at `4c18152` |
+| **GitHub Actions** | ✅ **success** — run `31272619320`, 1m38s, on `origin/main` at `2921a79` (and `31270866135` at `4c18152`) |
 
 ## 8. Mutation testing
 
