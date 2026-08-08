@@ -267,7 +267,8 @@ See [PHASE-05-HANDOVER.md §4](PHASE-05-HANDOVER.md).
 
 ## 10. CI results
 
-P4 green on `origin/main` at entry (run 31249734916). P5's run follows this commit.
+P4 green on `origin/main` at entry (run 31249734916). **P5 green: run 31259179462, 1m34s,
+commit `20bca9d`.**
 **Standing limitation, unchanged:** `data/leads.db` is correctly gitignored, so three live-database
 tests skip on the runner — "CI is green" does not mean the legacy contract is machine-verified
 (blocker **C1**).
