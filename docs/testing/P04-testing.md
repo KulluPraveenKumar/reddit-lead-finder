@@ -21,6 +21,19 @@ should see. If what you see differs, that step's *Possible failure* table tells 
 
 Throughout, `>` marks a command to run and `→` marks what you should see.
 
+> ⚠️ **Every command in this guide is written for Windows PowerShell** and has been executed there
+> before shipping. Copy them verbatim — do not "fix" the quoting.
+>
+> If you are adding a command to this guide, three things will bite you, and all three have:
+> - **PowerShell's escape character is a backtick, not a backslash.** `\"` inside a double-quoted
+>   string is a `SyntaxError`, not an escaped quote. Nest single quotes inside double quotes instead,
+>   and if you need a quote character inside Python, restructure so you do not.
+> - **`%USERPROFILE%` is `cmd` syntax.** In PowerShell it is `$env:USERPROFILE`.
+> - **`&&` and `||` do not exist** in Windows PowerShell 5.1. Use `;`, or separate commands.
+>
+> The first two were shipped in the first draft of this guide and found during manual testing — see
+> T12, where the mutation command silently did nothing and the test that should have failed passed.
+
 **What this phase changes, in one sentence:** the tool used to send *all* traffic through the proxy
 pool and stop if the pool died; it now chooses **direct or proxy per kind of request**, and when the
 proxy pool dies it degrades along a configured ladder instead of stopping — visibly, and under an
@@ -40,7 +53,7 @@ hourly cap on your own connection.
 **If the app is already running**, stop it — a stale process keeps port 5000 and serves you *old
 code*, which looks exactly like a broken change:
 
-> powershell "Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | Where-Object { $_.CommandLine -like '*dashboard*' } | Stop-Process -Force"
+> Get-CimInstance Win32_Process -Filter "Name='python.exe'" | Where-Object { $_.CommandLine -like '*dashboard*' } | Stop-Process -Force
 
 **Record the state of the live database, so you can prove it afterwards:**
 
@@ -51,10 +64,10 @@ code*, which looks exactly like a broken change:
 **Back up your configuration.** Several tests edit `config.yaml`, and one of them deliberately puts
 it in a state the suite reports as a failure:
 
-> copy config.yaml config.yaml.backup
+> Copy-Item config.yaml config.yaml.backup
 
-→ `1 file(s) copied.` **Restore it with `copy config.yaml.backup config.yaml` at the end**, and
-delete the backup.
+→ No output means it worked (PowerShell cmdlets are quiet on success). **Restore it with
+`Copy-Item config.yaml.backup config.yaml -Force` at the end**, and delete the backup.
 
 ---
 
@@ -155,7 +168,7 @@ behaviour without a subscription and without touching the internet.
 
 ### Step 1 — Create a fake proxy file
 
-> notepad %USERPROFILE%\p4-fake-proxies.txt
+> notepad $env:USERPROFILE\p4-fake-proxies.txt
 
 Paste exactly this and save:
 
@@ -667,7 +680,7 @@ source) and **Ctrl+F** for `S3cretPassw0rd` and for `GatewayP4ss`.
 
 ### Step 5 — Search the database
 
-> .\.venv\Scripts\python.exe -c "import sqlite3; c=sqlite3.connect('data/leads.db'); t=[r[0] for r in c.execute(\"select name from sqlite_master where type='table'\")]; hits=[n for n in t for r in c.execute(f'select * from \"{n}\"') if any(s in str(r) for s in ('S3cretPassw0rd','GatewayP4ss'))]; print('LEAK in: '+str(set(hits)) if hits else 'clean')"
+> .\.venv\Scripts\python.exe -c "import sqlite3; c=sqlite3.connect('data/leads.db'); names=[r[1] for r in c.execute('select * from sqlite_master') if r[0]=='table']; hits=sorted({n for n in names for r in c.execute('select * from [' + n + ']') if any(s in str(r) for s in ('S3cretPassw0rd','GatewayP4ss'))}); print('LEAK in: '+str(hits) if hits else 'clean')"
 
 → **`clean`**
 
@@ -677,7 +690,7 @@ source) and **Ctrl+F** for `S3cretPassw0rd` and for `GatewayP4ss`.
 > `password: "GatewayP4ss"` into `config.yaml`, which **is a tracked file** — so the search will
 > match your own test fixture and you will not be able to tell it from a real leak. Restore first:
 >
-> > copy config.yaml.backup config.yaml
+> > Copy-Item config.yaml.backup config.yaml -Force
 
 Now search:
 
@@ -785,20 +798,47 @@ must be free to explain that it exists because of `old.reddit.com` 403s.
 > in the test's own docstring. This guide lives in `docs/`, so the word it tells you to plant does
 > not trip the fence from here. If the fence is ever widened beyond `src/net/`, this step must be
 > rewritten; that is noted in the test.
+>
+> **No production file is edited.** You add one temporary file to `src/net/` and delete it again.
+> That exercises the fence exactly as editing a shipped module would — the fence reads every `.py`
+> under the tree — while leaving every tracked file untouched, so there is nothing to restore
+> incorrectly and no chance of ending the test with a modified source file.
 
-> .\.venv\Scripts\python.exe -c "import pathlib; p=pathlib.Path('src/net/metrics.py'); t=p.read_text(encoding='utf-8'); p.write_text(t.replace('class NetMetrics:', 'REDDIT_MARKER = \"reddit\"\n\n\nclass NetMetrics:'), encoding='utf-8')"
+Plant the marker:
 
-> .\.venv\Scripts\python.exe -m pytest tests/test_boundaries.py -k net -q
+> Set-Content -Path src\net\_fence_probe.py -Value 'REDDIT_MARKER = "reddit"' -Encoding ascii
 
-→ **Expected: FAILS**, naming `src/net/metrics.py`.
+> .\.venv\Scripts\python.exe -m pytest tests\test_boundaries.py -k net -q
+
+→ **Expected: FAILS**, and the message names the file and the tokens:
+
+```
+AssertionError: src/net/ is a reusable egress layer and must contain no Reddit knowledge
+in executable code (R5). Offenders: ["src\net\_fence_probe.py: ['REDDIT_MARKER', 'reddit']"]
+```
+
+→ **Check the reason, not just the red.** It must be that `AssertionError`. If you see
+`SyntaxError` instead, the file was written with a byte-order mark — see the warning below — and the
+test failed for a reason that proves nothing about the fence.
 
 Undo it:
 
-> git checkout src/net/metrics.py
+> Remove-Item src\net\_fence_probe.py -Force
 
-> .\.venv\Scripts\python.exe -m pytest tests/test_boundaries.py -k net -q
+> .\.venv\Scripts\python.exe -m pytest tests\test_boundaries.py -k net -q
 
-→ Passes again. **A fence you have not seen fail is a fence you have not tested.**
+→ Passes again. Confirm nothing was left behind:
+
+> git status --short
+
+→ `src/net/` shows no changes. **A fence you have not seen fail is a fence you have not tested.**
+
+> ⚠️ **`-Encoding ascii` is not optional, and this is the one place in the guide where the flag
+> matters.** Windows PowerShell 5.1's `-Encoding utf8` writes a **byte-order mark**. Python's `ast`
+> module then rejects the file with `SyntaxError: invalid non-printable character U+FEFF`, so the
+> test fails — but for the wrong reason, and you would learn nothing about the fence. The marker is
+> pure ASCII, so `ascii` is both correct and BOM-free. The same trap has bitten this project before
+> (`docs/PHASE-03-COMPLETION-REPORT.md` §5.2, an encoding defect that sat latent for three phases).
 
 ### Step 3 — The other three fences
 
@@ -888,7 +928,7 @@ drives a single proxy pool, and `proxy.fail_closed: true` stops a scrape when th
 
 ### Step 5 — Restore
 
-> copy config.yaml.backup config.yaml
+> Copy-Item config.yaml.backup config.yaml -Force
 
 Then re-apply your `network:` block and the fake proxy path, and restart.
 
@@ -1039,7 +1079,7 @@ Complete this table. **A phase is not done until a human has run this guide** �
 | T9 | The hourly direct cap is enforced, visible, and shared across the whole run | | | | |
 | T10 | No credential in any log, response, page, table or file | | | | |
 | T11 | The health surface shows policy, ladder, providers and acceptance | | | | |
-| T12 | Fence 4 exists and bites; all four fences and the legacy contract hold; no later-phase file touched | | | | |
+| T12 | Fence 4 exists **and was seen to fail**; all four fences and the legacy contract hold; no later-phase file touched | | | | |
 | T13 | The documented rollback reproduces pre-P4 behaviour, in config alone | | | | |
 | T14 | **Cancel mid-scrape does not return HTTP 500** — P3's F7 has not returned | | | | |
 | T15 | One real scrape works end to end on the live network | | | | |
@@ -1052,9 +1092,17 @@ these failing does not ship, regardless of schedule.
 
 **Cleanup after sign-off**
 
-> copy config.yaml.backup config.yaml
-> del config.yaml.backup
-> del %USERPROFILE%\p4-fake-proxies.txt
-> del p4-test.log
+> Copy-Item config.yaml.backup config.yaml -Force
+> Remove-Item config.yaml.backup -Force
+> Remove-Item $env:USERPROFILE\p4-fake-proxies.txt -Force
+> Remove-Item p4-test.log -Force -ErrorAction SilentlyContinue
+> Remove-Item src\net\_fence_probe.py -Force -ErrorAction SilentlyContinue
+
+Then confirm nothing is left behind:
+
+> git status --short
+
+→ Only `config.yaml` may differ, and only if you chose to keep a setting you changed. **No file
+under `src/` or `tests/` may appear.**
 
 **Signed:** ______________________  **Date:** ______________
