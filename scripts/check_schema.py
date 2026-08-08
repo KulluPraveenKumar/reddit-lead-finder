@@ -66,6 +66,13 @@ EXPECTED_TABLES_AT_0004 = (
     "tracked_users",
 )
 
+#: What 0005 adds. Kept separate from the 0004 set so `--skip-p6` can check a
+#: database that has not been upgraded yet, the same way `--skip-p1` does.
+EXPECTED_TABLES_AT_0005 = (
+    "discovery_watermarks",
+    "prescores",
+)
+
 #: Index name -> the column order the query planner needs.
 #:
 #: Order matters and presence does not. ``ix_jobs_claim`` backs
@@ -239,18 +246,67 @@ def check_revision(conn: sqlite3.Connection, report: Report, expected: str | Non
     report.check(ok, f"alembic_version is {expected}", f"got: {actual}")
 
 
-def check_tables(conn: sqlite3.Connection, report: Report) -> None:
+def check_tables(conn: sqlite3.Connection, report: Report, *, with_p6: bool = True) -> None:
     report.section("Tables")
 
     actual = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     actual = {t for t in actual if not t.startswith("sqlite_")}
     expected = set(EXPECTED_TABLES_AT_0004)
+    if with_p6:
+        expected |= set(EXPECTED_TABLES_AT_0005)
 
     missing = sorted(expected - actual)
     extra = sorted(actual - expected)
 
     report.check(not missing, f"all {len(expected)} expected tables present", f"missing: {missing}")
     report.check(not extra, "no unexpected tables", f"unexpected: {extra}")
+
+
+def check_discovery_shape(conn: sqlite3.Connection, report: Report) -> None:
+    """The 0005 constraints that are easy to get wrong and silent when wrong."""
+    report.section("Discovery (0005)")
+
+    # The partial uniques. A plain (subreddit, channel, query) unique index does
+    # NOT constrain listing rows, because SQLite treats NULLs as distinct — so
+    # the check that matters is behavioural, not "an index exists".
+    indexes = {r[1] for r in conn.execute("PRAGMA index_list(discovery_watermarks)")}
+    report.check(
+        "ux_watermarks_listing" in indexes,
+        "ux_watermarks_listing exists — listing rows are actually unique",
+        f"got: {sorted(indexes)}",
+    )
+    report.check(
+        "ux_watermarks_search" in indexes,
+        "ux_watermarks_search exists",
+        f"got: {sorted(indexes)}",
+    )
+
+    columns = {r[1] for r in conn.execute("PRAGMA table_info(discovery_watermarks)")}
+    report.check(
+        not ({"last_etag", "last_modified"} & columns),
+        "discovery_watermarks has no last_etag/last_modified — U4 was refuted",
+        f"got: {sorted(columns)}",
+    )
+
+    prescore_columns = {r[1] for r in conn.execute("PRAGMA table_info(prescores)")}
+    report.check(
+        "stage" in prescore_columns,
+        "prescores.stage exists — metadata triage is auditable (R11)",
+        f"got: {sorted(prescore_columns)}",
+    )
+
+    # comment_id must be bare until 0006 creates `comments` (M8).
+    prescore_fks = {(r[2], r[3]) for r in conn.execute("PRAGMA foreign_key_list(prescores)")}
+    report.check(
+        ("comments", "comment_id") not in prescore_fks,
+        "prescores.comment_id has no FK yet — deferred to 0006 (M8)",
+        f"got: {sorted(prescore_fks)}",
+    )
+    report.check(
+        ("runs", "run_id") in prescore_fks,
+        "prescores -> runs.run_id",
+        f"got: {sorted(prescore_fks)}",
+    )
 
 
 def check_indexes(conn: sqlite3.Connection, report: Report) -> None:
@@ -425,6 +481,7 @@ def run_checks(
     skip_p1: bool,
     expect_leads: bool,
     verbose: bool,
+    skip_p6: bool = False,
 ) -> int:
     if not db_path.exists():
         print(f"ERROR: no such database: {db_path}")
@@ -442,11 +499,15 @@ def run_checks(
         if skip_p1:
             print("\n(--skip-p1: the 0004 shape and row-count checks were not run)")
         else:
-            check_tables(conn, report)
+            check_tables(conn, report, with_p6=not skip_p6)
             check_indexes(conn, report)
             check_foreign_keys(conn, report)
             check_constraints(conn, report)
             check_row_counts(conn, report)
+            if skip_p6:
+                print("\n(--skip-p6: the 0005 discovery checks were not run)")
+            else:
+                check_discovery_shape(conn, report)
 
         check_legacy_fingerprint(conn, report, expect_leads)
     finally:
@@ -476,6 +537,11 @@ def main(argv: list[str] | None = None) -> int:
         help="skip the 0004 shape checks — use on a database still at 0003",
     )
     parser.add_argument(
+        "--skip-p6",
+        action="store_true",
+        help="skip the 0005 discovery checks — use on a database still at 0004",
+    )
+    parser.add_argument(
         "--no-leads-check",
         action="store_true",
         help="report the lead count without asserting the 459-lead legacy contract",
@@ -489,6 +555,7 @@ def main(argv: list[str] | None = None) -> int:
         skip_p1=args.skip_p1,
         expect_leads=not args.no_leads_check,
         verbose=args.verbose,
+        skip_p6=args.skip_p6,
     )
 
 

@@ -35,6 +35,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from src.db.models import Job
+from src.orchestration.handlers.discover import DISCOVER_JOB, handle_discover
 from src.orchestration.handlers.finalize import handle_finalize_run
 from src.orchestration.handlers.maintenance import handle_maintenance
 from src.orchestration.handlers.scrape import handle_scrape_subreddit
@@ -45,11 +46,16 @@ REGISTRY: dict[str, Handler] = {
     "maintenance": handle_maintenance,
     "scrape_subreddit": handle_scrape_subreddit,
     "finalize_run": handle_finalize_run,
+    # P6. The first handler that both fetches and writes, which is why its
+    # module docstring spells out the commit-before-the-fetch ordering.
+    DISCOVER_JOB: handle_discover,
 }
 
 __all__ = [
+    "DISCOVER_JOB",
     "REGISTRY",
     "Handler",
+    "handle_discover",
     "handle_finalize_run",
     "handle_maintenance",
     "handle_scrape_subreddit",

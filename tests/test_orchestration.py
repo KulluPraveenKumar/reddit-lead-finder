@@ -535,14 +535,23 @@ class TestSchemaCheckScript:
     """
 
     def test_passes_on_a_correctly_migrated_database(self, temp_db, capsys):
+        """``temp_db`` is at head, so the expected revision follows the head.
+
+        Both the revision and the count were pinned to 0004's values and are
+        updated to 0005's because the head genuinely moved -- P6 adds
+        ``discovery_watermarks`` and ``prescores``, and six checks with them.
+        Neither assertion is weakened: the revision is still asserted exactly,
+        and the count is still asserted exactly, so a check that silently stops
+        running still fails this test.
+        """
         from scripts.check_schema import main
 
-        code = main(["--db", str(temp_db), "--revision", "0004", "--no-leads-check"])
+        code = main(["--db", str(temp_db), "--revision", "0005", "--no-leads-check"])
         out = capsys.readouterr().out
 
         assert code == 0, out
         assert "FAIL" not in out
-        assert "all 23 checks passed" in out
+        assert "all 29 checks passed" in out
 
     def test_detects_a_wrong_claim_index_column_order(self, temp_db, capsys):
         """The defect the guide exists to catch, injected deliberately.

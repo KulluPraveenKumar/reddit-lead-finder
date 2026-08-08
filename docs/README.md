@@ -50,7 +50,8 @@ the ones to read when you want to know what exists rather than what is intended.
 | **P3** — Run service, API, run pages | ✅ complete 2026-08-07 | [PHASE-03-COMPLETION-REPORT.md](PHASE-03-COMPLETION-REPORT.md) · [PHASE-03-HANDOVER.md](PHASE-03-HANDOVER.md) · [progress/P03-COMPLETE.md](progress/P03-COMPLETE.md) | [testing/P03-testing.md](testing/P03-testing.md) |
 | **P4** — Network provider abstraction | ✅ complete 2026-08-08 | [PHASE-04-COMPLETION-REPORT.md](PHASE-04-COMPLETION-REPORT.md) · [PHASE-04-HANDOVER.md](PHASE-04-HANDOVER.md) · [progress/P04-COMPLETE.md](progress/P04-COMPLETE.md) | [testing/P04-testing.md](testing/P04-testing.md) |
 | **P5** — RSS client & Atom parser | ✅ complete 2026-08-08 | [PHASE-05-COMPLETION-REPORT.md](PHASE-05-COMPLETION-REPORT.md) · [PHASE-05-HANDOVER.md](PHASE-05-HANDOVER.md) · [progress/P05-COMPLETE.md](progress/P05-COMPLETE.md) · [P5-IMPLEMENTATION-REVIEW.md](P5-IMPLEMENTATION-REVIEW.md) · [P5-DECISION-ANALYSIS.md](P5-DECISION-ANALYSIS.md) | [testing/P05-testing.md](testing/P05-testing.md) |
-| **P6** — Watermarks & incremental discovery | ⬜ not started — ⚠️ **task 5 needs redesign**, see [PHASE-05-HANDOVER.md](PHASE-05-HANDOVER.md) §4 | — | — |
+| **P6** — Watermarks & incremental discovery | ✅ complete 2026-08-08 — **task 5's heuristic was deleted, not replaced** ([freeze §11.1](ARCHITECTURE_FREEZE.md)) | [PHASE-06-COMPLETION-REPORT.md](PHASE-06-COMPLETION-REPORT.md) · [PHASE-06-HANDOVER.md](PHASE-06-HANDOVER.md) · [progress/P06-COMPLETE.md](progress/P06-COMPLETE.md) · [P6-IMPLEMENTATION-REVIEW.md](P6-IMPLEMENTATION-REVIEW.md) | [testing/P06-testing.md](testing/P06-testing.md) |
+| **P7** — Notification tier | ⬜ not started | — | — |
 
 **Operational records** — verification passes between phases, not phases themselves:
 [PRE-P2-VERIFICATION-REPORT.md](PRE-P2-VERIFICATION-REPORT.md) ·

@@ -40,6 +40,7 @@ from rich.console import Console
 
 from .discovery import parse_feed
 from .net import BlockedError, BlockSignatures, ProxiedHTTPClient, ProxyExhaustedError, RequestClass
+from .net.policy import EgressExhausted
 from .net.blocks import GENERIC_BAD_TITLES, GENERIC_SOFT_MARKERS
 
 console = Console()
@@ -97,6 +98,25 @@ class FeedDisabled(RuntimeError):
     """
 
 
+class TransportError(RuntimeError):
+    """A fetch failed, and this says whether trying again could help.
+
+    P6 added this to close N2. Before it, every transport failure was ``None``,
+    so a handler could not tell "pause this run, the pool is briefly empty" from
+    "fail this run, we are blocked" from "this subreddit has nothing" -- three
+    outcomes with one representation (``PHASE-05-HANDOVER`` T1).
+
+    ``retryable`` is **not** inferred from the exception type where the operator
+    has already answered the question: ``EgressExhausted`` carries the
+    ``on_pool_exhausted`` setting, and that answer is passed through unchanged.
+    """
+
+    def __init__(self, message: str, *, retryable: bool = False, status_code: int | None = None):
+        super().__init__(message)
+        self.retryable = retryable
+        self.status_code = status_code
+
+
 class RedditClient:
     def __init__(self, config=None, http_client: ProxiedHTTPClient | None = None):
         self.config = config or {}
@@ -104,30 +124,63 @@ class RedditClient:
 
     # ------------------------------------------------------------ transport
 
-    def _get(self, url: str, *, expect_selector: str | None = None) -> str | None:
-        """Fetch one page. Returns None on failure, as the old client did.
+    def _fetch(self, url: str, *, expect_selector: str | None = None) -> str:
+        """Fetch one page, or raise.
 
-        The return contract is preserved deliberately: the scrapers already
-        handle None by stopping, and changing them to handle exceptions is
-        Phase 6 work.
+        **This is the half of the transport that tells the truth**, and P6 added
+        it to close N2: while every failure returned ``None``, "the proxy pool is
+        exhausted and the run should pause", "we are blocked and the run should
+        fail", and "this subreddit is empty" were the same value. A run could not
+        be paused rather than failed because nothing upstream could tell which
+        had happened (``PHASE-05-HANDOVER`` T1).
+
+        ``TransportError.retryable`` carries the answer through, taken from
+        ``EgressExhausted.action`` -- i.e. from the operator's
+        ``on_pool_exhausted`` setting -- so the handler maps a policy decision
+        rather than guessing from an exception type.
         """
         try:
             result = self.http.get(url, expect_selector=expect_selector)
+        except EgressExhausted as exc:
+            raise TransportError(str(exc), retryable=exc.retryable) from exc
         except ProxyExhaustedError as exc:
-            console.print(f"[red]Proxy pool exhausted: {exc}[/red]")
-            return None
+            raise TransportError(f"proxy pool exhausted: {exc}", retryable=True) from exc
         except BlockedError as exc:
-            console.print(f"[yellow]Blocked: {exc}[/yellow]")
-            return None
-        except Exception as exc:  # noqa: BLE001 - one page must not kill a run
-            log.warning("request failed for %s: %s", url, exc)
-            console.print(f"[red]Request failed: {exc}[/red]")
-            return None
+            raise TransportError(f"blocked: {exc}", retryable=False) from exc
+        except Exception as exc:  # noqa: BLE001 - normalised into one type
+            raise TransportError(f"request failed for {url}: {exc}", retryable=True) from exc
 
         if not result.ok:
-            console.print(f"[yellow]{url} -> {result.status_code} {result.verdict.reason}[/yellow]")
-            return None
+            raise TransportError(
+                f"{url} -> {result.status_code} {result.verdict.reason}",
+                retryable=False,
+                status_code=result.status_code,
+            )
         return result.text
+
+    def _get(self, url: str, *, expect_selector: str | None = None) -> str | None:
+        """Fetch one page. Returns None on failure, as the old client did.
+
+        **The contract is preserved on purpose, and this method is now the
+        insulation rather than the policy.** ``_fetch`` raises; this catches, so
+        the six frozen public methods (AD-2) and the three scrapers keep the
+        exact return shape they have always had. A caller that wants to know
+        *why* a fetch failed -- the discovery handler -- calls ``_fetch``
+        directly and is the only path that sees the exception.
+
+        Making the exception propagate through the frozen methods instead would
+        be a behaviour change to shipped code that no handover authorised, and
+        it would put R20's legacy contract at risk to no purpose.
+        """
+        try:
+            return self._fetch(url, expect_selector=expect_selector)
+        except TransportError as exc:
+            if exc.retryable:
+                console.print(f"[red]{exc}[/red]")
+            else:
+                console.print(f"[yellow]{exc}[/yellow]")
+            log.warning("request failed for %s: %s", url, exc)
+            return None
 
     def _paginate(self, first_url: str, parser, limit: int, *, expect_selector: str):
         """Walk `next` links, following hrefs rather than rebuilding URLs."""
@@ -276,25 +329,67 @@ class RedditClient:
         )
 
         try:
+            return self._fetch_feed(url, limit)
+        except TransportError as exc:
+            # The pre-P6 contract, unchanged: a transport failure is `[]`.
+            # `fetch_feed` is the entry point for a caller that needs to know.
+            log.warning("feed request failed for %s: %s", url, exc)
+            console.print(f"[red]Feed request failed: {exc}[/red]")
+            return []
+
+    def fetch_feed(self, subreddits, *, sort="new", limit=None, query=None):
+        """:meth:`get_feed`, but a transport failure raises ``TransportError``.
+
+        Same request, same parse, same clamp -- only the failure representation
+        differs. Discovery uses this one because a poller that reads a blocked
+        request as "nothing new" advances nothing, reports silence, and is
+        believed (D2, watermark poisoning). ``get_feed`` keeps returning ``[]``
+        so no P5 caller changes behaviour.
+        """
+        discovery = (self.config or {}).get("discovery", {}) or {}
+        if not discovery.get("rss_enabled", True):
+            raise FeedDisabled(
+                "feed collection is disabled (discovery.rss_enabled: false); "
+                "the HTML path is unaffected"
+            )
+
+        if limit is None:
+            limit = discovery.get("rss_limit", DEFAULT_FEED_LIMIT)
+        limit = _clamp_feed_limit(limit)
+
+        url = self._feed_url(
+            subreddits,
+            sort=sort,
+            limit=limit,
+            query=query,
+            host=discovery.get("rss_host") or DEFAULT_RSS_HOST,
+        )
+        return self._fetch_feed(url, limit)
+
+    def _fetch_feed(self, url, limit):
+        """One feed request. Raises ``TransportError``; parse errors still raise
+        ``FeedParseError`` (G3 -- the two must never converge)."""
+        try:
             result = self.http.get(
                 url,
                 request_class=RequestClass.RSS.value,
                 allow_cache=False,
             )
+        except EgressExhausted as exc:
+            raise TransportError(str(exc), retryable=exc.retryable) from exc
         except ProxyExhaustedError as exc:
-            console.print(f"[red]Proxy pool exhausted: {exc}[/red]")
-            return []
+            raise TransportError(f"proxy pool exhausted: {exc}", retryable=True) from exc
         except BlockedError as exc:
-            console.print(f"[yellow]Blocked: {exc}[/yellow]")
-            return []
-        except Exception as exc:  # noqa: BLE001 - one feed must not kill a run
-            log.warning("feed request failed for %s: %s", url, exc)
-            console.print(f"[red]Feed request failed: {exc}[/red]")
-            return []
+            raise TransportError(f"blocked: {exc}", retryable=False) from exc
+        except Exception as exc:  # noqa: BLE001 - normalised into one type
+            raise TransportError(f"feed request failed for {url}: {exc}", retryable=True) from exc
 
         if not result.ok:
-            console.print(f"[yellow]{url} -> {result.status_code} {result.verdict.reason}[/yellow]")
-            return []
+            raise TransportError(
+                f"{url} -> {result.status_code} {result.verdict.reason}",
+                retryable=False,
+                status_code=result.status_code,
+            )
 
         return parse_feed(result.text)[:limit]
 

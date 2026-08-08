@@ -121,9 +121,16 @@ def _drain(worker, session=None, limit=20):
 # ------------------------------------------------------------------ registry
 
 
-def test_registry_holds_exactly_the_three_p3_job_types():
-    """A fourth entry here means a phase boundary was crossed."""
-    assert set(REGISTRY) == {"maintenance", "scrape_subreddit", "finalize_run"}
+def test_registry_holds_exactly_the_job_types_shipped_so_far():
+    """A entry here that no phase added means a phase boundary was crossed.
+
+    P3 registered three; **P6 adds `discover`**, which is in its Deliverables
+    ([34 §P6](../docs/34-implementation-plan.md): "the six-stage discovery
+    pipeline") and its Files row. The assertion is still exact -- an unexpected
+    fourth type fails just as loudly as before -- it simply now names the set
+    that has actually shipped rather than P3's.
+    """
+    assert set(REGISTRY) == {"maintenance", "scrape_subreddit", "finalize_run", "discover"}
 
 
 # ------------------------------------------------------------ end-to-end run

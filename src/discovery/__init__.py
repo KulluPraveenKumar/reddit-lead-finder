@@ -15,5 +15,23 @@ expensive than starting with it:
 """
 
 from .feed_parser import FeedParseError, parse_feed
+from .policy import PolicyConfig, due_at, next_interval, shortened_after_overflow
+from .triage import TriageConfig, TriageResult, triage
+from .watermarks import DiffResult, WatermarkState, advance, detect_overflow, diff
 
-__all__ = ["FeedParseError", "parse_feed"]
+__all__ = [
+    "DiffResult",
+    "FeedParseError",
+    "PolicyConfig",
+    "TriageConfig",
+    "TriageResult",
+    "WatermarkState",
+    "advance",
+    "detect_overflow",
+    "diff",
+    "due_at",
+    "next_interval",
+    "parse_feed",
+    "shortened_after_overflow",
+    "triage",
+]

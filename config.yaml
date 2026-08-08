@@ -158,6 +158,52 @@ discovery:
   # is permitted to use (docs/07 §1), and P0 confirmed it serves feeds.
   rss_host: "https://old.reddit.com"
 
+  # ---- adaptive polling (P6, docs/28 §8.1) --------------------------------
+  #
+  # The scheduler is deterministic and makes zero AI calls (R3). Every key below
+  # is optional: deleting the whole block reproduces these exact defaults.
+  #
+  # The governing constraint is that a feed returns at most 100 items. A
+  # subreddit producing 20 posts/hour must be polled at least every 5 hours or
+  # the window overflows and posts are lost. `window_target` of 60 leaves a 40%
+  # margin against a burst.
+
+  # Never poll faster than this, whatever the measured rate says. Reddit's RSS
+  # limit is per IP with roughly 60s recovery (P0 U1).
+  min_interval: 15m
+
+  # Never poll slower than this. A dead subreddit is still checked daily —
+  # `max_interval` is how we notice it waking up.
+  max_interval: 24h
+
+  # Aim to poll once this many new posts have appeared.
+  window_target: 60
+
+  # Each consecutive empty poll stretches the interval by this fraction,
+  # stopping after `empty_cap` of them.
+  empty_backoff: 0.5
+  empty_cap: 6
+
+  # Subreddits that actually produce leads are polled more often.
+  yield_boost: 1.0
+
+  # Posts older than this are not worth enriching. Nothing is deleted — a lead
+  # is a historical fact — this only bounds what we spend on.
+  window_days: 30
+
+  # Titles containing any of these are rejected at metadata triage, before a
+  # body is ever needed.
+  negative_terms: []
+
+  # NOTE: there is deliberately no `density_threshold`. The density-adaptive
+  # body fetch it configured chose between an HTML listing page and a permalink
+  # for post bodies; P5 measured that an old-Reddit listing page renders its
+  # expandos lazily and carries no selftext at all, so the listing branch spent
+  # a request and returned nothing at any density (ARCHITECTURE_FREEZE §11,
+  # 2026-08-08). The feed already supplies the body for ~97% of posts in the
+  # request stage 1 makes anyway. A key nothing reads is a documented capability
+  # that does not exist, so it is absent rather than ignored.
+
 # ---------------------------------------------------------------------------
 # Network policy (P4) — egress is a policy, not a mandate (AD-25)
 #

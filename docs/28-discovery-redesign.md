@@ -141,17 +141,15 @@ The redesign below uses each for what it is good at.
  ╚═══════════════════════════════╤═══════════════════════════════════════╝
                                  ▼
  ╔═══════════════════════════════════════════════════════════════════════╗
- ║ STAGE 4 — ADAPTIVE BODY FETCH        the ONLY bulk HTML in the design ║
+ ║ STAGE 4 — BODY ACCOUNTING                            0 requests       ║
  ║                                                                       ║
- ║  U2 CONFIRMED — RSS carries selftext, so normally:                     ║
- ║      0 requests — bodies already present                              ║
+ ║  U2 CONFIRMED — the feed carries selftext, measured 97-100 of 100:    ║
+ ║      0 requests — bodies already present from stage 1                 ║
  ║                                                                       ║
- ║  fallback (link posts, or score needed), choose by density:           ║
- ║      survivors ÷ discovered ≥ 25%  →  HTML LISTING walk (25/req,      ║
- ║                                        full data, cursor-paginated)   ║
- ║      survivors ÷ discovered <  25%  →  per-post permalink fetch       ║
+ ║  The remaining ~3% are link and media posts, which have NO selftext   ║
+ ║  on any endpoint. Recorded as body_source='absent', never fetched.    ║
  ║                                                                       ║
- ║  Score and comment-count arrive here, not before.                     ║
+ ║  score / num_comments / comments arrive in P11, not here.             ║
  ╚═══════════════════════════════╤═══════════════════════════════════════╝
                                  ▼
  ╔═══════════════════════════════════════════════════════════════════════╗
@@ -181,10 +179,22 @@ posts, giveaways, megathreads, bot authors, out-of-window items, and everything 
 term — is identifiable from a title. Paying 190 KB to download a post's body before deciding it is a
 job advert is the current design's central inefficiency.
 
-**2. Density-adaptive body fetching (Stage 4).** The crossover is arithmetic, not preference. A
-listing page yields 25 full posts per request; a permalink yields 1. If more than 25% of a page's
-posts are wanted, refetching the page is cheaper than fetching the survivors individually. The
-threshold is exactly `1/25`, computed per subreddit per poll from Stage 3's own output.
+**2. ~~Density-adaptive body fetching (Stage 4).~~** ⛔ **DELETED — refuted in P5, removed in P6.**
+
+> The original text read: *"A listing page yields 25 full posts per request; a permalink yields 1.
+> If more than 25% of a page's posts are wanted, refetching the page is cheaper than fetching the
+> survivors individually."*
+>
+> **The premise is false and always was.** An old-Reddit listing page renders its expandos lazily
+> and carries **no selftext at all** — 0 of 25 live, 0 of 25 in the shipped P0 capture, re-confirmed
+> live on 2026-08-08 ([freeze §11](ARCHITECTURE_FREEZE.md)). The listing branch would spend a
+> request and return no bodies at *any* density, so the heuristic had one reachable arm.
+>
+> The choice it was making no longer exists: the **feed** supplies the body for ~97% of posts in the
+> request stage 1 already makes; the other ~3% are link and media posts with no selftext anywhere;
+> and `score`, `num_comments` and comments are **P11's**, back-filled during a permalink fetch it is
+> making anyway. P6 therefore ships no threshold and no `density_threshold` config key —
+> `tests/test_boundaries.py::test_the_density_heuristic_was_not_reintroduced` keeps it that way.
 
 **3. The watermark is the incremental-sync primitive.** One row per (subreddit, sort):
 
@@ -544,11 +554,11 @@ of proposing the change.
 |---|---|---|---|
 | D1 | **Watermark overflow** — more than 100 new posts between polls; older ones never seen | Feed's oldest item is newer than `last_seen_utc` | Explicit check on every poll; on overflow, fall back to an HTML listing walk **and** shorten the interval. This must be an error, not a silent gap |
 | D2 | **Watermark poisoning** — a bad ID stored; the subreddit appears permanently empty | `consecutive_empty` exceeds a threshold while `rate_per_hour` is non-zero | Alert; `POST /api/agent/discovery/reset?subreddit=` clears it |
-| D3 | **RSS silently deprecated by Reddit** | Feed returns non-Atom, or 404 | The canary parses one feed daily; on failure, fall back to HTML listing automatically. **The HTML path is retained, not deleted** |
+| D3 | **RSS silently deprecated by Reddit** | Feed returns non-Atom, or 404 | The canary parses one feed daily; on failure, fall back to HTML listing automatically. **The HTML path is retained, not deleted.** ⚠️ **The fallback restores *discovery*, not bodies** — an HTML listing page carries no selftext ([freeze §11](ARCHITECTURE_FREEZE.md)), so recovered posts arrive with `body_source='absent'` and a permalink is the only remaining source. HTML **search** does still carry bodies inline, but it cannot enumerate a subreddit's recent window, so listing remains the right fallback for ids |
 | D4 | **RSS 429 under multi-proxy rotation** | `x-ratelimit-remaining: 0` | Respect `x-ratelimit-reset`; treat the RSS budget as *per-IP* until U1 says otherwise |
 | D5 | **Cached feed blocks the watermark** — the 15-min `http_cache` serves a stale feed on a 15-min poll | Watermark does not advance while `rate_per_hour` is high | **Discovery requests bypass `http_cache` entirely.** The watermark *is* the cache |
 | D6 | **Title-only triage rejects a good lead** whose title is bland but whose body is strong | The holdout audit already samples rejects | ▶ **Extend the holdout audit to Stage 3.** 2% of metadata-triage rejects get their body fetched and scored. Without this, the redesign moves a rejection decision earlier and *removes it from measurement* — which is exactly [AD-10b](03-architecture.md)'s prohibition |
-| D7 | **Density heuristic thrashes** at the 25% boundary | Requests per collected item rises | Hysteresis: switch to listing at ≥30%, back to permalink at ≤20% |
+| ~~D7~~ | ~~**Density heuristic thrashes** at the 25% boundary~~ | — | ⛔ **VOID — there is no heuristic to thrash.** §3.1(2) was refuted in P5 and the branch was removed in P6. Hysteresis of 30/20 was a mitigation for a mechanism that never worked |
 
 **D6 is the most important row in this document.** The redesign's central move is deciding earlier,
 on less information. [AD-10b](03-architecture.md) states that *"a gate that silently discards a good
@@ -567,7 +577,14 @@ CREATE TABLE discovery_watermarks (…);          -- §3.1
 CREATE INDEX ix_watermarks_due ON discovery_watermarks (next_poll_at);
 
 -- provisional (metadata-only) pre-score, so Stage 3 rejections are auditable
-ALTER TABLE prescores ADD COLUMN stage VARCHAR(20) NOT NULL DEFAULT 'full';
+--
+-- ⛔ NOT AN ALTER. `prescores` does not exist before 0005 -- docs/33 §2.4 moved
+--    the whole table into this revision and ARCHITECTURE_FREEZE §4.1 records it
+--    there, so there is nothing to alter and this statement could never have
+--    executed. Verified in P6: `prescores` appears in no migration 0001-0004,
+--    in no module under src/, and in none of the live database's 18 tables.
+--    0005 CREATEs the table with `stage` inline. Reconciliation, freeze §11.1.
+CREATE TABLE prescores (…, stage VARCHAR(20) NOT NULL DEFAULT 'full', …);
                                                 -- metadata | full
 ```
 

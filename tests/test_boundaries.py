@@ -164,6 +164,58 @@ def test_discovery_makes_no_ai_calls():
     assert offenders == [], f"src/discovery/ imports the AI layer: {offenders}"
 
 
+def test_the_policy_module_exists_and_is_inside_the_ai_fence():
+    """A5 names `discovery/policy.py` specifically, so its absence must fail.
+
+    `test_discovery_makes_no_ai_calls` walks whatever files exist, which means a
+    deleted or renamed `policy.py` would leave it passing over the remaining
+    files while the criterion it enforces silently stopped being about anything.
+    P5's F3 -- a guard that cannot fail is documentation.
+    """
+    policy = SRC / "discovery" / "policy.py"
+    assert policy.exists(), "R3 and P6's A5 both name src/discovery/policy.py by path"
+    assert "src.ai" not in _executable_tokens(policy)
+
+
+def test_the_density_heuristic_was_not_reintroduced():
+    """P6 removed it; this stops a later reader rebuilding it from the plan.
+
+    [34 §P6] task 5 specified a density-adaptive body fetch -- "listing >=25%,
+    permalink <25%, hysteresis 30/20" -- choosing between an HTML listing page
+    and a permalink when many posts need bodies. P5 measured that an old-Reddit
+    listing page renders its expandos lazily and carries **no selftext at all**:
+    0 of 25 live, 0 of 25 in the shipped P0 capture (ARCHITECTURE_FREEZE §11,
+    2026-08-08). The listing branch spent a request and returned nothing at any
+    density, so the heuristic had one reachable arm and was deleted.
+
+    The same shape of defect as conditional GET above: the *plan* still
+    describes it, so someone following the plan would build it.
+    """
+    # Executable tokens only. The modules that removed the heuristic explain
+    # why in their docstrings, and a check that matched prose would fail on the
+    # very comment recording the decision -- while still passing if someone
+    # reintroduced the key under a different name in a comment-free file.
+    pattern = re.compile(r"density_threshold|density_adaptive")
+    offenders = [
+        str(path.relative_to(PROJECT_ROOT))
+        for path in _python_files(SRC)
+        if pattern.search(_executable_tokens(path))
+    ]
+
+    config = PROJECT_ROOT / "config.yaml"
+    config_text = config.read_text(encoding="utf-8")
+    # The explanatory comment names the key; a *setting* would be `key:` at the
+    # start of a line. Matching the comment would make this untestable.
+    if re.search(r"^\s*density_threshold\s*:", config_text, re.MULTILINE):
+        offenders.append("config.yaml")
+
+    assert offenders == [], (
+        "the density-adaptive body fetch was removed in P6 because an HTML "
+        "listing page carries no selftext (freeze §11). The feed already "
+        f"supplies bodies. Found in: {offenders}"
+    )
+
+
 def test_conditional_get_has_not_been_reintroduced():
     """P0's U4 refuted it; ARCHITECTURE_FREEZE §11 deleted the layer.
 

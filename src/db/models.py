@@ -1,6 +1,8 @@
 import datetime
 
 from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
     Column,
     DateTime,
     Float,
@@ -9,6 +11,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    text,
 )
 from sqlalchemy.orm import declarative_base
 
@@ -459,3 +462,96 @@ class RunEvent(Base):
 
     def __repr__(self):
         return f"<RunEvent run={self.run_id} {self.event}>"
+
+
+class DiscoveryWatermark(Base):
+    """How far discovery has read one channel. The incremental-sync primitive.
+
+    One row per (subreddit, channel, query). `last_seen_utc` exists *only* to
+    detect overflow - the diff itself is on the id set, because `t3_` fullnames
+    are base-36 but not reliably ordered across shards.
+
+    There is no `last_etag` / `last_modified`: Reddit sends neither header on
+    `.rss` (P0 U4, re-observed 2026-08-08), so there is nothing to store.
+    """
+
+    __tablename__ = "discovery_watermarks"
+
+    id = Column(Integer, primary_key=True)
+    subreddit = Column(String(100), nullable=False)
+    channel = Column(String(20), nullable=False)  # listing | search
+    query = Column(String(300), nullable=True)  # NULL for listing
+    last_seen_fullname = Column(String(20), nullable=True)
+    last_seen_utc = Column(DateTime, nullable=True)
+    last_polled_at = Column(DateTime, nullable=True)
+    consecutive_empty = Column(Integer, nullable=False, default=0)
+    observed_rate_per_hour = Column(Float, nullable=True)
+    next_poll_at = Column(DateTime, nullable=True)
+
+    __table_args__ = (
+        # Two partial uniques, not one three-column unique. SQLite treats NULLs
+        # as distinct in a UNIQUE index, so a single `(subreddit, channel,
+        # query)` index would not constrain listing rows at all - `query` is
+        # NULL for every one of them. Duplicated listing watermarks are
+        # watermark poisoning (docs/28 D2) arriving through the schema.
+        Index(
+            "ux_watermarks_listing",
+            "subreddit",
+            "channel",
+            unique=True,
+            sqlite_where=text("query IS NULL"),
+        ),
+        Index(
+            "ux_watermarks_search",
+            "subreddit",
+            "channel",
+            "query",
+            unique=True,
+            sqlite_where=text("query IS NOT NULL"),
+        ),
+        Index("ix_watermarks_due", "next_poll_at"),
+    )
+
+    def __repr__(self):
+        return f"<DiscoveryWatermark {self.subreddit}/{self.channel}>"
+
+
+class Prescore(Base):
+    """One row per collected item - admitted OR rejected.
+
+    Storing the rejections is the whole point: without them the funnel could
+    report *that* items were filtered but never *which*, and the gate would be
+    untunable (R11, AD-10b). `stage` distinguishes a provisional judgement made
+    from title and snippet alone from a full one made with a body.
+
+    `comment_id` carries no ForeignKey: `comments` arrives in 0006, which closes
+    the constraint. The CHECK still holds without it - it constrains which
+    column is populated, not what it points at.
+    """
+
+    __tablename__ = "prescores"
+
+    id = Column(Integer, primary_key=True)
+    run_id = Column(Integer, ForeignKey("runs.id", ondelete="CASCADE"), nullable=False)
+    lead_id = Column(Integer, ForeignKey("leads.id", ondelete="CASCADE"), nullable=True)
+    comment_id = Column(Integer, nullable=True)
+    total = Column(Float, nullable=False)
+    components_json = Column(Text, nullable=False)
+    stage = Column(String(20), nullable=False, default="full")  # metadata | full
+    gate_decision = Column(String(20), nullable=False)  # admit | reject | cached | grouped
+    gate_reason = Column(String(30), nullable=True)
+    holdout_sampled = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime, nullable=False, default=_utcnow)
+
+    __table_args__ = (
+        CheckConstraint(
+            "(lead_id IS NOT NULL) <> (comment_id IS NOT NULL)",
+            name="ck_prescores_one_target",
+        ),
+        Index("ix_prescores_run", "run_id", "gate_decision"),
+        Index("ix_prescores_reason", "run_id", "gate_reason"),
+        Index("ix_prescores_total", "run_id", text("total DESC")),
+    )
+
+    def __repr__(self):
+        return f"<Prescore {self.stage} {self.gate_decision} {self.total}>"

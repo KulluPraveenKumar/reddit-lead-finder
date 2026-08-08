@@ -288,6 +288,26 @@ predecessor has not been approved. The `.claude/skills/phase-manager` skill enfo
 | **Rollback** | `discovery.rss_enabled: false` → HTML listing walk, exactly as before; `alembic downgrade 0004` |
 | **Docs** | [28 §10](28-discovery-redesign.md) `prescores.stage` in `CREATE TABLE`; [05](05-database-plan.md) chain + deferred FK; [07 §5](07-scraping-pipeline.md), [07 §7](07-scraping-pipeline.md), [07 §8](07-scraping-pipeline.md); [06c §3](06c-local-first-pipeline.md) L0/L1 |
 
+> ✅ **DELIVERED 2026-08-08.** Report: [PHASE-06-COMPLETION-REPORT.md](PHASE-06-COMPLETION-REPORT.md) ·
+> Handover: [PHASE-06-HANDOVER.md](PHASE-06-HANDOVER.md) ·
+> Review: [P6-IMPLEMENTATION-REVIEW.md](P6-IMPLEMENTATION-REVIEW.md).
+> **Task 5's redesign, which this row asked for:** the density-adaptive body fetch is **deleted, not
+> replaced.** Its inputs do not exist — the listing branch returns no bodies at any density, the feed
+> already supplies ~97% in the request stage 1 makes anyway, the remaining ~3% are link/media posts
+> with no selftext on any endpoint, and `score`/`num_comments`/comments belong to **P11**. Stage 4 is
+> now body *accounting* (`body_source`), and no `density_threshold` key ships. Three
+> [§11.1 reconciliations](ARCHITECTURE_FREEZE.md) apply the amendment to [28 §3](28-discovery-redesign.md),
+> §3.1(2), D3 and D7.
+> **Two further conflicts were found and resolved during implementation**, both recorded as
+> reconciliations: [28 §10](28-discovery-redesign.md)'s `ALTER TABLE prescores` is a `CREATE` (the
+> table exists in no earlier migration), and **task 4's "provisional prescore" cannot be written** —
+> the CHECK constraint requires every prescore to name a stored `Lead`, and a triage rejection is a
+> post that was never stored. **Found by mutation testing**, when two mutations survived because the
+> branch was unreachable. P6 records the stage-3 funnel as **counters keyed by rejection reason**;
+> per-item auditability and the 2% holdout remain P11's, which already owns them.
+> **N2 closed:** the transport now raises `TransportError` carrying `retryable`, and the six frozen
+> `RedditClient` methods keep their `None` contract by catching it.
+
 ## P7 — Notification tier
 
 | | |
