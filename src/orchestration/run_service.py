@@ -355,7 +355,21 @@ class RunService:
         """
         run = self._get(run_id)
         run.error = redact(error)[:4000]
-        return self.transition(run_id, RunState.FAILED, reason=run.error)
+        failed = self.transition(run_id, RunState.FAILED, reason=run.error)
+
+        # P7 D7: give the failure path a drain. `finalize_run` does not run on a
+        # failed run, and nothing in the tree enqueues `maintenance`
+        # (DEFERRED-IMPROVEMENTS DI17), so without this the one notification the
+        # operator most needs -- "the run failed" -- would never be delivered.
+        #
+        # An **enqueue, not a send**. This method is reachable from a web route,
+        # and a network call inside a request would violate R8 and re-open trap T0
+        # from the web side. One row, in this same transaction, so the job is
+        # atomic with the FAILED transition: a rollback cannot leave a job pointing
+        # at a run that never failed. Delivery happens in the worker, where the
+        # commit-then-send discipline already lives and is already tested.
+        self.queue.enqueue(FINALIZE_JOB, run_id=run_id, payload={}, session=self.session)
+        return failed
 
     def cancel(self, run_id: int, reason: str = "Cancelled by the operator.") -> Run:
         """Cancel queued work and stop the run.

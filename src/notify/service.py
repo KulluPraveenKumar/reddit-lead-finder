@@ -15,16 +15,19 @@ handled by the row §4.12 itself supplies last: *everything else -> Suppress*. N
 ambiguity path exists, and ``tests/test_boundaries.py`` fences the package
 against ever growing one.
 
-**What this module deliberately does not do.** It does not read the database,
-render a body, choose a transport, or send anything. ``decide`` answers one
-question and returns; the caller acts. Splitting it this way is what lets the
-whole policy be tested without a database at all.
+**The policy half of this module reads nothing.** ``decide``, ``quiet_hours`` and
+``POLICY`` take no session and perform no I/O; they answer one question from their
+arguments and return. That is what lets the whole policy be tested without a
+database, and it is why ``decide`` is a module-level function rather than a method
+on the service class sketched in ``docs/P7-IMPLEMENTATION-REVIEW.md`` §8 -- giving
+it a ``Session`` would make every policy test build a database to answer a question
+about arithmetic on a payload.
 
-``decide`` is a module-level function rather than a method on the service class
-sketched in ``docs/P7-IMPLEMENTATION-REVIEW.md`` §8. The service needs a
-``Session``; the policy does not, and giving it one would make every policy test
-build a database to answer a question about arithmetic on a payload. The service
-arrives with the dispatcher and delegates here.
+**The dispatch half -- :class:`NotificationService` -- does touch the database**,
+and its boundaries are the point: it reads, then the caller's transaction is
+already closed, then it sends, then it writes the outcome in a transaction of its
+own. Diagram and boundary rules: ``docs/P7-STAGE5-FLOW.md``. Retry is **not** in
+this stage, by the operator's instruction; the gap is recorded in that document §4.
 
 Specification: ``docs/34-implementation-plan.md`` §P7 tasks 1 and 5 ·
 ``docs/22-hermes-skills.md`` §4.12 · ``docs/P7-DECISION-ANALYSIS.md`` D2, D2b, D5.
@@ -32,12 +35,23 @@ Specification: ``docs/34-implementation-plan.md`` §P7 tasks 1 and 5 ·
 
 from __future__ import annotations
 
+import json
+import logging
 import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, time
 from enum import StrEnum
 from typing import Any
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from src.db.models import RunEvent
+from src.obs.events import emit_event
+from src.orchestration.states import JobState, RunState
+
+log = logging.getLogger(__name__)
 
 
 class Kind(StrEnum):
@@ -64,10 +78,17 @@ class Kind(StrEnum):
     * ``budget.warning`` -- needs an 80%-of-cap signal. ``src/ai/cost.py`` raises
       at 100% only, and nothing spends anything before P19.
 
-    Values are the ``run_events.event`` strings, so a kind and the timeline row
-    that carries it are the same identifier. Dedup rides on ``run_events`` plus
-    the transition guard (AD-29); there is no ``notification_log`` table, which
-    was withdrawn.
+    ⚠️ **A value here is not a timeline event name**, and Stage 2 said otherwise.
+    Only ``discovery.overflow`` happens to be emitted under the same string;
+    ``run_service.transition`` emits **one** event name -- ``run.transition`` --
+    for every hop, with the states in its payload, and egress degradation is
+    ``net.degraded``. So four of the five kinds are *derived* from evidence rather
+    than matched by name. See :data:`TRANSITION_KINDS` and :data:`EVENT_KINDS`.
+
+    What the values *are* is the identifier a ``notify.sent`` row carries, which
+    is what makes them the dedup key. Dedup rides on ``run_events`` plus the
+    transition guard (AD-29); there is no ``notification_log`` table, which was
+    withdrawn.
     """
 
     #: A run reached COMPLETE.
@@ -327,6 +348,71 @@ POLICY: dict[Kind, Callable[[Mapping[str, Any]], Decision]] = {
 }
 
 
+#: Which ``run.transition`` destination proves which kind.
+#:
+#: ⚠️ **A kind is not a timeline event name.** Only ``discovery.overflow`` is
+#: emitted under the same string as its kind; the other four have to be *derived*
+#: from evidence:
+#:
+#: * ``run.complete`` / ``run.failed`` / ``gate.reached`` -> ``run.transition``
+#:   rows, distinguished by ``to_state`` (``run_service.transition`` emits one
+#:   event name for every hop, with the states in its payload).
+#: * ``proxy.pool_degraded`` -> one or more ``net.degraded`` rows.
+#:
+#: This mapping exists because ``docs/P7-IMPLEMENTATION-REVIEW.md`` §8 asserted
+#: the opposite -- *"a kind and the timeline row that carries it are the same
+#: identifier"* -- which is true for one kind in five. Found by reading
+#: ``run_service.transition`` before writing the dispatcher; the review has been
+#: corrected rather than worked around.
+TRANSITION_KINDS: dict[str, Kind] = {
+    RunState.COMPLETE.value: Kind.RUN_COMPLETE,
+    RunState.FAILED.value: Kind.RUN_FAILED,
+    RunState.AWAITING_SUBREDDIT_REVIEW.value: Kind.GATE_REACHED,
+    RunState.AWAITING_KEYWORD_REVIEW.value: Kind.GATE_REACHED,
+    RunState.AWAITING_OPTIONS.value: Kind.GATE_REACHED,
+}
+
+#: Which plain timeline event proves which kind.
+EVENT_KINDS: dict[str, Kind] = {
+    "discovery.overflow": Kind.DISCOVERY_OVERFLOW,
+    "net.degraded": Kind.PROXY_POOL_DEGRADED,
+}
+
+#: The gate number an operator recognises, per waiting state. ``AWAITING_OPTIONS``
+#: has none -- ``docs/34`` §P18 numbers two gates -- so its reason line says
+#: "a gate is waiting" rather than inventing a third number.
+GATE_NUMBERS: dict[str, int | None] = {
+    RunState.AWAITING_SUBREDDIT_REVIEW.value: 1,
+    RunState.AWAITING_KEYWORD_REVIEW.value: 2,
+    RunState.AWAITING_OPTIONS.value: None,
+}
+
+#: The two rows P7 writes. No table is added -- AD-29 puts dedup on ``run_events``
+#: plus the transition guard, and ``notification_log`` is withdrawn.
+SENT_EVENT = "notify.sent"
+FAILED_EVENT = "notify.failed"
+
+#: Deterministic dispatch order, so two runs with the same evidence produce the
+#: same sequence of messages. Failures first: if a transport dies part-way, the
+#: message that mattered most has already gone.
+DISPATCH_ORDER: tuple[Kind, ...] = (
+    Kind.RUN_FAILED,
+    Kind.DISCOVERY_OVERFLOW,
+    Kind.RUN_COMPLETE,
+    Kind.GATE_REACHED,
+    Kind.PROXY_POOL_DEGRADED,
+)
+
+
+@dataclass(frozen=True, slots=True)
+class Sent:
+    """One delivered notification, as recorded."""
+
+    kind: Kind
+    transport: str
+    message_id: str
+
+
 def decide(
     kind: Kind | str,
     payload: Mapping[str, Any] | None = None,
@@ -370,3 +456,248 @@ def decide(
         return Decision(False, f"{decision.reason}, but quiet hours are in effect")
 
     return decision
+
+
+class NotificationService:
+    """Reads the timeline, decides, renders, sends, records. In that order.
+
+    The tier is a **reader of ``run_events``**, not a set of push hooks bolted onto
+    each emitter, and that is what ``docs/34`` §P7 tasks 2 and 4 describe when read
+    together: *"renderers from SQL"* and *"query-based dedup against run_events"*
+    are one mechanism rather than two. Emitters keep calling ``emit_event`` and stay
+    unaware notifications exist -- so ``worker.py`` is untouched, no job type is
+    added (``04`` §2.4's list stays closed), and nothing is ever sent from inside a
+    Flask request (**R8**).
+
+    **The caller must have committed.** ``dispatch_pending`` refuses a dirty
+    session rather than trusting the convention, because the convention is the one
+    this project keeps re-breaking: SQLite has a single write lock, a session with
+    pending writes holds it until commit, and a send takes seconds. That is trap
+    **T0** -- *"P7 is where it returns"* -- and P3 lost a sign-off to it.
+
+    Flow, boundaries and costs: ``docs/P7-STAGE5-FLOW.md``.
+    """
+
+    def __init__(
+        self,
+        session: Session,
+        transport: Any = None,
+        settings: NotifySettings | None = None,
+    ) -> None:
+        self.session = session
+        self.settings = settings or NotifySettings()
+        self._transport = transport
+
+    # -- the transport -------------------------------------------------------
+
+    @property
+    def transport(self) -> Any:
+        """Built on first use, from config, unless one was injected.
+
+        Lazy so that constructing the service never raises: a missing token is a
+        configuration problem to report on the run's timeline, not a reason for
+        ``finalize_run`` to fail a run that completed correctly.
+        """
+        if self._transport is None:
+            from src.notify.transport import build_transport
+
+            self._transport = build_transport(self.settings)
+        return self._transport
+
+    # -- dispatch ------------------------------------------------------------
+
+    def dispatch_pending(self, run_id: int, *, now: datetime | None = None) -> list[Sent]:
+        """Send whatever this run has earned and has not already been sent.
+
+        Returns what went. Idempotent by query: a second call finds the
+        ``notify.sent`` rows the first wrote and sends nothing again.
+
+        **At-least-once, not exactly-once.** There is an irreducible window
+        between the transport returning and the ``notify.sent`` row committing; a
+        crash inside it re-sends. Stated as assumption A3 rather than papered
+        over, because the alternative -- writing the row first -- would claim a
+        delivery that had not happened, which is the worse failure.
+        """
+        if not self.settings.enabled:
+            return []
+
+        # T0, made executable. A dirty session means the write lock is held, and
+        # the send below would hold it across the network. Mutation M1 moves the
+        # dispatch above the caller's commit; this is what catches it.
+        if self.session.dirty or self.session.new or self.session.deleted:
+            raise RuntimeError(
+                "dispatch_pending requires a committed session: a notification sent while "
+                "writes are pending holds SQLite's single write lock across a network call "
+                "(PHASE-06-HANDOVER T0). Commit the handler's bookkeeping first."
+            )
+
+        # Not `datetime.utcnow()`: deprecated in 3.12 and it RAISES under the
+        # gate's `-W error::DeprecationWarning` run. The whole schema stores naive
+        # UTC, so an aware value here would compare wrongly against it -- the same
+        # reasoning `models._utcnow` and `job_queue.utcnow` already record.
+        moment = now or datetime.now(UTC).replace(tzinfo=None)
+        chat_id = (self.settings.telegram_chat_id or "").strip()
+        if not chat_id and self.transport.name != "null":
+            # Nothing is attempted and nothing recorded, so configuring the chat
+            # id later delivers rather than having silently skipped a run.
+            log.warning("notify.telegram_chat_id is not set; nothing sent for run %s", run_id)
+            return []
+
+        already = self._already_sent(run_id)
+        evidence = self._evidence(run_id)
+        sent: list[Sent] = []
+
+        for kind in DISPATCH_ORDER:
+            if kind in already or kind not in evidence:
+                continue
+            decision = decide(kind, evidence[kind], settings=self.settings, now=moment)
+            if not decision.notify:
+                # Not recorded. A message held back by quiet hours must be
+                # deliverable by a later pass, so suppression is not a decision
+                # about the message -- only about now.
+                log.info("notification suppressed: %s -- %s", kind.value, decision.reason)
+                continue
+
+            result = self._send_one(run_id, kind, chat_id)
+            if result is not None:
+                sent.append(result)
+
+        return sent
+
+    def _send_one(self, run_id: int, kind: Kind, chat_id: str) -> Sent | None:
+        """Render, send, record. One send, one commit, no retry.
+
+        Retry is **not** implemented here: the operator scoped it out of this
+        stage. ``docs/34`` §P7 task 6's other half -- *"failures recorded, never
+        silent"* -- is delivered, and the gap is recorded in
+        ``docs/P7-STAGE5-FLOW.md`` §4 rather than left to be assumed.
+        """
+        from src.notify.renderers import render
+
+        body = render(kind, self.session, run_id)
+        transport = self.transport
+        try:
+            message_id = transport.send(chat_id=chat_id, markdown=body)
+        except Exception as exc:
+            # Never silent, and never fatal to the run. `finalize_run` has already
+            # committed the terminal transition, so a dead transport cannot undo a
+            # completed run -- AD-9 applied to the notification tier.
+            emit_event(
+                self.session,
+                run_id,
+                FAILED_EVENT,
+                level="error",
+                message=f"could not send the {kind.value} notification: {exc}",
+                kind=kind.value,
+                transport=getattr(transport, "name", "unknown"),
+                retryable=bool(getattr(exc, "retryable", False)),
+            )
+            self.session.commit()
+            log.error("notification failed: %s", kind.value)
+            return None
+
+        emit_event(
+            self.session,
+            run_id,
+            SENT_EVENT,
+            message=f"sent the {kind.value} notification",
+            kind=kind.value,
+            transport=transport.name,
+            message_id=str(message_id),
+            chat_id_hash=hash_chat_id(chat_id),
+        )
+        self.session.commit()
+        return Sent(kind=kind, transport=transport.name, message_id=str(message_id))
+
+    # -- reads ---------------------------------------------------------------
+
+    def _already_sent(self, run_id: int) -> set[Kind]:
+        """The kinds this run has already been notified about.
+
+        The dedup query AD-29 asks for, keyed on ``(run_id, kind)``. Keyed on both
+        deliberately: on ``run_id`` alone a run would get one message ever, and on
+        ``kind`` alone a second run would be silent.
+        """
+        rows = self.session.execute(
+            select(RunEvent.data_json).where(
+                RunEvent.run_id == run_id, RunEvent.event == SENT_EVENT
+            )
+        ).all()
+        out: set[Kind] = set()
+        for (data_json,) in rows:
+            try:
+                payload = json.loads(data_json) if data_json else {}
+            except (TypeError, ValueError):
+                continue
+            if isinstance(payload, dict):
+                try:
+                    out.add(Kind(payload.get("kind")))
+                except ValueError:
+                    continue
+        return out
+
+    def _evidence(self, run_id: int) -> dict[Kind, dict[str, Any]]:
+        """Which kinds this run has earned, and the payload the policy needs.
+
+        Every figure comes from SQL, never from a caller -- the same rule the
+        renderers hold to, and for the same reason: a count passed in can disagree
+        with the database that produced it.
+        """
+        from src.notify.renderers import collection_totals, subreddit_job_counts
+
+        found: dict[Kind, dict[str, Any]] = {}
+
+        rows = self.session.execute(
+            select(RunEvent.event, RunEvent.data_json)
+            .where(RunEvent.run_id == run_id)
+            .order_by(RunEvent.id)
+        ).all()
+
+        overflowed: list[str] = []
+        degradations = 0
+        for event, data_json in rows:
+            try:
+                payload = json.loads(data_json) if data_json else {}
+            except (TypeError, ValueError):
+                payload = {}
+            if not isinstance(payload, dict):
+                payload = {}
+
+            if event == "run.transition":
+                kind = TRANSITION_KINDS.get(str(payload.get("to_state") or ""))
+                if kind is Kind.GATE_REACHED:
+                    found[kind] = {"gate": GATE_NUMBERS.get(str(payload.get("to_state")))}
+                elif kind is not None:
+                    found[kind] = {}
+            elif event in EVENT_KINDS:
+                if event == "discovery.overflow":
+                    subreddit = payload.get("subreddit")
+                    if subreddit:
+                        overflowed.append(str(subreddit))
+                    found[Kind.DISCOVERY_OVERFLOW] = {"overflowed_subreddits": overflowed}
+                else:
+                    degradations += 1
+                    found[Kind.PROXY_POOL_DEGRADED] = {"degradations": degradations}
+
+        if Kind.RUN_COMPLETE in found:
+            leads, _posts = collection_totals(self.session, run_id)
+            counts = subreddit_job_counts(self.session, run_id)
+            found[Kind.RUN_COMPLETE] = {
+                "leads": leads,
+                "subreddits_failed": counts.get(JobState.FAILED.value, 0),
+                "subreddits_cancelled": counts.get(JobState.CANCELLED.value, 0),
+            }
+        return found
+
+
+def hash_chat_id(chat_id: str) -> str:
+    """A short, stable digest of the chat id.
+
+    ``run_events.data_json`` is rendered into an HTML page, so **R15** keeps a
+    chat identifier out of a template. A digest still answers the only question an
+    operator asks of it -- "did this go to the right chat?" -- while the raw value
+    never leaves the settings it came from.
+    """
+    import hashlib
+
+    return hashlib.sha256(chat_id.encode("utf-8")).hexdigest()[:12]

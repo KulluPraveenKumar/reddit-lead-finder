@@ -18,6 +18,7 @@ from src.db import database
 from src.db.models import Job, Run, RunEvent
 from src.orchestration.job_queue import JobQueue
 from src.orchestration.run_service import (
+    FINALIZE_JOB,
     SCRAPE_WALK,
     RunAlreadyActive,
     RunNotFound,
@@ -318,6 +319,16 @@ def test_retry_abandons_work_left_queued_by_the_failed_attempt(service, session)
     A run can fail with jobs still queued -- one subreddit's job fails for good
     while three are waiting. Those three stay claimable, so enqueueing a fresh
     set beside them meant every subreddit was scraped twice on retry.
+
+    **The count changed from 6 to 7 in P7**, and it is a contract change rather
+    than a loosened number: ``fail()`` now enqueues a ``finalize_run`` job so a
+    failed run gets its notification (D7). That job must be **cancelled** by a
+    retry, and the assertion below is the load-bearing half of this test now --
+    if it were left queued, the worker would claim it against a run that is
+    already back in ``SCRAPING`` and **finalise the retried attempt
+    prematurely**, which is a far worse defect than the notification this trades
+    away. The trade is recorded in ``docs/P7-STAGE5-FLOW.md``: an operator who
+    presses retry has already seen the failure on the run page.
     """
     run = _create(service, session, subreddits=("a", "b", "c"))
     service.fail(run.id, "boom")
@@ -327,9 +338,16 @@ def test_retry_abandons_work_left_queued_by_the_failed_attempt(service, session)
     session.commit()
 
     jobs = session.query(Job).filter(Job.run_id == run.id).all()
-    assert len(jobs) == 6, "the old jobs should still exist as evidence"
+    assert len(jobs) == 7, "the old jobs should still exist as evidence"
     assert sum(j.state == JobState.QUEUED.value for j in jobs) == 3
-    assert sum(j.state == JobState.CANCELLED.value for j in jobs) == 3
+    assert sum(j.state == JobState.CANCELLED.value for j in jobs) == 4
+
+    finalisers = [j for j in jobs if j.job_type == FINALIZE_JOB]
+    assert len(finalisers) == 1, "fail() enqueues exactly one finaliser"
+    assert finalisers[0].state == JobState.CANCELLED.value, (
+        "a finaliser left queued across a retry would finalise the NEW attempt"
+    )
+    assert not [j for j in jobs if j.job_type == FINALIZE_JOB and j.state == JobState.QUEUED.value]
 
 
 def test_retry_walks_the_same_path_as_create(service, session):

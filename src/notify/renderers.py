@@ -99,7 +99,7 @@ def _run(session: Session, run_id: int):
     return row
 
 
-def _collection_totals(session: Session, run_id: int) -> tuple[int, int]:
+def collection_totals(session: Session, run_id: int) -> tuple[int, int]:
     """``(leads, posts)`` summed over this run's ``scrape_runs`` audit rows.
 
     This is the honest SQL source for "how many leads did the run find".
@@ -122,7 +122,7 @@ def _collection_totals(session: Session, run_id: int) -> tuple[int, int]:
     return int(row[0] or 0), int(row[1] or 0)
 
 
-def _subreddit_job_counts(session: Session, run_id: int) -> dict[str, int]:
+def subreddit_job_counts(session: Session, run_id: int) -> dict[str, int]:
     """``{job state: count}`` over this run's per-subreddit jobs.
 
     One ``GROUP BY`` rather than loading rows: a run with a hundred subreddits
@@ -223,8 +223,8 @@ def _lines(title: str, fields: Sequence[tuple[str, str | None]], *, note: str = 
 
 def render_run_complete(session: Session, run_id: int) -> str:
     run = _run(session, run_id)
-    leads, posts = _collection_totals(session, run_id)
-    counts = _subreddit_job_counts(session, run_id)
+    leads, posts = collection_totals(session, run_id)
+    counts = subreddit_job_counts(session, run_id)
 
     done = counts.get(JobState.DONE.value, 0)
     failed = counts.get(JobState.FAILED.value, 0)
@@ -252,8 +252,8 @@ def render_run_failed(session: Session, run_id: int) -> str:
     rather than alarming.
     """
     run = _run(session, run_id)
-    leads, posts = _collection_totals(session, run_id)
-    counts = _subreddit_job_counts(session, run_id)
+    leads, posts = collection_totals(session, run_id)
+    counts = subreddit_job_counts(session, run_id)
 
     fields: list[tuple[str, str | None]] = [
         ("Error", (run.error or "").strip() or "no error was recorded"),
@@ -386,10 +386,12 @@ def render(kind: Kind | str, session: Session, run_id: int) -> str:
 __all__ = [
     "GATE_LABELS",
     "RENDERERS",
+    "collection_totals",
     "render",
     "render_discovery_overflow",
     "render_gate_reached",
     "render_proxy_pool_degraded",
     "render_run_complete",
     "render_run_failed",
+    "subreddit_job_counts",
 ]
