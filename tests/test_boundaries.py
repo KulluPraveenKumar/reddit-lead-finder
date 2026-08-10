@@ -177,6 +177,201 @@ def test_the_policy_module_exists_and_is_inside_the_ai_fence():
     assert "src.ai" not in _executable_tokens(policy)
 
 
+def _imported_modules(path: Path) -> set[str]:
+    """Every module name this file imports, resolved to absolute. Imports only.
+
+    Not identifiers, not string literals -- and that distinction is load-bearing
+    for R4. Transport T2 is specified as a ``subprocess`` call to the ``hermes``
+    binary (``docs/21`` §7.1), so the literal string ``"hermes"`` must stay legal
+    in an argv list while ``import hermes`` must not. A token- or text-based fence
+    cannot tell those apart, and would therefore fail on the one implementation
+    the architecture actually asked for -- the same trap ARCHITECTURE_FREEZE §11.1
+    already recorded for fences 1 and 4, where a literal ``grep -ri`` would have
+    forced an engineer to delete the comment explaining why the boundary exists.
+
+    Relative imports are resolved against the file's own package, so
+    ``from ..ai import service`` inside ``src/notify/`` is reported as ``src.ai``
+    and cannot slip past a check written for the absolute form.
+
+    Dynamic imports are covered for the two spellings that appear in real code:
+    ``importlib.import_module("x")`` and ``__import__("x")``.
+    """
+    import ast
+
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    package = path.relative_to(PROJECT_ROOT).parts[:-1]
+
+    modules: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            modules.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            if node.module is None:
+                continue
+            if not node.level:
+                modules.add(node.module)
+            else:
+                # level 1 is the containing package, 2 its parent, and so on.
+                base = package[: len(package) - (node.level - 1)]
+                modules.add(".".join((*base, node.module)))
+        elif isinstance(node, ast.Call):
+            called = getattr(node.func, "attr", None) or getattr(node.func, "id", None)
+            if called in {"import_module", "__import__"} and node.args:
+                first = node.args[0]
+                if isinstance(first, ast.Constant) and isinstance(first.value, str):
+                    modules.add(first.value)
+    return modules
+
+
+def _imports_any(path: Path, roots: set[str]) -> list[str]:
+    """The members of ``roots`` this file imports, matching whole packages only.
+
+    ``hermes`` matches ``hermes`` and ``hermes.client``; it must not match a
+    hypothetical ``hermesutils``, which is a different distribution.
+    """
+    found = set()
+    for module in _imported_modules(path):
+        for root in roots:
+            if module == root or module.startswith(root + "."):
+                found.add(root)
+    return sorted(found)
+
+
+def test_the_platform_never_imports_hermes():
+    """Grep fence 3 (R4) -- and the first implementation of it.
+
+    ``docs/34`` §1.2 lists *"all four grep fences pass (R2-R5)"* as a **universal**
+    acceptance criterion, for every phase without exception. Fence 3 did not
+    exist: before P7, ``grep -i hermes tests/`` matched no file at all, so six
+    phases ticked a line nobody could have checked. Exactly the defect P4 found
+    for fence 4, which ``docs/12`` §14 had also ticked as delivered while it was
+    absent, and which failed on seven identifiers the moment it was written.
+
+    **R4 is a one-way dependency, not a vocabulary ban.** The platform is the data
+    plane; Hermes is the control plane above it (``ARCHITECTURE_FREEZE`` §1). The
+    platform must keep working with Hermes uninstalled -- which is the state of
+    this machine, and remains so until P23. So this fence is about *imports*: see
+    :func:`_imported_modules` for why a text match would break transport T2.
+
+    Scope is all of ``src/``, deliberately wider than fence 4's ``src/net/``:
+    there is no module anywhere in the platform that is supposed to know about the
+    agent runtime.
+    """
+    scanned = 0
+    offenders = []
+    for path in _python_files(SRC):
+        scanned += 1
+        hits = _imports_any(path, {"hermes"})
+        if hits:
+            offenders.append(f"{path.relative_to(PROJECT_ROOT)}: {hits}")
+
+    # A fence that walked nothing would report no violations while checking
+    # nothing -- P6's F3, and the reason every fence here counts its own inputs.
+    assert scanned > 0, "fence 3 scanned no files; SRC is wrong or the tree is empty"
+    assert offenders == [], (
+        "R4: src/ never imports Hermes -- the platform does not depend on the "
+        "control plane, and must run with Hermes uninstalled. Transport T2 reaches "
+        "it as a subprocess, which needs no import. Offenders: " + str(offenders)
+    )
+
+
+def test_notify_imports_no_model():
+    """R17 / AD-28: notifications never invoke a model.
+
+    ``docs/21`` §7.1 states it without qualification -- *"No model is involved in
+    a notification, ever"* -- and ``docs/34`` §P7's acceptance criterion is *"zero
+    tokens consumed"*. ``docs/22`` §4.12 describes a ``notify-policy`` skill that
+    would classify the *"~5%"* of events its deterministic table cannot, but R17
+    admits no five per cent and that skill is not in the three-skill first
+    delivery (``ARCHITECTURE_FREEZE`` §7). No ambiguity path is built: the table
+    covers every kind, and anything unrecognised is suppressed.
+
+    An import fence cannot see a subprocess, so this is necessarily one half of
+    the guard. The other half is the token assertion -- zero ``ai_calls`` rows for
+    a run that sent a message -- which is the criterion that actually matters and
+    which arrives with the dispatcher in Stage 5.
+    """
+    notify = SRC / "notify"
+    assert notify.exists(), "src/notify/ is P7's package; its absence is a failure, not a skip"
+
+    scanned = 0
+    offenders = []
+    for path in _python_files(notify):
+        scanned += 1
+        hits = _imports_any(path, {"src.ai", "hermes"})
+        if hits:
+            offenders.append(f"{path.relative_to(PROJECT_ROOT)}: {hits}")
+
+    assert scanned > 0, "the R17 fence scanned no files under src/notify/"
+    assert offenders == [], (
+        "R17/AD-28: src/notify/ imports neither the AI layer nor an agent runtime. "
+        "A notification that cost a model call would make the most frequent message "
+        "in the system the most expensive one. Offenders: " + str(offenders)
+    )
+
+
+def test_notify_confines_the_http_client_to_transport():
+    """``docs/34`` §P7: *"renderers.py imports neither src.ai nor an HTTP client."*
+
+    The rule generalises usefully, so it is enforced as one: **exactly one module
+    in this package may speak to the network**, and it is ``transport.py``. A
+    renderer that could make a request would be able to enrich a message body from
+    somewhere other than the database, and "rendered from SQL" would stop being
+    checkable. Confining egress to one file also means the R15 redaction argument
+    has one place to hold.
+
+    ``transport.py`` is allowed ``requests`` -- already a dependency, so P7 adds
+    none (``ARCHITECTURE_FREEZE`` §5 is untouched).
+    """
+    notify = SRC / "notify"
+    assert notify.exists(), "src/notify/ is P7's package; its absence is a failure, not a skip"
+
+    clients = {"requests", "httpx", "aiohttp", "urllib3", "urllib.request", "http.client"}
+    allowed = {"transport.py"}
+
+    scanned = 0
+    offenders = []
+    for path in _python_files(notify):
+        scanned += 1
+        if path.name in allowed:
+            continue
+        hits = _imports_any(path, clients)
+        if hits:
+            offenders.append(f"{path.relative_to(PROJECT_ROOT)}: {hits}")
+
+    assert scanned > 0, "the HTTP-confinement fence scanned no files under src/notify/"
+    assert offenders == [], (
+        "only src/notify/transport.py may import an HTTP client; a renderer builds "
+        "its body from SQL. Offenders: " + str(offenders)
+    )
+
+
+def test_the_notify_package_exists():
+    """The two fences above walk whatever is there, so absence must fail loudly.
+
+    P6's G1 pairs its AI fence with an existence check for the same reason: *"a
+    fence that walks whatever files are there passes vacuously if the file it was
+    written for is deleted."* P5's F3, third occurrence -- a guard that cannot
+    fail is documentation. Deleting or renaming this package should break a test,
+    not quietly reduce two fences to no-ops over an empty directory.
+    """
+    package = SRC / "notify" / "__init__.py"
+    assert package.exists(), "R17 and docs/34 §P7 both name src/notify/ by path"
+
+    from src.notify import Kind
+
+    # Five, not six or seven. ARCHITECTURE_FREEZE §7 caps first delivery at five
+    # and the three documents naming them disagree (docs/22 §4.12 lists six,
+    # docs/21 §7.1 seven); expansion to nine "requires operator request", so a
+    # sixth appearing here without one is a scope change to catch now.
+    assert len(Kind) == 5, f"freeze §7 fixes first delivery at five kinds, found {len(Kind)}"
+
+    # min_confidence_alert configures leads.confidence_score, which does not exist
+    # until 0006. P6's density_threshold note is the precedent: a key nothing reads
+    # is a documented capability that does not exist.
+    assert "lead.high_confidence" not in {k.value for k in Kind}
+
+
 def test_the_density_heuristic_was_not_reintroduced():
     """P6 removed it; this stops a later reader rebuilding it from the plan.
 
