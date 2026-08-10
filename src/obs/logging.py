@@ -46,6 +46,17 @@ _SECRET_PATTERNS: list[re.Pattern[str]] = [
     ),
     # Proxy credentials: user:pass@host — the proxy file format.
     re.compile(r"\b([A-Za-z0-9_\-]{4,}):([^\s:@/]{4,})@([\w.\-]+:\d+)"),
+    # Telegram bot tokens: `<bot_id>:<35 chars>`, with or without the `bot`
+    # prefix the API URL uses. P7 task 7.
+    #
+    # None of the patterns above catches this, and the gap matters because of
+    # *where* the token appears: the Bot API puts it in the PATH, so any log line
+    # or traceback quoting the URL quotes the credential. Pattern 3 needs a
+    # `token=` keyword and pattern 4 needs `@host`, and the API URL has neither.
+    #
+    # The numeric bot id is kept: it is public, and it is what tells an operator
+    # *which* bot the line is about. Only the secret half is replaced.
+    re.compile(r"\b(bot)?(\d{8,12}):[A-Za-z0-9_\-]{35}\b"),
 ]
 
 # ASCII deliberately: this lands in Windows consoles running cp1252, and a
@@ -62,6 +73,10 @@ def redact(text: str) -> str:
     out = _SECRET_PATTERNS[1].sub(r"\1 " + REDACTED, out)
     out = _SECRET_PATTERNS[2].sub(r"\1\2" + REDACTED, out)
     out = _SECRET_PATTERNS[3].sub(r"\1:" + REDACTED + r"@\3", out)
+    # `\g<1>` rather than `\1`: the group is optional, so on a bare token it
+    # substitutes empty — and `\1` followed by a digit would be read as a
+    # two-digit group reference.
+    out = _SECRET_PATTERNS[4].sub(r"\g<1>\g<2>:" + REDACTED, out)
     return out
 
 
