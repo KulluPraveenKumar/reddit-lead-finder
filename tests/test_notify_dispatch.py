@@ -767,6 +767,64 @@ def test_the_handler_is_still_idempotent_and_does_not_resend(session):
     assert len(fake.sends) == 2, "one per kind on the first pass, none on the second"
 
 
+# --------------------------------------------------------- AC1 / M3: timing
+
+
+def test_dispatch_completes_within_ten_seconds(session):
+    """AC1: *"A completed run delivers a message within 10 s."* M3: p95 < 10 s.
+
+    Found missing during Stage 7's final validation: the criterion had no
+    assertion at all, which is the same species as grep fence 3 -- a line claimed
+    for six phases that nobody had checked.
+
+    **Measured with a monotonic clock around the dispatch call alone**, not as
+    wall-clock around a whole run. That distinction is deliberate: this project
+    already has one wall-clock budget test that fails under machine load while
+    testing nothing about correctness (DI18, observed twice on 2026-08-10 at
+    105 ms against a 50 ms budget). Scoping the measurement to the call, with a
+    fake transport, keeps it about the dispatcher.
+
+    The budget is the phase's own 10 s. Real dispatch is milliseconds, so the
+    headroom is enormous by design -- this exists to catch a regression that
+    makes dispatch *pathologically* slow (an N+1 query per event, a retry loop
+    that should not be here), not to police microseconds.
+    """
+    import time as _time
+
+    run = complete_run(session)
+    fake = FakeTransport()
+    service = svc(session, fake)
+
+    started = _time.monotonic()
+    sent = service.dispatch_pending(run.id, now=NOON)
+    elapsed = _time.monotonic() - started
+
+    assert len(sent) == 1, "the message must actually have been dispatched"
+    assert elapsed < 10.0, f"dispatch took {elapsed:.3f}s, budget is 10s (AC1)"
+
+
+def test_the_p95_of_twenty_dispatches_is_within_budget(session):
+    """M3, as a distribution rather than a single sample.
+
+    Twenty runs, each dispatched once, 95th percentile under the budget. A single
+    timing can be lucky; a p95 cannot be lucky twenty times.
+    """
+    import time as _time
+
+    fake = FakeTransport()
+    timings: list[float] = []
+    for _ in range(20):
+        run = complete_run(session)
+        started = _time.monotonic()
+        assert len(svc(session, fake).dispatch_pending(run.id, now=NOON)) == 1
+        timings.append(_time.monotonic() - started)
+
+    timings.sort()
+    p95 = timings[int(0.95 * (len(timings) - 1))]
+    assert p95 < 10.0, f"p95 was {p95:.3f}s over {len(timings)} dispatches, budget is 10s"
+    assert len(fake.sends) == 20, "each run must have been notified exactly once"
+
+
 # ------------------------------------------------- the production wiring
 
 

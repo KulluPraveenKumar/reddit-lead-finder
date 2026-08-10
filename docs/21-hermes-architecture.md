@@ -484,6 +484,39 @@ are invisible to `session_search`, that cost is zero as well.
 `src/notify/transport.py` is written against an interface with all three implementations behind it,
 so the decision is a config value rather than a rewrite.
 
+#### ✅ Shipped in P7 — 2026-08-10
+
+All three implementations exist behind the interface, plus a `NullTransport`, selected by
+`notify.transport` in `config.yaml`. **T3 (`bot_api`) is the intended production value and `null` is
+the shipped default**, since the tier is off until an operator configures it.
+
+⚠️ **M-5, M-9 and M-10 were never measured, and the dependency is recorded as UNSATISFIED rather than
+reinterpreted as met.** [34 §P7](34-implementation-plan.md) lists them as a dependency;
+[SPRINT-0-MEASUREMENTS](SPRINT-0-MEASUREMENTS.md) F8 records Track B as **BLOCKED** for want of a
+Telegram token, and P0's own recommendation says it *"is not needed until P23"*. Both cannot hold. T3
+is the branch [34 §P0](34-implementation-plan.md) already carries — *"If M-5 fails, notifications
+switch to transport T3"* — and it removes the dependency **by construction**, so P7's correctness does
+not rest on the unmeasured. Track B still owes all three before P23.
+
+**Consequences of shipping unmeasured, stated rather than left to be found:**
+
+- **T1 and T2 are unit-tested and never live-verified.** `hermes` is not installed on the machine and
+  does not arrive before [P23](34-implementation-plan.md), so T1 goes through `responses` and T2
+  through a patched `subprocess.run`.
+- **T1's endpoint comes from `HERMES_SERVE_URL` in the environment**, not from a sixth `notify.*` key.
+  §P7's Config row names no endpoint for T1 while task 3 requires it to be *"selected by config"*, and
+  the environment is where this repository already puts machine-specific locations — `config.yaml`
+  says exactly that of `proxy.file`, and §P7's row already reaches for the environment once, for
+  `TELEGRAM_BOT_TOKEN`.
+- **T3 sends plain text, with no `parse_mode`.** Bodies contain untrusted text — `runs.error` is an
+  arbitrary exception message and subreddit names come from Reddit — so one unbalanced `*` or
+  unescaped `.` under MarkdownV2 returns `400 can't parse entities` and the notification is **lost**.
+  With no token available (blocker **B1**) that failure cannot be live-verified before shipping, so
+  the transport sends what cannot fail on its own content. The renderers' `*bold*` therefore renders
+  literally for now.
+- **A `4xx` is not retryable, a `5xx` is**, classified in the transport so no caller has to guess — a
+  wrong chat id or a revoked token is not fixed by trying again.
+
 ### 7.2 The gate flow
 
 ```

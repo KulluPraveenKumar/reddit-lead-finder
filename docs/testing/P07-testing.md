@@ -1,7 +1,7 @@
 # P07 — Manual Testing Guide · Notification tier
 
 **Phase:** P7 — Notification tier · **Revision:** none (head stays `0005_discovery`)
-**Guide written:** 2026-08-10 (Part A) · **Executed:** ▢ *not yet — see Part B*
+**Guide written:** 2026-08-10 (Part A) · **Executed:** 2026-08-10 by Claude (Part B recorded)
 
 ---
 
@@ -66,9 +66,8 @@ report **`exit=4`** (*"file or directory not found"*). Verified 2026-08-10.
 | `4` | ⚠️ The test **file does not exist** — expected before P7, a **failure** after it |
 | `5` | ⛔ Zero tests selected — **always a failure** in this guide, except the one place T2b marks |
 
-Every command in this guide has been checked to run *as typed*. The ones whose output is shown as
-**`verified 2026-08-10`** were executed against the repository before P7 existed and their output is
-real; the rest are marked ▢ and must be filled in when the phase is built.
+Every command in this guide has been executed *as typed* and every expected value shown is what was
+actually printed. Nothing here was predicted.
 
 ### Prerequisites
 
@@ -151,7 +150,7 @@ python -m pytest tests/test_boundaries.py --no-header
 
 **Before P7 — `verified 2026-08-10`:** `29 passed`.
 **After P7 Stage 1 — `verified 2026-08-10`:** **`33 passed`** — the four new guards.
-**After all of P7:** ▢ record the number. It must be **≥ 33**.
+**After all of P7 — `verified 2026-08-10`:** **`35 passed`**.
 
 ### T2b — The guard that was missing
 
@@ -179,8 +178,9 @@ exit=0
 python -m pytest tests/test_boundaries.py --no-header -k "hermes or notify" ; "exit=$LASTEXITCODE"
 ```
 
-**After P7 Stage 1 — `verified 2026-08-10`:** **`4 passed, 29 deselected`**, `exit=0`. The four are the
-Hermes fence (R4), the no-model fence (R17), the HTTP-confinement fence, and the package-exists guard.
+**After all of P7 — `verified 2026-08-10`:** **`5 passed, 30 deselected`**, `exit=0`. The five are the
+Hermes fence (R4), the no-model fence (R17), the HTTP-confinement fence, the package-exists guard, and
+the guard that `min_confidence_alert` was not shipped.
 
 ### T2d — See for yourself that nothing imports Hermes
 
@@ -200,7 +200,7 @@ for b in bad:
 **Expected — `verified 2026-08-10`:**
 
 ```
-source files scanned : 85
+source files scanned : 89
 files importing hermes: 0
 ```
 
@@ -215,18 +215,24 @@ number exists to catch.)
 **Why this matters.** This is the phase's headline promise: finish a run, get told.
 
 ```powershell
-python -m pytest tests/test_notify_dispatch.py --no-header -k "sends_one_message or delivery" ; "exit=$LASTEXITCODE"
+python -m pytest tests/test_notify_dispatch.py --no-header -k "sends_one_message or delivery or run_complete_is_derived" ; "exit=$LASTEXITCODE"
 ```
 
-**Expected after P7:** ▢ record the count — must be ≥ 1 and not `no tests ran`.
+**Expected — `verified 2026-08-10`:** **`2 passed, 37 deselected`**, `exit=0`.
 
 ### T3b — And it arrives promptly
 
 ```powershell
-python -m pytest tests/test_notify_dispatch.py --no-header -k "within_ten_seconds" ; "exit=$LASTEXITCODE"
+python -m pytest tests/test_notify_dispatch.py --no-header -k "within_ten_seconds or p95" ; "exit=$LASTEXITCODE"
 ```
 
-**Expected after P7:** ▢ record the count.
+**Expected — `verified 2026-08-10`:** **`2 passed, 39 deselected`**, `exit=0`. One measures a single
+dispatch, the other the 95th percentile of twenty.
+
+> ⚠️ **These two tests did not exist until Stage 7's final validation found them missing.** The
+> criterion "delivers within 10 s" had been claimed with nothing asserting it — the same species of
+> defect as the Hermes fence in T2b. They are measured with a **monotonic clock around the dispatch
+> call only**, deliberately, so they cannot fail for the reason the note below describes.
 
 > **If this step is slow or flaky, that is worth reporting rather than re-running.** It measures
 > elapsed time, and time-based checks fail on a busy machine for reasons that have nothing to do with
@@ -246,7 +252,7 @@ likely way a notification tier becomes annoying enough to switch off.
 python -m pytest tests/test_notify_dispatch.py --no-header -k "replay or duplicate or idempot" ; "exit=$LASTEXITCODE"
 ```
 
-**Expected after P7:** ▢ record the count — must be ≥ 1.
+**Expected — `verified 2026-08-10`:** **`3 passed, 36 deselected`**, `exit=0`.
 
 **What it proves:** twenty consecutive replays of the "finish the run" step produce **one** message.
 
@@ -259,10 +265,10 @@ a model call, roughly thirty messages a month would quietly become the most freq
 the system.
 
 ```powershell
-python -m pytest --no-header -k "zero_token or no_model or costs_nothing" ; "exit=$LASTEXITCODE"
+python -m pytest --no-header -k "zero_token or no_model or costs_nothing or invokes_no_model" ; "exit=$LASTEXITCODE"
 ```
 
-**Expected after P7:** ▢ record the count — must be ≥ 1.
+**Expected — `verified 2026-08-10`:** **`4 passed, 1127 deselected`**, `exit=0`.
 
 ### T5b — Check the ledger yourself
 
@@ -291,10 +297,14 @@ messages is worse than none, because you would trust it.
 python -m pytest tests/test_notify_transport.py tests/test_notify_dispatch.py --no-header -k "transport_down or failure_is_recorded or retry" ; "exit=$LASTEXITCODE"
 ```
 
-**Expected after P7:** ▢ record the count — must be ≥ 2.
+**Expected — `verified 2026-08-10`:** **`17 passed, 79 deselected`**, `exit=0`.
 
 **What it proves:** the send fails → the failure is stored as an error you can see on the run page →
-the run still reaches "complete" → a later maintenance pass retries it.
+the run still reaches "complete".
+
+> ⚠️ **It is not retried.** Retry was deliberately left out of this phase. A failed message is
+> *recorded*, and delivered on the next drain for that run, or not at all. Do not read "recorded" as
+> "will arrive later".
 
 ---
 
@@ -307,7 +317,7 @@ the run still reaches "complete" → a later maintenance pass retries it.
 python -m pytest tests/test_notify_policy.py --no-header -k "quiet" ; "exit=$LASTEXITCODE"
 ```
 
-**Expected after P7:** ▢ record the count — must be ≥ 4 (window, midnight wrap, both boundaries).
+**Expected — `verified 2026-08-10`:** **`23 passed, 51 deselected`**, `exit=0`.
 
 **What it proves:** inside quiet hours a routine "run complete" is held back, while a failure and a
 lost-posts alert go out anyway.
@@ -323,20 +333,21 @@ pasted into tickets and emailed to people.
 python -m pytest --no-header -k "redact and (token or telegram)" ; "exit=$LASTEXITCODE"
 ```
 
-**Expected after P7:** ▢ record the count — must be ≥ 1.
+**Expected — `verified 2026-08-10`:** **`5 passed, 1126 deselected`**, `exit=0`.
 
 ### T8b — Nothing secret is committed
 
 ```powershell
 git check-ignore -v .env
-Select-String -Path config.yaml -Pattern 'TELEGRAM|bot_token|[0-9]{8,10}:[A-Za-z0-9_-]{35}'
+Select-String -Path config.yaml -Pattern '[0-9]{8,12}:[A-Za-z0-9_-]{35}|telegram_chat_id: *[^'' ]'
 ```
 
-**Expected:** the first command prints the rule that ignores `.env` (proving your token file can never
-be committed). The second prints **nothing at all**.
+**Expected — `verified 2026-08-10`:** the first prints `.gitignore:2:.env  .env` — the rule that makes
+your token file uncommittable. The second prints **nothing at all**.
 
-**Expected — `verified 2026-08-10`:** the second command already prints nothing, because no token
-exists on this machine yet.
+> ⚠️ The pattern matches a **token shape** and a **non-empty chat id**, not the word "Telegram". An
+> earlier draft searched for `TELEGRAM` and matched the explanatory comments in `config.yaml` — a
+> false positive that would have a tester reporting a leak that is not there.
 
 **Pass if:** `.env` is ignored and no token-shaped text is in `config.yaml`.
 
@@ -370,11 +381,24 @@ print(m.group(0).rstrip() if m else "NO notify: BLOCK FOUND")
 python -m pytest --no-header -k "notify and (disabled or default)" ; "exit=$LASTEXITCODE"
 ```
 
-**Expected after P7:** the `notify:` block is printed and contains `enabled: false`; the test count is
-▢ ≥ 1 with `exit=0`.
+**Expected — `verified 2026-08-10`:** the `notify:` block prints, beginning:
 
-**Expected today — `verified 2026-08-10`:** `NO notify: BLOCK FOUND`, because the block does not exist
-until P7 lands. That is the correct "before" answer and confirms the command itself works.
+```
+notify:
+  # The off switch, and the phase's documented rollback. Default false on
+  ...
+  enabled: false
+  ...
+  transport: 'null'
+  telegram_chat_id: ''
+  quiet_hours_utc: ''
+```
+
+and the test count is **`6 passed, 1125 deselected`**, `exit=0`.
+
+> `transport` is **quoted** on purpose. A bare `null` is YAML for *no value at all*, so it arrives as
+> Python `None` rather than as the string `"null"`. Found by parsing the block back after writing it;
+> the same trap the `providers:` block above already warns about for `null_provider`.
 
 > **The tier ships switched off on purpose.** An application that starts messaging a chat nobody
 > configured, the moment it is upgraded, is a worse outcome than one that waits to be asked. It also
@@ -415,8 +439,8 @@ git diff config.yaml
 python -m pytest --no-header -k "notify" ; "exit=$LASTEXITCODE"
 ```
 
-**Expected after P7:** ▢ record the count. The suite must still be **fully green** with the tier
-enabled — no test may depend on it being off.
+**Expected — `verified 2026-08-10`:** **`240 passed, 891 deselected`**, `exit=0`. The suite is fully
+green with the tier enabled — no test depends on it being off.
 
 ### Step 5 — ⚠️ MANDATORY: restore the file
 
@@ -442,22 +466,22 @@ work — in particular the 459 original leads, the 17 existing web addresses and
 python -m pytest --no-header
 ```
 
-**Expected before P7:** `887 passed, 2 skipped` — *`verified 2026-08-10`*.
-**Expected after P7:** ▢ record it. Must be **higher than 887**, with **0 failed** and 2 skipped.
+**Before P7 — `verified 2026-08-10`:** `887 passed, 2 skipped`.
+**After P7 — `verified 2026-08-10`:** **`1131 passed, 2 skipped`**, 0 failed.
 
 ```powershell
 python -m pytest --no-header -W error::DeprecationWarning
 ```
 
-**Expected:** the same numbers. *(Before P7: `887 passed, 2 skipped`, `verified 2026-08-10`.)*
+**Expected — `verified 2026-08-10`:** the same numbers, **`1131 passed, 2 skipped`**.
 
 ```powershell
 python -m ruff check .
 python -m ruff format --check .
 ```
 
-**Expected — `verified 2026-08-10`:** `All checks passed!` and `118 files already formatted`
-*(the file count will rise after P7 — ▢ record it)*.
+**Expected — `verified 2026-08-10`:** `All checks passed!` and **`127 files already formatted`**
+(118 before P7).
 
 ```powershell
 python scripts/check_schema.py
@@ -575,30 +599,102 @@ design. **T11 is BLOCKED** by a missing token and must be recorded as blocked, n
 
 ## Part B — Command verification record
 
-▢ **Not yet executed.** This section is completed *after* P7 is implemented and this guide has been
-run end to end. Until then P7 is **not** complete
-([EXECUTION_MODE_LOCK §4](../EXECUTION_MODE_LOCK.md): *"Manual testing completed and signed off by a
-human"*).
+**Executed 2026-08-10 by Claude, on `main` at the P7 Stage 7 commit.** Every command in Part A was run
+as typed and every expected value shown there is what was actually printed. Nothing was predicted.
 
-**What must be recorded here:**
+⚠️ **The sign-off table above is deliberately still blank.** A machine executing the commands is not
+the same as a human verifying the product, and [EXECUTION_MODE_LOCK §4](../EXECUTION_MODE_LOCK.md)
+requires the manual guide to be *"executed and signed off by a human"*. Part B records that the
+commands work and what they print; it does not sign for anyone.
 
-1. **Every ▢ replaced with the number actually observed.** The previous phase had four predicted
-   counts and all four were wrong. Any value still marked ▢ means the step was not executed.
-2. **A table of corrections** — written vs actual — in the format the previous guide used, so the
-   drift is visible rather than silently patched:
+### Corrections found by executing rather than by reading
 
-   | Step | Written | Actual |
-   |---|---|---|
-   | ▢ | ▢ | ▢ |
+Six, and every one would have shipped as a wrong instruction:
 
-3. **Confirmation that every `-k` filter selected a non-zero number of tests.** A filter matching
-   nothing exits successfully; two steps in the previous phase went green while selecting nothing.
-4. **Confirmation that T9 step 5 left `git status` clean**, and that `config.yaml` was restored with
-   `git checkout --` rather than by rewriting it.
-5. **T11's blocked status**, with the `.env` check output that proves why.
+| # | Written | Actual |
+|---|---|---|
+| 1 | `python -m pytest -q --no-header` throughout | **`-q` doubles to `-qq`** because `pyproject.toml` already sets `addopts = "-q --strict-markers"`, and `-qq` suppresses the `N passed` line **entirely**. The guide asked a tester to record a number pytest was never going to print. **31 commands corrected** |
+| 2 | *"a zero-match filter prints `no tests ran`"* | It prints **`N deselected`** with no dots and no `passed`, and exits **5**. There is no `no tests ran` line to notice |
+| 3 | T2a expected `29 passed` after P7 | **`35 passed`** — 29 before, 33 after Stage 1, 35 after the config fences |
+| 4 | T2d expected `85` source files scanned | **`89`** |
+| 5 | T8b searched `config.yaml` for `TELEGRAM` | **False positive.** P7's own config comments explain the token, so the pattern matched prose and would have had a tester reporting a leak that does not exist. Narrowed to a **token shape** and a **non-empty chat id** |
+| 6 | T9 step 2 read the `notify:` block with `Select-String … -Context` | Piping `MatchInfo` into `Select-String` does not render the block. Replaced with a here-string read that was then executed |
 
-**Already verified at authoring time (2026-08-10), against the real repository — these are observed,
-not predicted:** T1's five counts · T2a `29 passed` · T2b `no tests ran` (the documented "before"
-defect) · T2d `85 files scanned, 0 importing hermes` · T8b's empty token scan · T10's
-`887 passed, 2 skipped` (both runs), `All checks passed!`, `118 files already formatted`,
-`OK — all 31 checks passed`, `0005_discovery (head)` · T11's empty `.env` Telegram check.
+Plus one that is not a guide defect but a product one, found while filling in T3b: **the delivery
+timing criterion had no test at all.** AC1 (*"delivers a message within 10 s"*) and M3 (*"delivery p95
+< 10 s"*) were claimed with nothing asserting them — the same species as the Hermes fence in T2b.
+`test_dispatch_completes_within_ten_seconds` and `test_the_p95_of_twenty_dispatches_is_within_budget`
+were added, measured with a monotonic clock around the dispatch call alone.
+
+### Every `-k` filter selected a non-zero number of tests
+
+Recorded because a zero-match filter exits successfully and has twice been mistaken for a pass in this
+project:
+
+| Step | Selected | Exit |
+|---|---|---|
+| T2b `hermes` | 1 passed, 34 deselected | 0 |
+| T2c `hermes or notify` | 5 passed, 30 deselected | 0 |
+| T3 | 2 passed, 37 deselected | 0 |
+| T3b `within_ten_seconds or p95` | 2 passed, 39 deselected | 0 |
+| T4 | 3 passed, 36 deselected | 0 |
+| T5 | 4 passed, 1127 deselected | 0 |
+| T6 | 17 passed, 79 deselected | 0 |
+| T7 `quiet` | 23 passed, 51 deselected | 0 |
+| T8 | 5 passed, 1126 deselected | 0 |
+| T9 step 2 | 6 passed, 1125 deselected | 0 |
+| T9 step 4 `notify` | 240 passed, 891 deselected | 0 |
+
+**No step returned `exit=5`.** T2b's documented "before" state (`exit=5`, the missing fence) is now
+`1 passed`, which is the point of the phase.
+
+### T9 — the rollback, executed
+
+Run three times as a scripted drill against a real run, a real handler and the real `config.yaml`, so
+the switch was exercised the way an operator would exercise it:
+
+| Phase | `config.yaml` | Run state | `notify.*` rows | Delivered |
+|---|---|---|---|---|
+| **A** | shipped default, `enabled: false` | `complete` | **0** | — |
+| **B** | `enabled: true` | `complete` | **2** | `run.complete`, `gate.reached` |
+| **C** | `notify:` block **deleted entirely** | `complete` | **0** | — |
+
+**A == C, and B differs.** Phase B matters as much as A: a switch that suppresses when off but also
+does nothing when on is indistinguishable from a broken feature.
+
+Then the documented restore:
+
+```
+git checkout -- config.yaml
+git diff --stat config.yaml     -> (empty)
+notify block present            -> True
+BOM absent                      -> True
+parsed notify                   -> {'enabled': False, 'transport': 'null',
+                                    'telegram_chat_id': '', 'quiet_hours_utc': ''}
+git status --short               -> (clean)
+```
+
+⚠️ **A trap in this procedure, found the hard way.** `git checkout -- config.yaml` restores the file to
+**HEAD**. The first time the drill ran, the `notify:` block had not been committed yet, so the restore
+*deleted it* — correctly, and destructively. The block was committed first and the drill re-run, after
+which the restore behaved as documented. **For an operator following T9 this is safe**, because the
+block is committed by the time they read it; for anyone re-running the drill against an uncommitted
+change, save a copy first.
+
+### T11 — BLOCKED, not passed
+
+```powershell
+Select-String -Path .env -Pattern 'TELEGRAM' -SimpleMatch
+```
+
+prints **nothing**: `.env` holds one key, `APP_SECRET_KEY`. Blocker **B1**, open since P0. Recorded as
+**blocked**; real delivery to Telegram is **not verified**.
+
+### Known items deliberately not claimed
+
+- **`mypy`** (gate check 3) — not installed, blocker **B3/O2**. Not run, not claimed.
+- **Transports T1 (`hermes serve`) and T2 (`hermes` subprocess)** — unit-tested only. `hermes` is not
+  installed, so neither has met a real runtime.
+- **M-5, M-9, M-10** — the three measurements P7's plan names as a dependency were never taken. P7 is
+  built so its correctness does not rest on them, and the dependency is reported as **unsatisfied**.
+- **Retry** — a failed send is recorded, not retried. Out of scope for this phase by decision.

@@ -903,3 +903,111 @@ The Settings page ships **first** because it is the precondition for every AI fe
 it gives Phase 1 a visible, testable deliverable rather than an invisible library.
 
 Each phase ships a usable increment. At no point is there a half-built page in the navigation.
+
+---
+
+## 8. Notifications — the surface that is not a page
+
+Added by **P7**. Everything else in this document is something the operator looks
+at; this is the one channel that comes to *them*, and its design constraint is the
+opposite of a page's: it must be worth interrupting someone for.
+
+### 8.1 Why this is here rather than in the dashboard
+
+A run can take half an hour and can stop at a review gate indefinitely
+([AD-6](ARCHITECTURE_FREEZE.md) — gates have no timeout). Watching a progress page
+for that long is not a workflow. So five things push to Telegram, and everything
+else stays a page you visit.
+
+**No model is involved in a notification, ever** ([R17, AD-28](ARCHITECTURE_FREEZE.md)).
+Bodies are rendered from SQL in `src/notify/renderers.py`; the decision to send is
+a deterministic table. These messages cost **$0.00**, which is what lets them keep
+arriving when every AI budget is exhausted — a cost control that silenced alerts
+would be switched off.
+
+### 8.2 The five kinds
+
+[freeze §7](ARCHITECTURE_FREEZE.md) fixes first delivery at **five** (target nine,
+and expansion *"requires operator request"*). Each was chosen because it has a live
+emitter at revision `0005`, so every row of the policy table is driven by a test
+rather than merely covered.
+
+| Kind | Sent when | Quiet hours |
+|---|---|---|
+| `run.complete` | Leads were collected, **or** a subreddit did not finish. A clean run that genuinely found nothing is suppressed — being told "0 leads" nightly is how a channel gets muted | Suppressed |
+| `run.failed` | Always | **Exempt** |
+| `gate.reached` | Always. A gate waits for a human, so it must reach one | Suppressed — a gate has no timeout, so nothing is lost by it arriving after breakfast |
+| `discovery.overflow` | Always, naming **every** affected subreddit. [R19](ARCHITECTURE_FREEZE.md) makes overflow an error, never a silent gap, and P6 detects it per subreddit | **Exempt** |
+| `proxy.pool_degraded` | Egress **actually degraded** during the run | Suppressed |
+
+⚠️ `proxy.pool_degraded` is keyed on a *recorded degradation*, not on
+[22 §4.12](22-hermes-skills.md)'s *"healthy < 3"*. `config.yaml` ships no proxy
+file — P0 measured direct as better and recommended buying none — so the pool is
+legitimately empty on every run and a level-based rule would be a permanent alarm
+about the design working as intended. An alert that always fires gets the tier
+switched off.
+
+**Deferred, with triggers** ([DEFERRED-IMPROVEMENTS DI16](DEFERRED-IMPROVEMENTS.md)):
+`lead.high_confidence` needs `leads.confidence_score` (`0006`, populated in P21);
+`quality.red` needs `quality_snapshots` (`0010`); `budget.warning` needs an
+80%-of-cap signal, which does not exist — `src/ai/cost.py` raises at 100% only.
+
+### 8.3 What a message looks like
+
+Rendered from the database, never from a caller's numbers, so a figure in a message
+cannot disagree with the run page it describes.
+
+```
+*Run 14 complete*
+
+- Leads: 12
+- Posts scanned: 340
+- Subreddits: 6 of 7
+- Failed: 1
+- Duration: 4m 12s
+- AI cost: $0.0123
+```
+
+A line that cannot be sourced is **omitted** rather than printed as zero — a
+displayed `0` reads as "nothing was found" and sends the operator looking for a
+bug that is not there. This is why `gate.reached` currently carries no candidate
+counts: they live in `project_subreddits` / `project_keywords`, created by revision
+`0008`. **P18 fills the gate card in**; P7 ships the kind, the renderer and the
+delivery.
+
+### 8.4 Timing, and the honest limits
+
+| | |
+|---|---|
+| `run.complete`, `run.failed` | **Immediate** — dispatched the moment the run's terminal transition commits |
+| `gate.reached`, `proxy.pool_degraded`, `discovery.overflow` | Delivered **when the run finalises**, not when they occur |
+
+The second row is a real limitation and is written down rather than discovered:
+those three are emitted from a web route or from mid-handler, where sending would
+put a network call inside a Flask request. P18 will want an *immediate* gate card
+and inherits this.
+
+Delivery is **at-least-once**, not exactly-once. There is an irreducible window
+between the transport returning and the record of it committing; a crash inside it
+re-sends. Writing the record first would claim a delivery that had not happened,
+which is the worse failure.
+
+### 8.5 Where it appears in the dashboard
+
+Nowhere new. Every send and every failure is a row on the existing run timeline —
+`notify.sent` and `notify.failed`, the latter at `level="error"` so it renders red
+on `/runs/<id>` like any other error. No table was added
+([AD-29](ARCHITECTURE_FREEZE.md); `notification_log` is withdrawn), and no endpoint.
+
+A **hash** of the chat id is recorded, never the id itself: `run_events.data_json`
+is rendered into an HTML page, and [R15](ARCHITECTURE_FREEZE.md) keeps a chat
+identifier out of a template.
+
+### 8.6 Configuration
+
+`notify.{enabled, transport, telegram_chat_id, quiet_hours_utc}` in `config.yaml`,
+and `TELEGRAM_BOT_TOKEN` in `.env` — never in the committed file.
+
+**`enabled: false` is the shipped default**, and that is deliberate: it is also the
+phase's documented rollback, so the rollback state is the state every fresh install
+already runs in, exercised continuously rather than proved once in a drill.
