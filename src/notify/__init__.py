@@ -23,6 +23,7 @@ Specification: ``docs/34-implementation-plan.md`` §P7 ·
 
 from __future__ import annotations
 
+from src.notify.renderers import RENDERERS, render
 from src.notify.service import (
     POLICY,
     QUIET_HOURS_EXEMPT,
@@ -37,10 +38,12 @@ from src.notify.service import (
 __all__ = [
     "POLICY",
     "QUIET_HOURS_EXEMPT",
+    "RENDERERS",
     "Decision",
     "Kind",
     "NotifySettings",
     "decide",
     "parse_quiet_window",
     "quiet_hours",
+    "render",
 ]
