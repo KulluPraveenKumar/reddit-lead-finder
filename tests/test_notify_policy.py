@@ -192,6 +192,74 @@ def test_from_config_reads_every_shipped_key():
     assert s.quiet_window == (time(22, 0), time(7, 0))
 
 
+@pytest.mark.parametrize("spelling", [None, "null", "NULL", "  null  "])
+def test_a_bare_yaml_null_transport_means_the_null_transport(spelling):
+    """``transport: null`` in YAML is *no value at all*, not the string "null".
+
+    Found by writing the shipped ``config.yaml`` block and parsing it back: a bare
+    ``null`` arrives as ``None``, ``str(None)`` is ``"None"``, and
+    ``build_transport`` rightly refuses that. ``config.yaml`` already warns about
+    the identical trap for ``null_provider`` -- *"a bare `null`, which YAML parses
+    as no value at all"* -- so this is the second time the same footgun has bitten
+    this repository.
+
+    Both spellings resolve to the null transport. Being refused for writing YAML
+    correctly would be a poor trade.
+    """
+    from src.notify.transport import build_transport
+
+    settings = NotifySettings.from_config({"transport": spelling})
+    # `from_config` keeps the operator's spelling; `build_transport` is what
+    # resolves it, trimming and lowercasing. Asserting the resolved transport
+    # rather than the stored string is the real contract -- my first draft
+    # asserted normalisation that deliberately does not happen at load.
+    assert build_transport(settings).name == "null"
+
+
+def test_the_shipped_config_block_builds_the_transport_it_names():
+    """The committed file is parsed and used, not merely read by eye.
+
+    A config block that cannot build its own transport is a rollback that does not
+    work -- and ``enabled: false`` plus this transport *is* the phase's documented
+    rollback state.
+    """
+    from pathlib import Path
+
+    import yaml
+
+    from src.notify.transport import build_transport
+
+    root = Path(__file__).resolve().parents[1]
+    raw = yaml.safe_load((root / "config.yaml").read_text(encoding="utf-8"))
+    assert "notify" in raw, "the notify block must ship in config.yaml"
+
+    settings = NotifySettings.from_config(raw["notify"])
+    assert settings.enabled is False, "the shipped default is off (the rollback state)"
+    assert build_transport(settings).name == "null"
+
+
+def test_the_shipped_config_block_names_no_key_the_code_ignores():
+    """G8: a key nothing reads is a documented capability that does not exist.
+
+    The reverse of the usual check. P6 deleted ``density_threshold`` for exactly
+    this, and its ``config.yaml`` comment explains why; this asserts P7 did not
+    reintroduce the species.
+    """
+    from pathlib import Path
+
+    import yaml
+
+    root = Path(__file__).resolve().parents[1]
+    raw = yaml.safe_load((root / "config.yaml").read_text(encoding="utf-8"))["notify"]
+
+    read_by_code = {"enabled", "transport", "telegram_chat_id", "quiet_hours_utc"}
+    assert set(raw) == read_by_code, (
+        f"config.yaml ships {set(raw) - read_by_code} that nothing reads, or omits "
+        f"{read_by_code - set(raw)} that the code expects"
+    )
+    assert "min_confidence_alert" not in raw
+
+
 def test_min_confidence_alert_is_not_a_setting():
     """It would configure ``leads.confidence_score``, which arrives in 0006.
 

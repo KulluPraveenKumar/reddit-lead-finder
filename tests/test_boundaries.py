@@ -372,6 +372,56 @@ def test_the_notify_package_exists():
     assert "lead.high_confidence" not in {k.value for k in Kind}
 
 
+def test_min_confidence_alert_was_not_shipped():
+    """P7's D2: the key configures a column that arrives in ``0006``.
+
+    ``docs/34`` §P7's Config row names ``notify.min_confidence_alert``, and P7
+    deliberately does not ship it: it would set a threshold against
+    ``leads.confidence_score``, which does not exist until revision ``0006`` and is
+    not populated until P21. P6's ``density_threshold`` note is the precedent --
+    *"a key nothing reads is a documented capability that does not exist, so it is
+    absent rather than ignored."* A reader following §P7's row would otherwise add
+    it, and it would silently do nothing.
+
+    **Executable code and settings only**, exactly as the density fence is scoped.
+    ``config.yaml`` and ``src/notify/service.py`` both *name* the key in prose to
+    explain why it is absent, and a fence that matched prose would force deleting
+    the explanation -- the failure ARCHITECTURE_FREEZE §11.1 already records for
+    literally-read greps. ``docs/34`` §P7's Config row is likewise left alone: it
+    is the specification, and P7's departure from it is recorded in
+    ``docs/P7-DECISION-ANALYSIS.md`` D2 rather than by editing the plan.
+    """
+    offenders = [
+        str(path.relative_to(PROJECT_ROOT))
+        for path in _python_files(SRC)
+        if "min_confidence_alert" in _executable_tokens(path)
+    ]
+
+    config = PROJECT_ROOT / "config.yaml"
+    # A *setting* is `key:` at the start of a line. The explanatory comment is not.
+    if re.search(r"^\s*min_confidence_alert\s*:", config.read_text(encoding="utf-8"), re.MULTILINE):
+        offenders.append("config.yaml")
+
+    assert offenders == [], (
+        "notify.min_confidence_alert configures leads.confidence_score, which does "
+        f"not exist until 0006. Found in: {offenders}"
+    )
+
+
+def test_the_notify_config_block_ships_and_defaults_to_off():
+    """The rollback state is the shipped state, so it must actually be shipped.
+
+    ``notify.enabled: false`` is the phase's documented rollback. Shipping it as
+    the default means every fresh install and every test run already exercises the
+    rollback -- but only if the block is present and says so.
+    """
+    import yaml
+
+    raw = yaml.safe_load((PROJECT_ROOT / "config.yaml").read_text(encoding="utf-8"))
+    assert "notify" in raw, "docs/34 §P7 requires the notify block in config.yaml"
+    assert raw["notify"]["enabled"] is False
+
+
 def test_the_density_heuristic_was_not_reintroduced():
     """P6 removed it; this stops a later reader rebuilding it from the plan.
 

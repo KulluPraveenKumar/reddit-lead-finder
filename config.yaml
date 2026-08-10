@@ -341,3 +341,87 @@ proxy:
   connect_timeout: 10.0
   read_timeout: 30.0
   cache_ttl: 900
+
+# ---------------------------------------------------------------------------
+# Notifications (P7) -- what happened, told to you, at zero token cost
+#
+# When a run finishes, fails, waits at a review gate, loses posts to a watermark
+# overflow, or egress degrades, the application renders a short Markdown message
+# FROM THE DATABASE and pushes it to Telegram.
+#
+# NO AI MODEL IS INVOLVED. Not to decide whether to send, not to write the words.
+# That is architecture, not an optimisation (freeze R17, AD-28): these messages
+# cost $0.00 and keep arriving even when every AI budget is exhausted. A cost
+# control that silenced alerts would be switched off.
+#
+# THE TOKEN IS NOT HERE AND MUST NEVER BE. This file is committed. Put the bot
+# token in .env as TELEGRAM_BOT_TOKEN (gitignored).
+#
+# Five notification kinds ship (freeze section 7 fixes first delivery at five):
+#   run.complete          -- if it found leads, or a subreddit did not finish
+#   run.failed            -- always
+#   gate.reached          -- always; a gate waits indefinitely (AD-6)
+#   discovery.overflow    -- always; overflow is an ERROR, never a silent gap (R19)
+#   proxy.pool_degraded   -- when egress actually degraded during the run
+#
+# There is deliberately no `min_confidence_alert`. It would set a threshold
+# against leads.confidence_score, which does not exist until revision 0006 --
+# and a key nothing reads is a documented capability that does not exist. The
+# same reasoning that removed `density_threshold` in P6.
+#
+# ROLLBACK: `enabled: false` switches the tier off completely -- and it is the
+# shipped default, so the rollback state is the state every fresh install already
+# runs in. Deleting this whole block does the same thing: every key below is
+# optional and these are exactly the defaults the code assumes when absent.
+# Both were executed and verified in P7 stage 7; see PHASE-07-COMPLETION-REPORT.
+# ---------------------------------------------------------------------------
+notify:
+  # The off switch, and the phase's documented rollback. Default false on
+  # purpose: a tier that started messaging a chat nobody configured, the moment
+  # it was upgraded, is a worse first impression than one that waits to be asked.
+  enabled: false
+
+  # How a message leaves the machine. One interface, four implementations
+  # (docs/21 section 7.1):
+  #   null        renders and records, sends nothing. Safe with no credentials.
+  #   bot_api     Telegram Bot API directly. Needs TELEGRAM_BOT_TOKEN in .env.
+  #   serve       POST to a running `hermes serve`. Needs HERMES_SERVE_URL.
+  #   subprocess  the `hermes send` CLI. Co-located installs only.
+  #
+  # `null` is the default because it cannot fail and needs nothing: the whole
+  # pipeline is exercisable, and what WOULD have been sent is recorded on the run
+  # timeline. Set this to bot_api once a token exists.
+  #
+  # An unknown name is refused loudly and lists the valid ones. It does not fall
+  # back to null -- a silent fallback would leave a tier that looks configured,
+  # reports success, and delivers nothing.
+  #
+  # QUOTED on purpose. A bare `null` is YAML for "no value at all", so it arrives
+  # as None rather than as the string "null" -- exactly the trap the `providers:`
+  # block above already warns about for `null_provider`. The code tolerates both,
+  # but the quotes say what is meant.
+  transport: 'null'
+
+  # Where messages go. A Telegram chat id: message @BotFather to create a bot,
+  # then read chat.id from https://api.telegram.org/bot<token>/getUpdates.
+  # Blank means nothing is sent, and nothing is recorded as sent -- so filling
+  # this in later delivers rather than having silently skipped a run.
+  #
+  # Only a HASH of this reaches the database. run_events is rendered into an HTML
+  # page, and R15 keeps a chat identifier out of a template.
+  telegram_chat_id: ''
+
+  # Hours during which routine messages are held back, UTC, `HH:MM-HH:MM`.
+  # Wrapping midnight is normal and handled: 22:00-07:00 means the night.
+  # Half-open -- 22:00 is quiet, 07:00 is not -- so the window is exactly as
+  # long as it reads. Leave blank for no quiet hours.
+  #
+  # A malformed value is REJECTED AT LOAD rather than ignored: one silently
+  # dropped would send exactly the 3 a.m. message it was added to prevent, with
+  # no way for you to tell it had not been applied.
+  #
+  # `run.failed` and `discovery.overflow` are NEVER suppressed. A failure and
+  # lost posts are the two things worth waking up for; docs/34 section P7 task 5
+  # exempts the first, and R19 makes an overflow an error, so holding it until
+  # morning is the silent gap R19 exists to forbid.
+  quiet_hours_utc: ''

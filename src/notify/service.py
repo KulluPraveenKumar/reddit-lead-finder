@@ -241,9 +241,16 @@ class NotifySettings:
         """
         data = raw or {}
         chat_id = data.get("telegram_chat_id")
+        # `transport: null` in YAML is *no value at all*, so it arrives as None
+        # rather than as "null" -- and `str(None)` is "None", which
+        # `build_transport` rightly refuses. `config.yaml` already warns about the
+        # same trap for `null_provider`; this makes both spellings work, because a
+        # bare `null` is the natural way to write it and being refused for
+        # writing YAML correctly is a poor trade.
+        transport = data.get("transport")
         return cls(
             enabled=bool(data.get("enabled", False)),
-            transport=str(data.get("transport", "null")),
+            transport="null" if transport is None else str(transport),
             telegram_chat_id=None if chat_id is None else str(chat_id),
             quiet_window=parse_quiet_window(data.get("quiet_hours_utc")),
         )
