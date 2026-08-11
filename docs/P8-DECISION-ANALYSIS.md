@@ -440,6 +440,71 @@ is a phase that quietly redefines "green".
 
 ---
 
+## ✅ OPERATOR DECISIONS — RECORDED 2026-08-11
+
+**All seven decisions in this document are settled.** Recorded verbatim so implementation reads the
+answer, not the argument.
+
+| # | Decision | Operator's answer | Effect on implementation |
+|---|---|---|---|
+| **D1** | Forward FK to `projects` | ✅ **Option A APPROVED** — `0006` uses **bare** `project_id` columns; `0007` adds the deferred FKs | Stage 2 writes **no** `REFERENCES` clause on the four `project_id` columns. The four `batch_alter_table` rebuilds are P12's accepted cost, and go in P8's handover |
+| **D2** | Which document rules the chain | ✅ **APPROVED** — [ARCHITECTURE_FREEZE §4.1](ARCHITECTURE_FREEZE.md) is **authoritative**; [05 §7](05-database-plan.md) is superseded. Repair via **§11.1 reconciliation** | Stage 5 executes the §11.1 reconciliation across the seven document targets. `0006` is `content_and_dedup` |
+| **D3** | `leads.source` | ✅ **APPROVED** — Option A | `ALTER TABLE leads ADD COLUMN source VARCHAR(20) NOT NULL DEFAULT 'scrape'`, DDL lifted verbatim from [16 §115](16-phase-06.md) into [05 §4.1](05-database-plan.md). **4 columns, 4 indexes. No index on `source`, no `CHECK` on its domain** |
+| **D4** | `NOT NULL` on the dedup `project_id`s | ✅ **APPROVED** | Both created **nullable and bare**. [05 §5.4b](05-database-plan.md) amended to `NULL`. The tightening question is **named in P8's handover as P12's**, with the fifth/sixth rebuild cost stated. P8 does **not** pre-empt it |
+| **D5** | Preventing the F1 class recurring | ✅ **APPROVED** — Option B | `test_no_revision_leaves_a_dangling_foreign_key`, parametrised over `0001..head`, cross-checking `PRAGMA foreign_key_list` against `sqlite_master`. **Plus** the two concrete A-inserts at `0006`. Option C was measured worthless and stays rejected |
+| **D6** | The `mypy` gate (O2) | ⚠️ **DEFERRED — the <30 min condition was tested and FAILED.** See the measurement below | O2 stays open. The universal gate continues to be claimed **without** check 3, stated explicitly |
+| **D7** | Unspecified details | ✅ **ACCEPTED** as recorded | No action. Nothing defaulted silently |
+
+### D6 — the measurement that decided it
+
+The operator's instruction was conditional: *"if `mypy` can be completed with a small isolated change
+(<30 minutes), include it. Otherwise document the deferral."* **So it was measured, not estimated.**
+
+```
+python -m pip install mypy      -> mypy 2.3.0
+python -m mypy src              -> Found 193 errors in 23 files (checked 89 source files)
+```
+
+| By category | | By file | |
+|---|---|---|---|
+| `arg-type` | 80 | `src/db/models.py` | **57** |
+| `assignment` | 55 | `src/orchestration/job_queue.py` | 34 |
+| `misc` | 22 | `src/orchestration/run_service.py` | 33 |
+| `valid-type` | 19 | `src/ai/credentials.py` | 18 |
+| everything else | 17 | 19 further files | 51 |
+
+**Three findings, each independently sufficient to defer:**
+
+1. **193 errors is not a small isolated change.** It is not close to one.
+2. **The root cause is architectural, not cosmetic.** `src/db/models.py:38` reports *"Variable
+   `src.db.models.Base` is not valid as a type"* — the legacy `declarative_base()` idiom. The 80
+   `arg-type` and 55 `assignment` errors are overwhelmingly `Column[int]` where `int` is expected,
+   which is the same cause. Clearing them means migrating **every model** to
+   `DeclarativeBase` + `Mapped[...]` annotations.
+3. **⚠️ It would collide head-on with P8.** `src/db/models.py` is the largest single source of errors
+   **and** is the file P8 Stage 3 must edit. Refactoring all models while adding four of them is two
+   substantial changes to one file in one phase — precisely the coupling
+   [lock §3](EXECUTION_MODE_LOCK.md) exists to prevent. It would also dwarf the migration P8 is
+   actually for.
+
+**This does not refute the D6 recommendation above** — the argument that P8 is the cheapest remaining
+phase in which to baseline still holds, and the counter-argument (baselining against P9–P11 is worse)
+is unchanged. What the measurement refutes is the **cost estimate**: *"under thirty minutes"* was
+wrong by a wide margin, and it was wrong because it had never been run.
+
+**Recommended disposition:** O2 becomes its own scoped task — install, add a `[tool.mypy]` section to
+`pyproject.toml` (there is **none** today), add `types-PyYAML`, and migrate the models — sequenced
+**between** phases rather than inside one. `requirements.txt` was **not** modified and `mypy` was
+**not** added to it; the working tree is unchanged by this measurement.
+
+### ⚠️ D8 is NOT in the approval list, and Stage 0 cannot pass without it
+
+[D8](#d8--a-flaky-test-now-stands-between-every-p8-stage-and-its-own-gate) was raised **after** this
+document was first written and was not among the seven decisions approved. It is unanswered. It is
+carried into the readiness report rather than assumed either way.
+
+---
+
 ## Summary — what is needed to start
 
 | # | Needed from the operator | Blocking? |
