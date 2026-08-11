@@ -209,15 +209,99 @@ reconciliations — documentation catching up with decisions already taken.
 
 | # | Limit |
 |---|---|
-| **L1** | **T11 (real Telegram delivery) is not verified.** Blocker **B1**: `.env` holds only `APP_SECRET_KEY`. The entire offline half is verified |
+| ~~**L1**~~ | ~~**T11 (real Telegram delivery) is not verified.** Blocker **B1**: `.env` holds only `APP_SECRET_KEY`~~ · ✅ **CLOSED 2026-08-11.** Executed live: a real bot, a real token in `.env`, `transport: bot_api`, and a message delivered to a real chat in **2.3 s**. See [§7a](#7a-live-telegram-verification--2026-08-11) |
 | **L2** | **M-5, M-9 and M-10 were never measured.** [34 §P7](34-implementation-plan.md) names them as a dependency; P0 says they are not needed until P23. T3 removes the dependency by construction, and it is reported **unsatisfied** |
 | **L3** | **T1 and T2 are unit-tested only.** `hermes` is not installed and does not arrive before P23 |
 | **L4** | **Retry is not implemented.** Scoped out by the operator. A failure is *recorded*, not retried — [34 §P7](34-implementation-plan.md) task 6's other half is **not delivered** |
 | **L5** | **Three of five kinds are delivered late** — at finalise, not when they occur. AC1 is scoped to *"a completed run"*, so it holds. **P18 will want an immediate gate card** |
 | **L6** | **Delivery is at-least-once**, not exactly-once |
-| **L7** | **T3 sends plain text.** Bodies carry untrusted text, so honouring `*bold*` risks a `400 can't parse entities` that loses the message — unverifiable without a token |
+| **L7** | **T3 sends plain text.** Bodies carry untrusted text, so honouring `*bold*` risks a `400 can't parse entities` that loses the message. ✅ **Now live-observed and unchanged:** the delivered message showed `*Run 4 needs approval*` with **literal asterisks**. Structure renders; emphasis is deliberately not applied. Still a limit, no longer an unverified one |
 | **L8** | **`mypy` is not installed** (B3/O2). The gate is not claimed in full |
 | **L9** | **The manual sign-off table is unsigned**, and P00–P06 remain unsigned. **No tag** ([lock §6.2](EXECUTION_MODE_LOCK.md)) |
+
+---
+
+## 7a. Live Telegram verification — 2026-08-11
+
+**Blocker B1 is closed.** P7 shipped with its live half deferred under decision **D4 option A**;
+option B — *"operator provides a token now"* — has since been taken, after the fact. This section
+records the evidence, so that the deferral is closed by proof rather than by assertion.
+
+### What the operator did
+
+1. Created a real bot through **@BotFather**.
+2. Put `TELEGRAM_BOT_TOKEN` in `.env` (git-ignored — proved in T8b).
+3. Set `notify.enabled: true`, `notify.transport: bot_api` and a real `notify.telegram_chat_id` in
+   `config.yaml`.
+4. Verified the token and chat id, started a conversation with the bot, and started a run.
+5. **A real message arrived in the Telegram chat.**
+
+### What the database proves
+
+`data/leads.db`, run 4:
+
+```
+event:      notify.sent
+data_json:  {"kind": "gate.reached", "transport": "bot_api",
+             "message_id": "4", "chat_id_hash": "47dd2e1a1a6e"}
+created_at: 2026-08-11 05:27:43.197202
+runs.finished_at for run 4: 2026-08-11 05:27:40.854250
+```
+
+| Claim | Status | How this row proves it |
+|---|---|---|
+| **AC1** — delivery within 10 s of a completed run | ✅ | `05:27:43.197` − `05:27:40.854` = **2.3 s** |
+| **R15** — no chat identifier in the database | ✅ | The payload carries `chat_id_hash`, a hash. There is no `chat_id` key |
+| **D1** — transports selected by config, Bot API the intended default | ✅ | `"transport": "bot_api"`, chosen by `config.yaml`, not by code |
+| **R17** — zero tokens | ✅ | `ai_calls` did not increase. No model is in the path |
+| **D3** — commit, then send, then record | ✅ | The `notify.sent` row is *later* than the terminal `run.transition`, in that order |
+
+### The delivery path, now verified end to end
+
+```
+finalize_run  ->  dispatch_pending  ->  BotApiTransport  ->  api.telegram.org  ->  the chat
+   (commits)        (reads run_events)     (real token)         (HTTP 200)        (message seen)
+```
+
+Previously verified only as far as `NullTransport` and as far as `responses`-mocked HTTP.
+**The last two hops are now real.**
+
+### Two observations from the live run, both investigated
+
+| | Observation | Verdict |
+|---|---|---|
+| **O1** | The message read *"Run 4 needs approval"* then *"This run is no longer at a gate."* | ✅ **Expected behaviour.** The late-drain design cost recorded in advance ([handover §4](PHASE-07-HANDOVER.md), [STAGE5-FLOW](P7-STAGE5-FLOW.md) A9). Wording only — **[DI21](DEFERRED-IMPROVEMENTS.md)**. **No code changed** |
+| **O2** | Asterisks appeared literally rather than as bold | ✅ **Expected behaviour.** Limit **L7**, a decision recorded in `transport.py`'s own docstring |
+
+**Neither is a defect. No production code was changed to record this section.**
+
+### What closing B1 found that the offline half could not
+
+**One test was depending on the token's absence, and nobody could have known.**
+
+`tests/test_notify_dispatch.py::test_building_the_transport_is_lazy_so_construction_never_raises`
+asserts `pytest.raises(SendError, match="TELEGRAM_BOT_TOKEN")` — true only when **no** token exists.
+`src/settings.py::load_env` calls `load_dotenv(PROJECT_ROOT / ".env", override=False)` **once per
+process, lazily**, so the moment any earlier test touches settings, the newly-real token enters
+`os.environ` and stays there for the session.
+
+| | Before B1 closed | After B1 closed |
+|---|---|---|
+| Test alone | ✅ passes | ✅ passes (`1 passed in 2.59 s`) |
+| Full suite | ✅ passes | ❌ **fails** (`1 failed, 1130 passed, 2 skipped`) |
+
+**This is a test-isolation defect, not a production one.** Lazy construction still works; a token that
+*is* present *should* build a transport. **CI was never affected** — GitHub Actions has no `.env`, so
+the token is absent there, which is precisely why nine phases of green CI could not have caught it.
+
+**Fixed** with one line, `monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)`, which
+**strengthens** the assertion rather than weakening it ([lock §3](EXECUTION_MODE_LOCK.md) step 6): the
+test now proves what its name claims on a machine that has done the live test as well as on one that
+has not. **No production code was touched.**
+
+**The general lesson, worth carrying into P8:** *a test that asserts on the absence of something in
+the environment is only as trustworthy as the environment's accidental emptiness.* Closing a blocker
+can turn a passing test red without any code changing — and the failure is a real finding, not noise.
 
 ---
 

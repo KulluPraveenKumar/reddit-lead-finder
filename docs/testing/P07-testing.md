@@ -506,32 +506,82 @@ git status --porcelain
 
 ---
 
-## T11 — ⛔ BLOCKING · A real Telegram message
+## T11 — ✅ VERIFIED LIVE · A real Telegram message
 
-> ## ⛔ THIS TEST CANNOT BE RUN ON THIS MACHINE YET
+> ## ✅ EXECUTED AND PASSED — `2026-08-11`
 >
-> The project's testing plan asks you to *"complete a run and **receive one Telegram message**."*
-> That needs a Telegram bot token, and this machine does not have one:
+> **Blocker B1 is CLOSED.** The operator created a real bot via @BotFather, put
+> `TELEGRAM_BOT_TOKEN` in `.env`, set `notify.enabled: true`, `notify.transport: bot_api` and a real
+> `notify.telegram_chat_id`, started a run from the dashboard, and **a real message arrived in the
+> Telegram chat.**
+>
+> The full path is verified end to end: **application → `dispatch_pending` → `BotApiTransport` →
+> Telegram Bot API → chat.**
+>
+> **Evidence in the database** — `data/leads.db`, run 4:
 >
 > ```powershell
-> Select-String -Path .env -Pattern 'TELEGRAM' -SimpleMatch
+> python -c "import sqlite3; c=sqlite3.connect('data/leads.db'); print(*c.execute(\"select event,data_json,created_at from run_events where run_id=4 and event like 'notify.%'\"))"
 > ```
 >
-> **Expected — `verified 2026-08-10`: no output.** The `.env` file contains one key,
-> `APP_SECRET_KEY`, and no Telegram token.
+> **Expected — `verified 2026-08-11`:**
 >
-> This is **known and recorded** as blocker **B1**, raised before this phase began. The previous
-> phase's handover pre-authorised exactly this outcome: *"`TELEGRAM_BOT_TOKEN` present in `.env`,
-> **or the live half of P7 explicitly deferred**."*
+> ```
+> ('notify.sent', '{"kind": "gate.reached", "transport": "bot_api", "message_id": "4", "chat_id_hash": "47dd2e1a1a6e"}', '2026-08-11 05:27:43.197202')
+> ```
 >
-> **Everything else in P7 is fully verifiable without it** — the decision table, the message text,
-> the duplicate suppression, quiet hours, retries, token redaction, both boundary guards and all
-> three delivery methods are tested offline. **Only real delivery is unverified.**
+> Three things this row proves, each one a P7 design claim:
 >
-> **Mark this test as BLOCKED, not as passed.** A guide that records an unrun test as green is worse
-> than one that admits the gap.
+> | | Claim | How this row proves it |
+> |---|---|---|
+> | **R15** | A chat identifier never reaches the database | `chat_id_hash` is a hash — there is no `chat_id` field |
+> | **D1** | The transport is selected by config | `"transport": "bot_api"` — not `null` |
+> | **AC1** | Delivered promptly after the run finalised | Run finished `05:27:40.854`, message recorded `05:27:43.197` — **2.3 s**, inside the 10 s budget |
+>
+> **A note on what the message looked like.** The body arrives with **literal asterisks**
+> (`*Run 4 needs approval*`), not bold text. That is **not a defect** — `BotApiTransport` sends with
+> **no `parse_mode`** on purpose, because notification bodies carry untrusted text (`runs.error`,
+> subreddit names) and one unbalanced `*` under MarkdownV2 returns `400 can't parse entities`, which
+> would lose the message entirely. Limit **L7** in the completion report records this as a decision.
+> The *structure* (title line, `Field: value` lines, trailing note) renders correctly; the *emphasis*
+> is deliberately not applied.
+>
+> **A second observation from this run, investigated and closed as expected behaviour:** the message
+> read *"Run 4 needs approval"* followed by *"This run is no longer at a gate."* See
+> [the note below](#t11a--why-the-gate-message-said-no-longer-at-a-gate).
 
-### If you want to unblock it (about 10 minutes)
+### T11a — Why the gate message said "no longer at a gate"
+
+This was investigated against the live database and is **expected behaviour, not a defect.** No code
+was changed. The reasoning, in full:
+
+1. **Run 4 was a dashboard-started run, so all three gates were auto-satisfied.** `run_events` rows
+   58–64 show it passing `pending → profiling → discovering → awaiting_subreddit_review →
+   generating_keywords → awaiting_keyword_review → awaiting_options → scraping` **in the same
+   millisecond** (`05:27:28.049399`), each with a reason like *"Subreddit review already satisfied:
+   you chose these subreddits yourself."*
+2. **`gate.reached` is delivered at finalise, not when the gate is reached.** This is
+   [handover §4](../PHASE-07-HANDOVER.md) and [P7-STAGE5-FLOW §3](../P7-STAGE5-FLOW.md) assumption
+   **A9** — a recorded design cost, written down *before* implementation. By the time
+   `dispatch_pending` drained at `05:27:43`, `runs.state` was already `complete`.
+3. **The renderer is correct to still render it.** `render_gate_reached`'s own docstring says a run
+   that is no longer at a gate *"is still rendered"*, because a renderer that raised on a moved state
+   would turn a late notification into a **failed** one.
+4. **No gate state is missing from the label table.** `GATE_LABELS` covers exactly
+   `awaiting_subreddit_review`, `awaiting_keyword_review` and `awaiting_options` — the same three
+   keys as the dispatcher's `TRANSITION_KINDS`. The `None` branch therefore fires **only** when the
+   run has genuinely left the gate, never because a real gate was unlabelled.
+5. **Why no "Run 4 complete" message accompanied it.** Run 4 collected **0 leads with 0 failed
+   subreddits**, so `_run_complete` correctly returned *"the run completed cleanly and found
+   nothing"* — a deliberate suppression, so that an operator is not told "0 leads" nightly until they
+   learn to ignore the channel.
+
+**What is left over is wording, not behaviour.** The title line is built from the *kind* while the
+note is built from *live state*, so a late-drained gate notification announces "needs approval" for a
+run that needs nothing. Recorded as **[DI21](../DEFERRED-IMPROVEMENTS.md)** — a UX improvement, and
+explicitly **not** an expansion of P7's scope.
+
+### How this was unblocked (about 10 minutes) — kept for the next machine
 
 1. In Telegram, message **@BotFather**, send `/newbot`, follow the prompts. It gives you a token.
 2. Message your new bot once, then visit
@@ -561,6 +611,14 @@ git diff --stat config.yaml
 **Pass if:** one message arrives in Telegram within 10 seconds of the run completing, and the
 `ai_calls` count from T5b has **not** increased.
 
+**Result — `2026-08-11`: ✅ PASS.** Message delivered in **2.3 s**. Zero AI calls, as designed: no
+model is in the notification path at all.
+
+> ⚠️ **Step 5 is not optional and has not yet been done on this machine.** `config.yaml` currently
+> holds a **real chat id** in the working tree. It must be reverted before any commit — a chat
+> identifier in a tracked file is exactly what **R15** exists to prevent. The token in `.env` is
+> fine to keep; `.env` is git-ignored (proved in T8b).
+
 ---
 
 ## Sign-off
@@ -568,7 +626,8 @@ git diff --stat config.yaml
 **Blocking tests.** **T1, T2, T4, T5, T6, T8, T9 and T10 are not optional.** T2 and T5 are the two
 that matter most: T2 because a boundary guard in this project has already been claimed for six phases
 while not existing, and T5 because "these messages are free" is the entire justification for the
-design. **T11 is BLOCKED** by a missing token and must be recorded as blocked, never as passed.
+design. **T11 was executed live on 2026-08-11 and passed** — blocker **B1** is closed. It is no
+longer a blocked test.
 
 | Test | What it proves | Pass | Fail | Notes | Tester |
 |---|---|---|---|---|---|
@@ -582,7 +641,7 @@ design. **T11 is BLOCKED** by a missing token and must be recorded as blocked, n
 | **T8** 🔒 | The bot token reaches no log and no committed file | ▢ | ▢ | | |
 | **T9** 🔒 | Off by default; on when asked; rollback **executed** and tree clean | ▢ | ▢ | | |
 | **T10** 🔒 | Full suite, schema 31/31, one migration head, clean tree | ▢ | ▢ | | |
-| **T11** ⛔ | A real Telegram message — **BLOCKED on B1** | — | — | **BLOCKED: no `TELEGRAM_BOT_TOKEN`** | |
+| **T11** | A real Telegram message — **B1 CLOSED** | ☐ | ☐ | **Executed live 2026-08-11 per operator report**; run 4, `bot_api`, delivered in 2.3 s, `notify.sent` row carries `chat_id_hash` and no `chat_id`. Evidence in [completion report §7a](../PHASE-07-COMPLETION-REPORT.md). Asterisks literal by design (L7). **Awaiting operator signature** | |
 
 **Tester:** ______________________  **Date:** ______________  **Result:** ▢ Pass ▢ Fail ▢ Blocked
 

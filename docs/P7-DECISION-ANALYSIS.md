@@ -292,6 +292,24 @@ other step depends on it.
 verified (B1)*. Per [lock §6.2](EXECUTION_MODE_LOCK.md), **no tag** while a sign-off table is
 unsigned — which is independently already true because of **D1/O3** (P00–P06 unsigned).
 
+### ✅ Outcome — **A, then B. Both were taken. 2026-08-11**
+
+The recommendation said *"Option A, with B available at any time"*, and **B was subsequently taken.**
+The operator created a bot, supplied a token, and **Test 11 ran unchanged**, exactly as the guide was
+written to allow — no other step depended on it, so nothing had to be re-executed.
+
+**B1 is closed.** Live delivery is verified: run 4, `transport: bot_api`, message delivered **2.3 s**
+after finalise, recorded as a `notify.sent` row carrying a `chat_id_hash` and no chat id. Evidence in
+[PHASE-07-COMPLETION-REPORT §7a](PHASE-07-COMPLETION-REPORT.md); the guide's T11 is now marked
+**verified**, not blocked.
+
+**Option C stayed ruled out, and that mattered.** P7 shipped saying *"only real delivery is
+unverified"* rather than claiming it. That statement is what made this a closure rather than a
+correction — nothing written earlier had to be walked back.
+
+**The tag position is unchanged.** [lock §6.2](EXECUTION_MODE_LOCK.md) still blocks a tag, because
+**D1/O3** (P00–P06 sign-off tables unsigned) was always the independent reason.
+
 ---
 
 ## D7 — What delivers a notification when no handler is running

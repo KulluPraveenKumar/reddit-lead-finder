@@ -73,7 +73,7 @@ Answered before implementation, analysed in
 | Item | Owner |
 |---|---|
 | **Retry on failure** — [34 §P7](../34-implementation-plan.md) task 6's other half | ⚠️ **Nobody yet.** An open P7 obligation, not a closed one |
-| Real Telegram delivery (T11) | Blocked on **B1** — no token in `.env` |
+| ~~Real Telegram delivery (T11)~~ | ✅ **DONE 2026-08-11.** B1 closed — live message delivered in 2.3 s ([report §7a](../PHASE-07-COMPLETION-REPORT.md)) |
 | M-5, M-9, M-10 | **Track B, before P23**. Reported **unsatisfied** |
 | T1/T2 live verification | **P23** — `hermes` is not installed |
 | Immediate `gate.reached`, the rich gate card | **P18** — see handover §4 |
@@ -92,3 +92,5 @@ Answered before implementation, analysed in
 | "Why does `dispatch_pending` raise on my session?" | Handover **G1**. Commit first; the guard is trap T0 made executable |
 | "The notification tier does nothing" | `notify.enabled` defaults to **false**. That is the shipped rollback state |
 | "A `notify.failed` row appeared and nothing retried" | Correct. Retry is not implemented — §5 |
+| "The gate message says 'needs approval' but also 'no longer at a gate'" | **Expected.** Handover §4's late-drain design cost. Investigated 2026-08-11 against run 4; wording only, recorded as **DI21**. Do not "fix" it as a bug |
+| "`config.yaml` shows a chat id in `git diff`" | The T11 live test. **Revert it, never commit it** (R15) — P07 guide T11 step 5 |

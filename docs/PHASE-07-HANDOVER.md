@@ -177,7 +177,9 @@ database.
 |---|---|---|
 | **D1** | P00–P07 manual sign-off tables unsigned | **By the project's own rule, yes** ([lock §4](EXECUTION_MODE_LOCK.md)). **No tag created** |
 | **B3/O2** | `mypy` not installed | **No** — but the gate cannot be claimed in full |
-| **B1** | `.env` has no `TELEGRAM_BOT_TOKEN` | **No.** P7's live half is deferred; P8 is a schema phase and needs no token |
+| ~~**B1**~~ | ~~`.env` has no `TELEGRAM_BOT_TOKEN`~~ · ✅ **CLOSED 2026-08-11** — token added, T11 executed live, message delivered in 2.3 s ([completion report §7a](PHASE-07-COMPLETION-REPORT.md)) | **No.** It was never a P8 blocker; it is now not a blocker at all |
+| **DI21** | The late-drained `gate.reached` title says *"needs approval"* for a run that has left the gate | **No.** Wording only; found during T11's live run, investigated and confirmed **expected behaviour** |
+| ⚠️ **W1** | `config.yaml` in the working tree carries a **real chat id** from the T11 live test | **Yes, procedurally.** P8's entry condition is a *clean tree*, and this must be reverted — never committed (**R15**) |
 | **L4** | **Retry is undelivered** — task 6's other half | **No**, but it is an open P7 obligation, not a closed one |
 | **DI17** | Nothing enqueues `maintenance` | **No** — P17's |
 | **DI18** | `test_parse_speed_stays_inside_the_budget` is load-sensitive | **No.** Did not fire in P7's CI, including a 4-minute run |
@@ -197,5 +199,7 @@ database.
 - [ ] `phase-manager` skill loaded before the first edit under `src/`
 - [ ] **The full suite recorded green before the first change** — 1131 passed, 2 skipped
 - [ ] `git status` clean · `alembic heads` = one `0005` · `check_schema.py` 31/31
+      ⚠️ **Includes reverting `config.yaml`** — the T11 live test left a real chat id in it
+      (`git checkout -- config.yaml`, P07 guide T11 step 5). **It must not be committed** (R15)
 - [ ] `gh run list` checked: P7 green on `origin/main`
 - [ ] A timestamped backup of `data/leads.db` before the first `alembic upgrade` (**M7**)
