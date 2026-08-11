@@ -543,12 +543,14 @@ class TestSchemaCheckScript:
         exactly and the count is still asserted exactly, so a check that
         silently stops running still fails this test.
 
-        The count stays at **29** across the 0006 move, and that is correct
-        rather than suspicious: P8's Stage 2 adds no new *check*. It adds four
-        table names to an existing set-comparison and inverts one existing
-        assertion about ``prescores.comment_id``. The checks that assert P8's
-        new columns, indexes and constraints arrive in Stage 4 and will move
-        this number then.
+        The count went **29 -> 49** in P8. It did *not* move in Stage 2, which
+        added four table names to an existing set-comparison and inverted one
+        existing assertion; the twenty new checks are Stage 4's, and they are
+        the ones that assert 0006's own shape: the four ``leads`` columns and
+        their two defaults, the four bare ``project_id`` columns (F1), the four
+        new indexes, the absence of an index on ``source``, the uniqueness of
+        ``ux_comments_hash``, both partial ``dedup_members`` indexes, and the
+        two named CHECK constraints.
         """
         from scripts.check_schema import main
 
@@ -557,7 +559,7 @@ class TestSchemaCheckScript:
 
         assert code == 0, out
         assert "FAIL" not in out
-        assert "all 29 checks passed" in out
+        assert "all 49 checks passed" in out
 
     def test_detects_a_wrong_claim_index_column_order(self, temp_db, capsys):
         """The defect the guide exists to catch, injected deliberately.

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -365,6 +366,427 @@ def test_no_revision_leaves_a_dangling_foreign_key(revision):
         f"green. Use a bare column here and close the FK with batch_alter_table "
         f"in the revision that creates the parent (freeze M8)."
     )
+
+
+# ---------------------------------------------------------------------------
+# 0006_content_and_dedup — P8 Stage 4
+#
+# ⚠️ **What is deliberately NOT tested here: the dedup_members "one group per
+# run" invariant.** 05 §5.4b states it, and it is *not expressible in this
+# schema* (P8 review F7): there is no `run_id` on `dedup_members`, the run is
+# reachable only through `dedup_groups`, and SQLite cannot constrain uniqueness
+# across a join. Two groups from the same run can each claim the same lead and
+# every index stays satisfied. Writing a test that appeared to check it would be
+# worse than the gap, because it would retire the question. It is P10's, to
+# uphold in the application and to test there.
+# ---------------------------------------------------------------------------
+
+P8_TABLES = ("comments", "dedup_groups", "dedup_members", "minhash_bands")
+P8_LEAD_COLUMNS = ("project_id", "confidence_score", "analysis_status", "source")
+
+
+def _raw_copy(tmp_path: Path) -> Path:
+    """A copy of the live database that has **not** been migrated.
+
+    ``live_db_copy`` runs ``init_db``, which upgrades to head — correct for most
+    tests and useless for the two that need to observe the *transition*.
+    """
+    source = PROJECT_ROOT / "data" / "leads.db"
+    if not source.exists():  # pragma: no cover
+        pytest.skip("no live database present")
+    target = tmp_path / "raw.db"
+    shutil.copy(source, target)
+    return target
+
+
+def test_a7_a8_a_lead_and_a_comment_can_be_inserted_at_0006(tmp_path):
+    """The F1 failure mode, proven end to end rather than by proxy.
+
+    ``test_no_revision_leaves_a_dangling_foreign_key`` asserts on the
+    *constraint*, which is what makes it affordable across every revision. This
+    asserts on the *effect*, at the one revision P8 owns. Both matter: the guard
+    would still pass if SQLite ever changed when it resolves a REFERENCES
+    target, and this would not.
+    """
+    from src.db.migrate import MigrationRunner
+
+    db_path = tmp_path / "insert.db"
+    MigrationRunner(db_path).upgrade("0006_content_and_dedup")
+
+    conn = sqlite3.connect(db_path)
+    conn.execute("PRAGMA foreign_keys=ON")
+    try:
+        conn.execute(
+            "INSERT INTO leads (reddit_id, subreddit, author, title, url, created_utc, scraped_at) "
+            "VALUES ('t3_a7', 's', 'a', 't', 'u', '2026-01-01', '2026-01-01')"
+        )
+        lead_id = conn.execute("SELECT id FROM leads WHERE reddit_id='t3_a7'").fetchone()[0]
+        conn.execute(
+            "INSERT INTO comments (lead_id, body, scraped_at, body_hash) "
+            "VALUES (?, 'b', '2026-01-01', 'hash-a8')",
+            (lead_id,),
+        )
+        conn.commit()
+
+        assert conn.execute("SELECT COUNT(*) FROM leads").fetchone()[0] == 1
+        assert conn.execute("SELECT COUNT(*) FROM comments").fetchone()[0] == 1
+    finally:
+        conn.close()
+
+
+def test_the_dangling_fk_guard_actually_covers_0006():
+    """4.1 — confirm the parametrised guard *picked 0006 up*, not skipped it.
+
+    A parametrised test that silently stops covering a revision reports the same
+    green as one that covers it. This asserts the parameter list itself.
+    """
+    revisions = _revisions_oldest_first()
+    assert "0006_content_and_dedup" in revisions, (
+        f"the dangling-FK guard is not covering 0006: {revisions}"
+    )
+    assert revisions[0] == "0001_baseline"
+
+
+def test_a2_every_existing_lead_gets_the_documented_defaults(live_db_copy):
+    """A2 — **every** row, not a sample.
+
+    ⚠️ The count is asserted as *"the number of correctly-defaulted rows equals
+    the total"* rather than against a hardcoded 478. That is strictly stronger,
+    not weaker: 478 was true on 2026-08-11 and the scraper's whole purpose is to
+    change it, so a pinned literal would fail on the first new lead while proving
+    nothing extra. What must hold forever is that **no row was left behind by the
+    ALTER**, and that is what this asserts. The floor of 459 keeps it honest
+    against an empty table trivially satisfying the equality.
+    """
+    conn = sqlite3.connect(live_db_copy)
+    try:
+        columns = {r[1] for r in conn.execute("PRAGMA table_info(leads)")}
+        assert set(P8_LEAD_COLUMNS) <= columns, f"0006 columns missing: {columns}"
+
+        total = conn.execute("SELECT COUNT(*) FROM leads").fetchone()[0]
+        defaulted = conn.execute(
+            "SELECT COUNT(*) FROM leads WHERE project_id IS NULL "
+            "AND confidence_score IS NULL "
+            "AND analysis_status = 'not_analyzed' "
+            "AND source = 'scrape'"
+        ).fetchone()[0]
+    finally:
+        conn.close()
+
+    assert total >= 459, "the live copy lost baseline rows before the assertion could run"
+    assert defaulted == total, (
+        f"{total - defaulted} of {total} leads did not receive the documented defaults"
+    )
+
+
+def test_a5_the_legacy_intent_score_fingerprint_survives_0006(live_db_copy):
+    """A2/A5 — the 459 originals and their scores, after the ALTER.
+
+    ``check_schema.py`` pins these same two numbers; asserting them here as well
+    is deliberate, because the two run in different places. The script is what a
+    human runs from the manual guide, and it is not in CI.
+    """
+    if not BASELINE.exists():  # pragma: no cover
+        pytest.skip("no baseline fingerprint recorded")
+    baseline = json.loads(BASELINE.read_text())
+    boundary = baseline["baseline_max_lead_id"]
+
+    conn = sqlite3.connect(live_db_copy)
+    try:
+        count = conn.execute("SELECT COUNT(*) FROM leads WHERE id <= ?", (boundary,)).fetchone()[0]
+        hi, avg = conn.execute(
+            "SELECT MAX(intent_score), AVG(intent_score) FROM leads WHERE id <= ?", (boundary,)
+        ).fetchone()
+        rows = conn.execute(
+            "SELECT id, intent_score FROM leads WHERE id <= ? ORDER BY id", (boundary,)
+        ).fetchall()
+    finally:
+        conn.close()
+
+    assert count == baseline["lead_count"]
+    assert round(hi, 2) == baseline["baseline_intent_score_max"] == 164.28
+    assert round(avg, 2) == baseline["baseline_intent_score_avg"] == 42.29
+    digest = hashlib.sha256(json.dumps(rows).encode()).hexdigest()
+    assert digest == baseline["intent_score_sha256"], "0006 altered an original intent_score"
+
+
+def test_a3_the_alter_did_not_rewrite_a_single_row(tmp_path):
+    """A3 — metadata-only, proven by ``rootpage``, not by a clock.
+
+    A rewritten table gets a **new** root b-tree page; an ``ADD COLUMN`` that
+    only edits the table header does not. Comparing ``sqlite_master.rootpage``
+    across the upgrade is therefore a direct observation of "no row was
+    touched".
+
+    ⚠️ **Deliberately not a wall-clock assertion.** A6's *"< 1 s"* and DI18's
+    ``test_parse_speed_stays_inside_the_budget`` are the same species, and DI18
+    has already failed three times for machine load rather than for slowness.
+    A timing test here would measure the CI runner, not the migration.
+    """
+    from src.db.migrate import MigrationRunner
+
+    db_path = _raw_copy(tmp_path)
+
+    conn = sqlite3.connect(db_path)
+    try:
+        before = conn.execute(
+            "SELECT rootpage FROM sqlite_master WHERE type='table' AND name='leads'"
+        ).fetchone()[0]
+        before_count = conn.execute("SELECT COUNT(*) FROM leads").fetchone()[0]
+    finally:
+        conn.close()
+
+    MigrationRunner(db_path).upgrade("head")
+
+    conn = sqlite3.connect(db_path)
+    try:
+        after = conn.execute(
+            "SELECT rootpage FROM sqlite_master WHERE type='table' AND name='leads'"
+        ).fetchone()[0]
+        after_count = conn.execute("SELECT COUNT(*) FROM leads").fetchone()[0]
+    finally:
+        conn.close()
+
+    assert after == before, (
+        f"leads was rewritten: rootpage moved {before} -> {after}. 0006 must be "
+        f"metadata-only (M5); a row rewrite over the legacy rows is the one thing "
+        f"the ALTER may not do."
+    )
+    assert after_count == before_count
+
+
+def test_a9_the_named_check_survives_the_prescores_rebuild(live_db_copy):
+    """A9 — ``batch_alter_table`` rebuilds by reflection, and CHECKs are its weak spot.
+
+    Step 2.8 closes ``prescores.comment_id`` with a copy-and-move rebuild. If
+    SQLAlchemy's reflection drops the named CHECK on the way through, the
+    constraint is gone and **nothing else would notice**: no test inserts a
+    prescores row with both targets set, and the FK closure it was rebuilt for
+    would still look correct.
+    """
+    conn = sqlite3.connect(live_db_copy)
+    try:
+        sql = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='prescores'"
+        ).fetchone()[0]
+    finally:
+        conn.close()
+
+    assert "ck_prescores_one_target" in sql, (
+        f"the named CHECK did not survive the batch rebuild:\n{sql}"
+    )
+
+
+def test_a9_the_prescores_check_is_still_enforced(live_db_copy):
+    """The CHECK, asserted by effect rather than by presence.
+
+    A constraint that exists in the DDL text but is not enforced is the failure
+    this pairs with the test above to exclude.
+    """
+    conn = sqlite3.connect(live_db_copy)
+    conn.execute("PRAGMA foreign_keys=ON")
+    try:
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                "INSERT INTO prescores (run_id, lead_id, comment_id, total, components_json, "
+                "stage, gate_decision, created_at) "
+                "VALUES (NULL, NULL, NULL, 1.0, '{}', 'full', 'admit', '2026-01-01')"
+            )
+    finally:
+        conn.close()
+
+
+def test_the_deferred_prescores_fk_is_enforced_not_merely_present(tmp_path):
+    """4.6 — ``fk_prescores_comment`` bites, asserted by effect.
+
+    ``PRAGMA foreign_key_list`` reporting the constraint proves only that the
+    DDL says so. What P8 task 4 owes is a constraint that **rejects a bad
+    write**, which is a different claim and the one worth testing.
+    """
+    from src.db.migrate import MigrationRunner
+
+    db_path = tmp_path / "fk.db"
+    MigrationRunner(db_path).upgrade("head")
+
+    conn = sqlite3.connect(db_path)
+    conn.execute("PRAGMA foreign_keys=ON")
+    try:
+        parents = {(r[2], r[3]) for r in conn.execute("PRAGMA foreign_key_list(prescores)")}
+        assert ("comments", "comment_id") in parents, f"FK absent: {sorted(parents)}"
+
+        conn.execute(
+            "INSERT INTO runs (state, started_at, updated_at) "
+            "VALUES ('complete', '2026-01-01', '2026-01-01')"
+        )
+        run_id = conn.execute("SELECT id FROM runs").fetchone()[0]
+
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                "INSERT INTO prescores (run_id, lead_id, comment_id, total, components_json, "
+                "stage, gate_decision, created_at) VALUES (?, NULL, 999999, 1.0, '{}', 'full', "
+                "'admit', '2026-01-01')",
+                (run_id,),
+            )
+    finally:
+        conn.close()
+
+
+def test_a1_up_down_up_on_a_copy_of_the_live_database(tmp_path):
+    """A1 — the rollback, on real data, with the count checked at every stage."""
+    from src.db.migrate import MigrationRunner
+
+    db_path = _raw_copy(tmp_path)
+    runner = MigrationRunner(db_path)
+
+    def leads_and_head() -> tuple[int, str | None]:
+        conn = sqlite3.connect(db_path)
+        try:
+            return (
+                conn.execute("SELECT COUNT(*) FROM leads").fetchone()[0],
+                runner.current_revision(),
+            )
+        finally:
+            conn.close()
+
+    runner.upgrade("head")
+    up_count, up_rev = leads_and_head()
+    assert up_rev == "0006_content_and_dedup"
+
+    runner.downgrade("0005_discovery")
+    down_count, down_rev = leads_and_head()
+    assert down_rev == "0005_discovery"
+
+    conn = sqlite3.connect(db_path)
+    try:
+        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        columns = {r[1] for r in conn.execute("PRAGMA table_info(leads)")}
+    finally:
+        conn.close()
+    assert not (set(P8_TABLES) & tables), f"downgrade left P8 tables behind: {tables}"
+    assert not (set(P8_LEAD_COLUMNS) & columns), f"downgrade left P8 columns behind: {columns}"
+
+    runner.upgrade("head")
+    re_count, re_rev = leads_and_head()
+    assert re_rev == "0006_content_and_dedup"
+
+    assert up_count == down_count == re_count >= 459, (
+        f"a lead was lost across the round-trip: {up_count} -> {down_count} -> {re_count}"
+    )
+
+
+def test_the_dedup_members_partial_uniques_behave(tmp_path):
+    """4.8 — partial, not plain. The difference is the whole point.
+
+    A plain ``UNIQUE (group_id, lead_id)`` would treat every NULL ``lead_id`` as
+    distinct in SQLite and so would *appear* to work — while also constraining
+    comment-only rows it has no business constraining. The ``WHERE`` clause is
+    what makes each index apply to its own kind of row, and dropping it is a
+    mutation nothing else in the suite catches.
+    """
+    from src.db.migrate import MigrationRunner
+
+    db_path = tmp_path / "dedup.db"
+    MigrationRunner(db_path).upgrade("head")
+
+    conn = sqlite3.connect(db_path)
+    conn.execute("PRAGMA foreign_keys=ON")
+    try:
+        conn.execute(
+            "INSERT INTO leads (reddit_id, subreddit, author, title, url, created_utc, scraped_at) "
+            "VALUES ('t3_d', 's', 'a', 't', 'u', '2026-01-01', '2026-01-01')"
+        )
+        lead_id = conn.execute("SELECT id FROM leads").fetchone()[0]
+        conn.execute(
+            "INSERT INTO comments (lead_id, body, scraped_at, body_hash) "
+            "VALUES (?, 'b', '2026-01-01', 'h-dedup')",
+            (lead_id,),
+        )
+        comment_id = conn.execute("SELECT id FROM comments").fetchone()[0]
+        conn.execute("INSERT INTO dedup_groups (method, created_at) VALUES ('exact', '2026-01-01')")
+        group_id = conn.execute("SELECT id FROM dedup_groups").fetchone()[0]
+
+        conn.execute(
+            "INSERT INTO dedup_members (group_id, lead_id) VALUES (?, ?)", (group_id, lead_id)
+        )
+        conn.commit()
+
+        # The partial unique bites on a real duplicate.
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                "INSERT INTO dedup_members (group_id, lead_id) VALUES (?, ?)",
+                (group_id, lead_id),
+            )
+        conn.rollback()
+
+        # A comment-only row in the same group does NOT collide with the lead row,
+        # which is what the WHERE clause buys.
+        conn.execute(
+            "INSERT INTO dedup_members (group_id, comment_id) VALUES (?, ?)",
+            (group_id, comment_id),
+        )
+        conn.commit()
+        assert conn.execute("SELECT COUNT(*) FROM dedup_members").fetchone()[0] == 2
+
+        # And the CHECK still refuses a row that names both, or neither.
+        #
+        # ⚠️ **A SECOND, EMPTY GROUP is used deliberately.** Asserting this
+        # against `group_id` would prove nothing: that group already holds
+        # (group_id, lead_id), so a both-set row violates
+        # `ux_dedup_members_lead` whether or not the CHECK exists. A mutation
+        # that deleted `ck_dedup_members_one_target` survived against the
+        # original form of this test for exactly that reason -- the unique index
+        # masked the assertion. Same species as P7's "masked by a second guard".
+        conn.execute("INSERT INTO dedup_groups (method, created_at) VALUES ('exact', '2026-01-01')")
+        empty_group = conn.execute(
+            "SELECT id FROM dedup_groups ORDER BY id DESC LIMIT 1"
+        ).fetchone()[0]
+
+        with pytest.raises(sqlite3.IntegrityError):  # both targets named
+            conn.execute(
+                "INSERT INTO dedup_members (group_id, lead_id, comment_id) VALUES (?, ?, ?)",
+                (empty_group, lead_id, comment_id),
+            )
+        conn.rollback()
+
+        with pytest.raises(sqlite3.IntegrityError):  # neither target named
+            conn.execute(
+                "INSERT INTO dedup_members (group_id, lead_id, comment_id) VALUES (?, NULL, NULL)",
+                (empty_group,),
+            )
+    finally:
+        conn.close()
+
+
+def test_ux_comments_hash_rejects_a_duplicate_body_hash(tmp_path):
+    """4.9 — ``body_hash`` is the dedup key, so the index must actually be unique."""
+    from src.db.migrate import MigrationRunner
+
+    db_path = tmp_path / "comments.db"
+    MigrationRunner(db_path).upgrade("head")
+
+    conn = sqlite3.connect(db_path)
+    conn.execute("PRAGMA foreign_keys=ON")
+    try:
+        conn.execute(
+            "INSERT INTO leads (reddit_id, subreddit, author, title, url, created_utc, scraped_at) "
+            "VALUES ('t3_c', 's', 'a', 't', 'u', '2026-01-01', '2026-01-01')"
+        )
+        lead_id = conn.execute("SELECT id FROM leads").fetchone()[0]
+        conn.execute(
+            "INSERT INTO comments (lead_id, body, scraped_at, body_hash) "
+            "VALUES (?, 'first', '2026-01-01', 'same-hash')",
+            (lead_id,),
+        )
+        conn.commit()
+
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                "INSERT INTO comments (lead_id, body, scraped_at, body_hash) "
+                "VALUES (?, 'second', '2026-01-01', 'same-hash')",
+                (lead_id,),
+            )
+    finally:
+        conn.close()
 
 
 def test_pragmas_applied_on_every_connection(temp_db):

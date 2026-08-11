@@ -342,6 +342,105 @@ def check_discovery_shape(
     )
 
 
+def check_content_and_dedup_shape(conn: sqlite3.Connection, report: Report) -> None:
+    """The 0006 constraints that are easy to get wrong and silent when wrong.
+
+    Every check here is one a passing migration could still fail. The four
+    ``project_id`` columns in particular: a ``REFERENCES projects(id)`` written
+    at this revision leaves the schema *looking* correct -- the DDL applies,
+    ``foreign_key_check`` returns ``[]`` -- while every INSERT into that table
+    fails. That is P8 review F1, and it is asserted here as well as in the test
+    suite because this script is what a human runs from the manual guide.
+    """
+    report.section("Content and dedup (0006)")
+
+    lead_columns = {r[1] for r in conn.execute("PRAGMA table_info(leads)")}
+    for column in ("project_id", "confidence_score", "analysis_status", "source"):
+        report.check(
+            column in lead_columns,
+            f"leads.{column} exists",
+            f"got: {sorted(lead_columns)}",
+        )
+
+    # The defaults are what let the ALTER stay metadata-only over 478 rows.
+    lead_defaults = {r[1]: r[4] for r in conn.execute("PRAGMA table_info(leads)")}
+    report.check(
+        (lead_defaults.get("analysis_status") or "").strip("'\"") == "not_analyzed",
+        "leads.analysis_status defaults to 'not_analyzed'",
+        f"got: {lead_defaults.get('analysis_status')!r}",
+    )
+    report.check(
+        (lead_defaults.get("source") or "").strip("'\"") == "scrape",
+        "leads.source defaults to 'scrape'",
+        f"got: {lead_defaults.get('source')!r}",
+    )
+
+    # ⚠️ F1. Four columns must reference `projects`, which arrives in 0007.
+    for table in ("leads", "comments", "dedup_groups", "minhash_bands"):
+        parents = {r[2].lower() for r in conn.execute(f"PRAGMA foreign_key_list({table})")}
+        report.check(
+            "projects" not in parents,
+            f"{table}.project_id is BARE — the FK is deferred to 0007 (M8)",
+            f"got a REFERENCES projects: {sorted(parents)}. Every INSERT into "
+            f"{table} is already broken",
+        )
+
+    # 4 columns, 4 indexes. `source` deliberately has none (D3).
+    lead_indexes = {r[1] for r in conn.execute("PRAGMA index_list(leads)")}
+    for name in (
+        "ix_leads_project_id",
+        "ix_leads_confidence_score",
+        "ix_leads_analysis_status",
+        "ix_leads_project_conf",
+    ):
+        report.check(name in lead_indexes, f"{name} exists", f"got: {sorted(lead_indexes)}")
+    report.check(
+        "ix_leads_source" not in lead_indexes,
+        "leads.source has NO index — 4 columns, 4 indexes (D3)",
+        f"got: {sorted(lead_indexes)}",
+    )
+
+    # `body_hash` is the real dedup key, so its index must actually be unique.
+    comment_indexes = {r[1]: r[2] for r in conn.execute("PRAGMA index_list(comments)")}
+    report.check(
+        comment_indexes.get("ux_comments_hash") == 1,
+        "ux_comments_hash is UNIQUE — body_hash is the dedup key",
+        f"got: {comment_indexes}",
+    )
+
+    # Partial, not plain. A plain unique would constrain comment-only rows too.
+    dedup_index_sql = {
+        r[0]: (r[1] or "")
+        for r in conn.execute(
+            "SELECT name, sql FROM sqlite_master WHERE type='index' AND tbl_name='dedup_members'"
+        )
+    }
+    for name, column in (
+        ("ux_dedup_members_lead", "lead_id"),
+        ("ux_dedup_members_comment", "comment_id"),
+    ):
+        sql = dedup_index_sql.get(name, "")
+        report.check(
+            "WHERE" in sql.upper() and column in sql,
+            f"{name} is PARTIAL (WHERE {column} IS NOT NULL)",
+            f"got: {sql or 'the index is missing entirely'}",
+        )
+
+    # The CHECK that batch_alter_table's reflection is most likely to drop.
+    for table, constraint in (
+        ("prescores", "ck_prescores_one_target"),
+        ("dedup_members", "ck_dedup_members_one_target"),
+    ):
+        row = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (table,)
+        ).fetchone()
+        report.check(
+            bool(row) and constraint in (row[0] or ""),
+            f"{constraint} is present on {table}",
+            "the named CHECK is missing",
+        )
+
+
 def check_indexes(conn: sqlite3.Connection, report: Report) -> None:
     report.section("Indexes (column order matters)")
 
@@ -543,7 +642,9 @@ def run_checks(
             else:
                 check_discovery_shape(conn, report, with_p8=not skip_p8)
             if skip_p8:
-                print("\n(--skip-p8: the four 0006 tables were not required)")
+                print("\n(--skip-p8: the 0006 content and dedup checks were not run)")
+            else:
+                check_content_and_dedup_shape(conn, report)
 
         check_legacy_fingerprint(conn, report, expect_leads)
     finally:
