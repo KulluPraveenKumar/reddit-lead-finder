@@ -845,14 +845,30 @@ def test_the_transport_is_built_from_config_when_none_is_injected(session):
     assert payload["message_id"].startswith("null:")
 
 
-def test_building_the_transport_is_lazy_so_construction_never_raises(session):
+def test_building_the_transport_is_lazy_so_construction_never_raises(session, monkeypatch):
     """A missing token is a timeline entry, not a reason to fail a finished run.
 
     ``bot_api`` without ``TELEGRAM_BOT_TOKEN`` raises at construction (Stage 4).
     If the service built its transport eagerly, merely *constructing* it inside
     ``finalize_run`` would raise -- so the raise must wait until the transport is
     used, where ``_notify`` can absorb it.
+
+    ⚠️ **The token is deleted explicitly, and that is the point of the line.**
+    This test asserts on the *absence* of ``TELEGRAM_BOT_TOKEN``, which until
+    2026-08-11 was accidental: no token existed on any machine, so nothing had to
+    arrange it. Closing blocker **B1** put a real token in ``.env``, and
+    ``settings.load_env`` loads that file **once per process, lazily** -- so as
+    soon as any earlier test touches settings, the token is in ``os.environ`` for
+    the rest of the session and this test's premise silently evaporates. It then
+    passes alone and fails in the full suite.
+
+    ``monkeypatch.delenv`` makes the precondition explicit rather than ambient,
+    which *strengthens* the assertion: it now proves what its name claims on a
+    machine that has done the live Telegram test as well as on one that has not.
+    Recorded in ``PHASE-07-COMPLETION-REPORT`` §7a.
     """
+    monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
+
     service = NotificationService(
         session, settings=NotifySettings(enabled=True, transport="bot_api", telegram_chat_id="42")
     )
