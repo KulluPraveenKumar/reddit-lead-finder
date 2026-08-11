@@ -251,6 +251,93 @@ def test_backup_uses_sqlite_api(temp_db):
     assert "leads" in tables
 
 
+def _revisions_oldest_first() -> list[str]:
+    """Every revision id in the chain, `0001` first.
+
+    Derived from the script directory rather than hardcoded, for the reason
+    ``test_single_head`` gives: a pinned list fails on every phase that adds a
+    migration, which is a guaranteed false alarm that says nothing.
+    """
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    script = ScriptDirectory.from_config(Config(str(PROJECT_ROOT / "alembic.ini")))
+    return [rev.revision for rev in reversed(list(script.walk_revisions()))]
+
+
+@pytest.mark.parametrize("revision", _revisions_oldest_first())
+def test_no_revision_leaves_a_dangling_foreign_key(revision):
+    """A ``REFERENCES`` target that does not exist **at that revision**.
+
+    This is the guard for [P8 review F1]. The defect it catches is specific and
+    it is invisible to everything else the project runs:
+
+    ``ALTER TABLE leads ADD COLUMN project_id INTEGER REFERENCES projects(id)``
+    written at ``0006``, when ``projects`` does not arrive until ``0007``,
+    **succeeds**. ``SELECT`` keeps working. ``PRAGMA foreign_key_check`` returns
+    ``[]``. The up/down/up round-trip is pure DDL and passes. ``check_schema.py``
+    only reads. And yet **every** ``INSERT`` into ``leads`` fails with
+    ``no such table: main.projects`` -- including one that sets ``project_id`` to
+    ``NULL``, because SQLite resolves the parent table at statement-prepare time,
+    not at constraint-check time. There is no value that avoids it.
+
+    So the assertion is made on the *constraint*, not on an insert.
+    ``PRAGMA foreign_key_list`` names the parent table directly, at every
+    revision, **with no fixture rows at all**. That is what makes this affordable
+    to run over the whole chain: the alternative -- inserting into every table at
+    every revision -- needs a valid row for ``jobs``, ``run_events``,
+    ``prescores`` (an FK *and* the ``(lead_id IS NOT NULL) <> (comment_id IS NOT
+    NULL)`` CHECK), ``dedup_members`` and more, at six revisions and growing
+    (D5, option B′, rejected on cost).
+
+    ⚠️ ``PRAGMA foreign_key_check`` is **not** a substitute and was measured to
+    fail here: it validates *data* against constraints it can resolve, and says
+    nothing about a constraint whose parent table is missing.
+
+    Parametrised over every revision so this covers ``0007``–``0010`` as they
+    land, not only ``0006``. Same idiom as P5's
+    ``test_conditional_get_has_not_been_reintroduced`` and P6's
+    ``test_the_density_heuristic_was_not_reintroduced``: prevent the *class*,
+    not the instance.
+    """
+    from src.db.migrate import MigrationRunner
+
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "chain.db"
+        MigrationRunner(db_path).upgrade(revision)
+
+        conn = sqlite3.connect(db_path)
+        try:
+            tables = [
+                row[0]
+                for row in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' "
+                    "AND name NOT LIKE 'alembic%' AND name NOT LIKE 'sqlite_%'"
+                )
+            ]
+            # SQLite table names are case-insensitive, so the parent named in a
+            # REFERENCES clause need not match sqlite_master's casing.
+            present = {name.lower() for name in tables}
+
+            dangling: list[str] = []
+            for table in tables:
+                for row in conn.execute(f"PRAGMA foreign_key_list({table})"):
+                    parent, column = row[2], row[3]
+                    if parent.lower() not in present:
+                        dangling.append(f"{table}.{column} -> {parent} (missing)")
+        finally:
+            conn.close()
+
+    assert not dangling, (
+        f"revision {revision} leaves a foreign key pointing at a table that does "
+        f"not exist yet: {dangling}. Every INSERT into that table already fails "
+        f"with 'no such table', even with the column set to NULL -- while "
+        f"foreign_key_check, the DDL round-trip and check_schema.py all report "
+        f"green. Use a bare column here and close the FK with batch_alter_table "
+        f"in the revision that creates the parent (freeze M8)."
+    )
+
+
 def test_pragmas_applied_on_every_connection(temp_db):
     """foreign_keys is per-connection and OFF by default in SQLite."""
     from sqlalchemy import text
