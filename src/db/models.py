@@ -54,9 +54,37 @@ class Lead(Base):
     created_utc = Column(DateTime, nullable=False)
     scraped_at = Column(DateTime, default=_utcnow)
 
+    # --- 0006_content_and_dedup -------------------------------------------
+    #
+    # `project_id` carries NO ForeignKey: `projects` arrives in 0007, which
+    # closes the constraint (M8). Declaring it here would not merely be
+    # premature -- SQLAlchemy would emit `REFERENCES projects(id)` into any
+    # create_all(), and SQLite resolves a REFERENCES target when it PREPARES a
+    # statement, so every INSERT into leads would fail with "no such table"
+    # even with the column set to NULL.
+    #
+    # `intent_score` above is untouched and keeps its meaning. That is the
+    # guarantee that keeps the 459 legacy rows usable.
+    project_id = Column(Integer, nullable=True)
+    # NULL means "never analysed", which is not the same as 0.0 ("analysed and
+    # judged worthless"). Sorting must place NULLs last.
+    confidence_score = Column(Float, nullable=True)
+    # not_analyzed | pending | analyzed | failed | skipped
+    analysis_status = Column(
+        String(20), nullable=False, server_default="not_analyzed", default="not_analyzed"
+    )
+    # scrape | holdout_audit -- R27's fix. A holdout-audited item must become a
+    # real, labellable lead, or the yield curve is fitted only on the gate's own
+    # admissions and recall collapses invisibly.
+    source = Column(String(20), nullable=False, server_default="scrape", default="scrape")
+
     __table_args__ = (
         Index("ix_leads_intent_score", "intent_score"),
         Index("ix_leads_scraped_at", "scraped_at"),
+        Index("ix_leads_project_id", "project_id"),
+        Index("ix_leads_confidence_score", "confidence_score"),
+        Index("ix_leads_analysis_status", "analysis_status"),
+        Index("ix_leads_project_conf", "project_id", text("confidence_score DESC")),
     )
 
     def __repr__(self):
@@ -524,9 +552,14 @@ class Prescore(Base):
     untunable (R11, AD-10b). `stage` distinguishes a provisional judgement made
     from title and snippet alone from a full one made with a body.
 
-    `comment_id` carries no ForeignKey: `comments` arrives in 0006, which closes
-    the constraint. The CHECK still holds without it - it constrains which
-    column is populated, not what it points at.
+    `comment_id` was bare from 0005 until 0006, which creates `comments` and
+    closes the constraint (M8). It is declared here now, because the deferral is
+    over: leaving it bare would make create_all() and `alembic upgrade head`
+    disagree, and a model that under-declares the schema is how a later phase
+    "discovers" a constraint the database has had all along.
+
+    The CHECK held throughout without it - it constrains which column is
+    populated, not what it points at.
     """
 
     __tablename__ = "prescores"
@@ -534,7 +567,9 @@ class Prescore(Base):
     id = Column(Integer, primary_key=True)
     run_id = Column(Integer, ForeignKey("runs.id", ondelete="CASCADE"), nullable=False)
     lead_id = Column(Integer, ForeignKey("leads.id", ondelete="CASCADE"), nullable=True)
-    comment_id = Column(Integer, nullable=True)
+    comment_id = Column(
+        Integer, ForeignKey("comments.id", ondelete="CASCADE"), nullable=True
+    )  # FK closed in 0006
     total = Column(Float, nullable=False)
     components_json = Column(Text, nullable=False)
     stage = Column(String(20), nullable=False, default="full")  # metadata | full
@@ -555,3 +590,145 @@ class Prescore(Base):
 
     def __repr__(self):
         return f"<Prescore {self.stage} {self.gate_decision} {self.total}>"
+
+
+# ---------------------------------------------------------------------------
+# 0006_content_and_dedup
+#
+# ⚠️ Every `project_id` below is a BARE Column with no ForeignKey. `projects`
+# does not exist until 0007, which closes all four constraints with
+# batch_alter_table (M8). This is the same pattern `ai_calls.run_id` used from
+# 0002 until 0004, and it is not stylistic: a REFERENCES clause naming a table
+# that does not exist yet makes every INSERT into that table fail with
+# "no such table: main.projects" -- including one setting the column to NULL,
+# because SQLite resolves the parent when it prepares the statement rather than
+# when it checks the constraint. Guarded by
+# tests/test_migrations.py::test_no_revision_leaves_a_dangling_foreign_key.
+# ---------------------------------------------------------------------------
+
+
+class Comment(Base):
+    """A comment on a lead. Deduplicated by content, not by id.
+
+    `body_hash` is the real key: `_parse_comments` does not extract a comment
+    id, and old.reddit's markup exposes `t1_` ids inconsistently across thread
+    depths. A content hash is deterministic, needs no parser change, and
+    correctly deduplicates on re-scrape. If a reliable id is later extracted it
+    becomes an additional nullable column, not a replacement key.
+    """
+
+    __tablename__ = "comments"
+
+    id = Column(Integer, primary_key=True)
+    lead_id = Column(Integer, ForeignKey("leads.id", ondelete="CASCADE"), nullable=False)
+    project_id = Column(Integer, nullable=True)  # bare until 0007
+    reddit_id = Column(String(20), nullable=True)
+    author = Column(String(100), nullable=False, server_default="[deleted]", default="[deleted]")
+    body = Column(Text, nullable=False)
+    score = Column(Integer, nullable=True)
+    depth = Column(Integer, nullable=False, server_default="0", default=0)
+    created_utc = Column(DateTime, nullable=True)
+    scraped_at = Column(DateTime, nullable=False, default=_utcnow)
+    analysis_status = Column(
+        String(20), nullable=False, server_default="not_analyzed", default="not_analyzed"
+    )
+    confidence_score = Column(Float, nullable=True)
+    body_hash = Column(String(64), nullable=False)  # sha256(lead_id|author|body)
+
+    __table_args__ = (
+        Index("ux_comments_hash", "body_hash", unique=True),
+        Index("ix_comments_lead", "lead_id"),
+        Index("ix_comments_project", "project_id", text("confidence_score DESC")),
+    )
+
+    def __repr__(self):
+        return f"<Comment {self.id} on lead {self.lead_id}>"
+
+
+class DedupGroup(Base):
+    """One near-duplicate group. The representative is what gets enriched."""
+
+    __tablename__ = "dedup_groups"
+
+    id = Column(Integer, primary_key=True)
+    project_id = Column(Integer, nullable=True)  # bare AND nullable until 0007
+    run_id = Column(Integer, ForeignKey("runs.id", ondelete="SET NULL"), nullable=True)
+    representative_lead_id = Column(
+        Integer, ForeignKey("leads.id", ondelete="SET NULL"), nullable=True
+    )
+    representative_comment_id = Column(
+        Integer, ForeignKey("comments.id", ondelete="SET NULL"), nullable=True
+    )
+    member_count = Column(Integer, nullable=False, server_default="1", default=1)
+    method = Column(String(20), nullable=False)  # exact | minhash
+    similarity = Column(Float, nullable=True)  # Jaccard, for minhash groups
+    created_at = Column(DateTime, nullable=False, default=_utcnow)
+
+    __table_args__ = (Index("ix_dedup_groups_project", "project_id", "run_id"),)
+
+    def __repr__(self):
+        return f"<DedupGroup {self.id} {self.method} n={self.member_count}>"
+
+
+class DedupMember(Base):
+    """Membership of a dedup group.
+
+    ⚠️ **The two partial uniques do NOT enforce "one group per run".**
+    They enforce *"at most once within a group"*, which is weaker. There is no
+    `run_id` here -- the run is reachable only through `DedupGroup` -- and SQLite
+    cannot express uniqueness across a join, so two groups from the same run can
+    each claim the same lead and both indexes stay satisfied. That invariant is
+    **application-level and P10's to uphold and test**; no test here claims it.
+    """
+
+    __tablename__ = "dedup_members"
+
+    id = Column(Integer, primary_key=True)
+    group_id = Column(Integer, ForeignKey("dedup_groups.id", ondelete="CASCADE"), nullable=False)
+    lead_id = Column(Integer, ForeignKey("leads.id", ondelete="CASCADE"), nullable=True)
+    comment_id = Column(Integer, ForeignKey("comments.id", ondelete="CASCADE"), nullable=True)
+    is_representative = Column(Boolean, nullable=False, server_default="0", default=False)
+
+    __table_args__ = (
+        CheckConstraint(
+            "(lead_id IS NOT NULL) <> (comment_id IS NOT NULL)",
+            name="ck_dedup_members_one_target",
+        ),
+        Index(
+            "ux_dedup_members_lead",
+            "group_id",
+            "lead_id",
+            unique=True,
+            sqlite_where=text("lead_id IS NOT NULL"),
+        ),
+        Index(
+            "ux_dedup_members_comment",
+            "group_id",
+            "comment_id",
+            unique=True,
+            sqlite_where=text("comment_id IS NOT NULL"),
+        ),
+    )
+
+    def __repr__(self):
+        target = f"lead {self.lead_id}" if self.lead_id else f"comment {self.comment_id}"
+        return f"<DedupMember group {self.group_id}: {target}>"
+
+
+class MinhashBand(Base):
+    """LSH band signatures. Rebuilt per run, purged with the run."""
+
+    __tablename__ = "minhash_bands"
+
+    id = Column(Integer, primary_key=True)
+    project_id = Column(Integer, nullable=True)  # bare AND nullable until 0007
+    run_id = Column(Integer, ForeignKey("runs.id", ondelete="CASCADE"), nullable=True)
+    band_index = Column(Integer, nullable=False)
+    band_hash = Column(String(32), nullable=False)
+    lead_id = Column(Integer, ForeignKey("leads.id", ondelete="CASCADE"), nullable=True)
+    comment_id = Column(Integer, ForeignKey("comments.id", ondelete="CASCADE"), nullable=True)
+
+    __table_args__ = (Index("ix_minhash_lookup", "project_id", "band_index", "band_hash"),)
+
+    def __repr__(self):
+        return f"<MinhashBand {self.band_index}:{self.band_hash}>"

@@ -76,6 +76,34 @@ def test_single_head():
 #: table, or any further change to ``scrape_runs``, still fails.
 POST_BASELINE_COLUMNS: dict[str, set[str]] = {
     "scrape_runs": {"run_id"},  # 0004_orchestration
+    "leads": {  # 0006_content_and_dedup
+        "project_id",
+        "confidence_score",
+        "analysis_status",
+        "source",
+    },
+}
+
+#: Indexes added to a *baseline* table by a later revision.
+#:
+#: Needed for the same reason as ``POST_BASELINE_COLUMNS``, and discovered the
+#: same way -- by a failure. ``_dump_schema`` skips rows by their
+#: ``sqlite_master.name``, which for an index is the **index's** name, not its
+#: table's. So listing ``leads`` in ``POST_BASELINE_COLUMNS`` excludes the
+#: ``CREATE TABLE leads`` row and nothing else; its four new indexes still reach
+#: the byte comparison against a 0001 database that has none of them.
+#:
+#: ``0004`` never exposed this: ``scrape_runs`` gained a column and no index.
+#:
+#: ⚠️ **Named individually rather than skipping every index on the table**, so
+#: ``ix_leads_intent_score`` and ``ix_leads_scraped_at`` -- which *do* date from
+#: 0001 -- stay byte-compared. Excluding by table would have retired that check
+#: silently, which is the weakening this list exists to avoid.
+POST_BASELINE_INDEXES: set[str] = {
+    "ix_leads_project_id",  # 0006_content_and_dedup
+    "ix_leads_confidence_score",
+    "ix_leads_analysis_status",
+    "ix_leads_project_conf",
 }
 
 
@@ -86,7 +114,8 @@ def test_baseline_matches_create_all():
     details like "unique=True + index=True yields a UNIQUE INDEX" wrong.
 
     Tables listed in ``POST_BASELINE_COLUMNS`` are compared by
-    ``test_post_baseline_columns_are_exactly_as_declared`` instead.
+    ``test_post_baseline_columns_are_exactly_as_declared`` instead, and the
+    indexes those later revisions added are named in ``POST_BASELINE_INDEXES``.
     """
     from src.db.models import Base
 
@@ -117,7 +146,7 @@ def test_baseline_matches_create_all():
         )
         assert result.returncode == 0, result.stderr
 
-        skip = set(POST_BASELINE_COLUMNS)
+        skip = set(POST_BASELINE_COLUMNS) | POST_BASELINE_INDEXES
         assert _dump_schema(via_create_all, skip) == _dump_schema(via_alembic, skip)
 
 
