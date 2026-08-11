@@ -73,6 +73,22 @@ EXPECTED_TABLES_AT_0005 = (
     "prescores",
 )
 
+#: What 0006 adds. Same separation, same reason: a database still at 0005 is a
+#: legitimate state to verify, not a broken one.
+#:
+#: ⚠️ **Presence only.** The *shape* of these four tables -- their columns,
+#: defaults, indexes and constraints -- is asserted by P8 Stage 4, not here.
+#: This entry exists so that the checks which already existed keep meaning what
+#: they say once 0006 lands: without it, `no unexpected tables` fails on four
+#: tables that are entirely expected, which would be the verifier reporting its
+#: own staleness as a schema defect.
+EXPECTED_TABLES_AT_0006 = (
+    "comments",
+    "dedup_groups",
+    "dedup_members",
+    "minhash_bands",
+)
+
 #: Index name -> the column order the query planner needs.
 #:
 #: Order matters and presence does not. ``ix_jobs_claim`` backs
@@ -246,7 +262,9 @@ def check_revision(conn: sqlite3.Connection, report: Report, expected: str | Non
     report.check(ok, f"alembic_version is {expected}", f"got: {actual}")
 
 
-def check_tables(conn: sqlite3.Connection, report: Report, *, with_p6: bool = True) -> None:
+def check_tables(
+    conn: sqlite3.Connection, report: Report, *, with_p6: bool = True, with_p8: bool = True
+) -> None:
     report.section("Tables")
 
     actual = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
@@ -254,6 +272,8 @@ def check_tables(conn: sqlite3.Connection, report: Report, *, with_p6: bool = Tr
     expected = set(EXPECTED_TABLES_AT_0004)
     if with_p6:
         expected |= set(EXPECTED_TABLES_AT_0005)
+    if with_p8:
+        expected |= set(EXPECTED_TABLES_AT_0006)
 
     missing = sorted(expected - actual)
     extra = sorted(actual - expected)
@@ -262,7 +282,9 @@ def check_tables(conn: sqlite3.Connection, report: Report, *, with_p6: bool = Tr
     report.check(not extra, "no unexpected tables", f"unexpected: {extra}")
 
 
-def check_discovery_shape(conn: sqlite3.Connection, report: Report) -> None:
+def check_discovery_shape(
+    conn: sqlite3.Connection, report: Report, *, with_p8: bool = True
+) -> None:
     """The 0005 constraints that are easy to get wrong and silent when wrong."""
     report.section("Discovery (0005)")
 
@@ -295,13 +317,24 @@ def check_discovery_shape(conn: sqlite3.Connection, report: Report) -> None:
         f"got: {sorted(prescore_columns)}",
     )
 
-    # comment_id must be bare until 0006 creates `comments` (M8).
+    # comment_id was bare from 0005 until 0006, which creates `comments` and
+    # closes the FK with batch_alter_table (M8). The check is INVERTED rather
+    # than deleted: "the deferral was honoured" and "the deferral was closed"
+    # are both real properties, and the second is the one that is true now.
+    # Deleting it would retire the only assertion that P8 task 4 happened.
     prescore_fks = {(r[2], r[3]) for r in conn.execute("PRAGMA foreign_key_list(prescores)")}
-    report.check(
-        ("comments", "comment_id") not in prescore_fks,
-        "prescores.comment_id has no FK yet — deferred to 0006 (M8)",
-        f"got: {sorted(prescore_fks)}",
-    )
+    if with_p8:
+        report.check(
+            ("comments", "comment_id") in prescore_fks,
+            "prescores.comment_id -> comments — the FK 0005 deferred is now closed (M8)",
+            f"got: {sorted(prescore_fks)}",
+        )
+    else:
+        report.check(
+            ("comments", "comment_id") not in prescore_fks,
+            "prescores.comment_id has no FK yet — deferred to 0006 (M8)",
+            f"got: {sorted(prescore_fks)}",
+        )
     report.check(
         ("runs", "run_id") in prescore_fks,
         "prescores -> runs.run_id",
@@ -482,6 +515,7 @@ def run_checks(
     expect_leads: bool,
     verbose: bool,
     skip_p6: bool = False,
+    skip_p8: bool = False,
 ) -> int:
     if not db_path.exists():
         print(f"ERROR: no such database: {db_path}")
@@ -499,7 +533,7 @@ def run_checks(
         if skip_p1:
             print("\n(--skip-p1: the 0004 shape and row-count checks were not run)")
         else:
-            check_tables(conn, report, with_p6=not skip_p6)
+            check_tables(conn, report, with_p6=not skip_p6, with_p8=not skip_p8)
             check_indexes(conn, report)
             check_foreign_keys(conn, report)
             check_constraints(conn, report)
@@ -507,7 +541,9 @@ def run_checks(
             if skip_p6:
                 print("\n(--skip-p6: the 0005 discovery checks were not run)")
             else:
-                check_discovery_shape(conn, report)
+                check_discovery_shape(conn, report, with_p8=not skip_p8)
+            if skip_p8:
+                print("\n(--skip-p8: the four 0006 tables were not required)")
 
         check_legacy_fingerprint(conn, report, expect_leads)
     finally:
@@ -542,6 +578,11 @@ def main(argv: list[str] | None = None) -> int:
         help="skip the 0005 discovery checks — use on a database still at 0004",
     )
     parser.add_argument(
+        "--skip-p8",
+        action="store_true",
+        help="skip the 0006 content/dedup checks — use on a database still at 0005",
+    )
+    parser.add_argument(
         "--no-leads-check",
         action="store_true",
         help="report the lead count without asserting the 459-lead legacy contract",
@@ -556,6 +597,7 @@ def main(argv: list[str] | None = None) -> int:
         expect_leads=not args.no_leads_check,
         verbose=args.verbose,
         skip_p6=args.skip_p6,
+        skip_p8=args.skip_p8,
     )
 
 

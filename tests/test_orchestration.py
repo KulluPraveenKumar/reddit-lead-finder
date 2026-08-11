@@ -537,16 +537,22 @@ class TestSchemaCheckScript:
     def test_passes_on_a_correctly_migrated_database(self, temp_db, capsys):
         """``temp_db`` is at head, so the expected revision follows the head.
 
-        Both the revision and the count were pinned to 0004's values and are
-        updated to 0005's because the head genuinely moved -- P6 adds
-        ``discovery_watermarks`` and ``prescores``, and six checks with them.
-        Neither assertion is weakened: the revision is still asserted exactly,
-        and the count is still asserted exactly, so a check that silently stops
-        running still fails this test.
+        Both the revision and the count were pinned to 0004's values, then to
+        0005's, and are now 0006's -- because the head genuinely moved each
+        time. **Neither assertion is weakened:** the revision is still asserted
+        exactly and the count is still asserted exactly, so a check that
+        silently stops running still fails this test.
+
+        The count stays at **29** across the 0006 move, and that is correct
+        rather than suspicious: P8's Stage 2 adds no new *check*. It adds four
+        table names to an existing set-comparison and inverts one existing
+        assertion about ``prescores.comment_id``. The checks that assert P8's
+        new columns, indexes and constraints arrive in Stage 4 and will move
+        this number then.
         """
         from scripts.check_schema import main
 
-        code = main(["--db", str(temp_db), "--revision", "0005", "--no-leads-check"])
+        code = main(["--db", str(temp_db), "--revision", "0006", "--no-leads-check"])
         out = capsys.readouterr().out
 
         assert code == 0, out
