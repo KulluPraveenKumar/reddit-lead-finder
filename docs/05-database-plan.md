@@ -57,17 +57,32 @@ That is the complete set of changes to existing tables across the entire project
 ### 4.1 `leads`
 
 ```sql
-ALTER TABLE leads ADD COLUMN project_id      INTEGER NULL REFERENCES projects(id) ON DELETE SET NULL;
+-- ⚠️ project_id ships BARE. NO `REFERENCES projects(id)` at 0006 — the FK is
+--    added in 0007, which creates `projects`. See §7.1: writing the clause here
+--    breaks every INSERT into leads, silently. This is the shipped DDL.
+ALTER TABLE leads ADD COLUMN project_id       INTEGER NULL;
 ALTER TABLE leads ADD COLUMN confidence_score REAL   NULL;
 ALTER TABLE leads ADD COLUMN analysis_status  VARCHAR(20) NOT NULL DEFAULT 'not_analyzed';
+ALTER TABLE leads ADD COLUMN source           VARCHAR(20) NOT NULL DEFAULT 'scrape';
 
 CREATE INDEX ix_leads_project_id       ON leads (project_id);
 CREATE INDEX ix_leads_confidence_score ON leads (confidence_score);
 CREATE INDEX ix_leads_analysis_status  ON leads (analysis_status);
 CREATE INDEX ix_leads_project_conf     ON leads (project_id, confidence_score DESC);
+-- Four columns, four indexes. `source` deliberately has none.
 ```
 
-- `project_id` — NULL for the 459 existing rows, forever.
+- `source` ∈ `scrape | holdout_audit`. **Added 2026-08-11 (P8).** Its DDL previously existed only in
+  [16 §115](16-phase-06.md) — a superseded, read-only document — while
+  [freeze §4.1](ARCHITECTURE_FREEZE.md) said *"`leads` +4"* and [34 §P8](34-implementation-plan.md)
+  asserted `source='scrape'` in its acceptance criteria. The definition is moved here, verbatim, so
+  the frozen schema carries the column it has always counted. It is the fix for
+  [R27](10-implementation-roadmap.md), the degenerate-learning-loop risk: a holdout-audited item
+  must become a real, labellable lead, or the yield curve is fitted only on the gate's own
+  admissions and recall collapses invisibly. **No index** — its only consumer, P11's holdout, reads
+  by run — and **no `CHECK`** on the domain, because every other enumerated column here
+  (`analysis_status`, `gate_decision`, `method`) is a bare `VARCHAR`.
+- `project_id` — NULL for the 459 existing rows, forever, **and bare until `0007`**.
 - `confidence_score` — **NULL means "never analysed"**, which is semantically different from 0.0
   ("analysed and judged worthless"). Sorting must place NULLs last, not first.
 - `analysis_status` ∈ `not_analyzed | pending | analyzed | failed | skipped`. Defaults on existing
@@ -540,7 +555,7 @@ CREATE INDEX ix_run_events_run ON run_events (run_id, id);
 CREATE TABLE comments (
     id            INTEGER PRIMARY KEY,
     lead_id       INTEGER NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
-    project_id    INTEGER NULL REFERENCES projects(id) ON DELETE SET NULL,
+    project_id    INTEGER NULL,              -- BARE at 0006; FK added in 0007 (§7.1)
     reddit_id     VARCHAR(20) NULL,          -- old.reddit comments expose t1_ ids inconsistently
     author        VARCHAR(100) NOT NULL DEFAULT '[deleted]',
     body          TEXT NOT NULL,
@@ -646,7 +661,10 @@ All deterministic. None of these tables requires an AI call to populate — that
 -- Near-duplicate grouping. One row per group; representatives get enriched.
 CREATE TABLE dedup_groups (
     id             INTEGER PRIMARY KEY,
-    project_id     INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    -- NULL, not NOT NULL: `projects` does not exist until 0007, so no value
+    -- could satisfy it at 0006. FK added in 0007; whether it also becomes
+    -- NOT NULL is P12's decision, not P8's (§7.1).
+    project_id     INTEGER NULL,
     run_id         INTEGER NULL REFERENCES runs(id) ON DELETE SET NULL,
     representative_lead_id INTEGER NULL REFERENCES leads(id) ON DELETE SET NULL,
     representative_comment_id INTEGER NULL REFERENCES comments(id) ON DELETE SET NULL,
@@ -657,7 +675,13 @@ CREATE TABLE dedup_groups (
 );
 CREATE INDEX ix_dedup_groups_project ON dedup_groups (project_id, run_id);
 
--- Membership. A lead or comment belongs to at most one group per run.
+-- Membership.
+-- ⚠️ This previously read "a lead or comment belongs to at most one group per
+--    run". The indexes below do NOT enforce that, and cannot: there is no
+--    run_id here, the run is reachable only through dedup_groups, and SQLite
+--    cannot constrain uniqueness across a join. What they enforce is "at most
+--    once WITHIN a group". The per-run invariant is application-level and
+--    P10's to uphold and test.
 CREATE TABLE dedup_members (
     id          INTEGER PRIMARY KEY,
     group_id    INTEGER NOT NULL REFERENCES dedup_groups(id) ON DELETE CASCADE,
@@ -674,7 +698,7 @@ CREATE UNIQUE INDEX ux_dedup_members_comment ON dedup_members (group_id, comment
 -- MinHash signature bands for LSH lookup. Rebuilt per run; purged with the run.
 CREATE TABLE minhash_bands (
     id          INTEGER PRIMARY KEY,
-    project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    project_id  INTEGER NULL,               -- see dedup_groups.project_id above (§7.1)
     run_id      INTEGER NULL REFERENCES runs(id) ON DELETE CASCADE,
     band_index  INTEGER NOT NULL,
     band_hash   VARCHAR(32) NOT NULL,
@@ -1052,9 +1076,21 @@ standalone: settings (holds the encrypted API key) · ai_cache · ai_provider_st
 
 ## 7. Migration sequence
 
-**This table is authoritative.** Alembic revisions form a single linear chain; no phase may insert
-a revision out of sequence or suffix one (`0005a`) — that produces two heads and breaks
-`upgrade head`.
+> ⚠️ **Corrected 2026-08-11 (P8).** This section previously opened *"This table is authoritative"*
+> and listed a chain that **[31](31-execution-plan.md)'s reorder had already superseded** — it put
+> `projects` at `0005` and `content_and_dedup` at `0007`, when the shipped chain has `discovery` at
+> `0005` and `content_and_dedup` at `0006`. The stale claim of authority was the dangerous part: it
+> would have had P8 author the wrong revision number and write four `REFERENCES projects(id)`
+> clauses at a revision where `projects` does not exist — a defect that breaks **every** `INSERT`
+> into `leads` while every gate in the project reports green.
+>
+> **[ARCHITECTURE_FREEZE §4.1](ARCHITECTURE_FREEZE.md) is the authority for the chain.** This
+> section is the design detail behind it and is reconciled to it below. Recorded as a
+> [§11.1](ARCHITECTURE_FREEZE.md) reconciliation, 2026-08-11: no technology, table or decision
+> changes — a revision-numbering table that predated a reorder was brought into line with it.
+
+Alembic revisions form a single linear chain; no phase may insert a revision out of sequence or
+suffix one (`0005a`) — that produces two heads and breaks `upgrade head`.
 
 | Rev | Title | Phase | Contents |
 |---|---|---|---|
@@ -1062,27 +1098,33 @@ a revision out of sequence or suffix one (`0005a`) — that produces two heads a
 | `0002` | `ai_infrastructure` | 1 | `ai_calls`, `ai_cache`, `ai_provider_state` |
 | `0003` | `net_infrastructure` | 2 | `proxies`, `http_cache`, `metrics` |
 | `0004` | `orchestration` | **P1 ✅ shipped 2026-08-05** | `runs`, `jobs`, `run_events`; `scrape_runs.run_id` (+FK); closes the deferred `ai_calls.run_id` FK |
-| `0005` | `projects_and_knowledge_base` | 4 | `projects`, `website_snapshots`, **`bkb`, `bkb_sections`**, `personas`, `pain_points`, `intent_signals`, **`bkb_entities`, `bkb_entity_aliases`, `bkb_links`, `bkb_evidence`, `bkb_suggestions`, `bkb_embeddings`+`bkb_embedding_meta` (conditional)** |
-| `0006` | `targeting` | 5 | `project_subreddits`, `project_keywords` |
-| `0007` | `content_and_dedup` | 6 | `comments`; the **4** `leads` columns (`project_id`, `confidence_score`, `analysis_status`, **`source`**) + 4 indexes; `dedup_groups`, `dedup_members`, `minhash_bands`, `prescores` |
-| `0008` | `enrichment` | 7 | `lead_analysis` (incl. **`bkb_id`, `weights_version`, `ruleset_version`, `tier`**), `gate_audits`, **`ai_budgets`** |
-| `0009` | `monitoring_and_quality` | 8 | `projects.monitoring_enabled`, `monitoring_interval_hours`, `last_monitored_at`; **`lead_labels`** (incl. `reason`), **`golden_items`, `golden_runs`, `quality_snapshots`, `calibration_maps`, `patterns`** |
+| `0005` | `discovery` | **P6 ✅ shipped 2026-08-08** | `discovery_watermarks`, `prescores` (incl. `stage`; `comment_id` FK **deferred to `0006`**) |
+| `0006` | `content_and_dedup` | **P8 ✅ shipped 2026-08-11** | `comments`, `dedup_groups`, `dedup_members`, `minhash_bands`; the **4** `leads` columns (`project_id`, `confidence_score`, `analysis_status`, **`source`**) + 4 indexes; **closes** the `prescores.comment_id` FK |
+| `0007` | `projects_and_knowledge_base` | P12 | `projects`, `website_snapshots`, **`bkb`, `bkb_sections`**, `personas`, `pain_points`, `intent_signals`, **`bkb_entities`, `bkb_entity_aliases`, `bkb_links`, `bkb_evidence`, `bkb_suggestions`, `bkb_embeddings`+`bkb_embedding_meta` (conditional)**; closes **four** deferred `project_id` FKs (§7.1) |
+| `0008` | `targeting` | P17 | `project_subreddits`, `project_keywords` |
+| `0009` | `enrichment` | P19 | `lead_analysis` (incl. **`bkb_id`, `weights_version`, `ruleset_version`, `tier`**), `gate_audits`, **`ai_budgets`** |
+| `0010` | `monitoring_and_quality` | P25 | `projects.monitoring_enabled`, `monitoring_interval_hours`, `last_monitored_at`; **`lead_labels`** (incl. `reason`), **`golden_items`, `golden_runs`, `quality_snapshots`, `calibration_maps`, `patterns`** |
 
-**Still no tenth revision after the final review.** The 2026-07-30 architecture review
+**The 2026-07-30 architecture review did not force a new revision.**
 ([02c](02c-research-final-review.md)) added lifecycle, evidence-typing, provenance-pinning, feedback
-and pattern columns — **every one of them into a revision that already existed**. None of these
-revisions has shipped, so the columns are written into their `CREATE TABLE` statements rather than
-appended as `ALTER`s. A review that forced a tenth migration would have been a signal the original
+and pattern columns — **every one of them into a revision that already existed**. None of those
+revisions had shipped, so the columns are written into their `CREATE TABLE` statements rather than
+appended as `ALTER`s. A review that forced an extra migration would have been a signal the original
 decomposition was wrong; it was not.
 
-**No tenth revision.** The Business Knowledge Base *replaces* `ai_artifacts` inside `0005` rather
-than arriving later, because the BKB is Phase 4's deliverable and Phase 4 owns `0005`. Adding a
-`0010` would force a Phase 4 deployment to apply a revision that sorts after `0006`–`0009`, breaking
-the one property this table exists to guarantee. The chain remains **linear with a single head**:
-`0001 → 0002 → 0003 → 0004 → 0005 → 0006 → 0007 → 0008 → 0009`.
+> **Both "No tenth revision" paragraphs are struck, 2026-08-11 (P8).** They were correct for the
+> nine-revision chain they were written against. [31](31-execution-plan.md)'s reorder made the chain
+> **ten**, and [freeze §4.1](ARCHITECTURE_FREEZE.md) records `0010 monitoring_and_quality` (P25) as
+> its last entry: *"Ten revisions. No eleventh without an amendment under §11."* The Business
+> Knowledge Base still replaces `ai_artifacts` rather than arriving later — that reasoning survives
+> intact — but it now does so inside **`0007`**, not `0005`.
 
-Each revision has a working `downgrade()`. `0007` is the only one that touches `leads`; its
-downgrade drops the three added columns and their indexes, restoring the original table.
+The chain is **linear with a single head**:
+`0001 → 0002 → 0003 → 0004 → 0005 → 0006 → 0007 → 0008 → 0009 → 0010`.
+
+Each revision has a working `downgrade()`. **`0006` is the only one that touches `leads`**; its
+downgrade drops the **four** added columns and their four indexes, restoring the original table.
+Verified on a copy of the live database — see §7.1b.
 
 **Three placement decisions worth stating explicitly**, because a naive reading of §4–§5 would put
 them elsewhere:
@@ -1090,23 +1132,50 @@ them elsewhere:
 - **AI infrastructure is `0002`, in Phase 1.** `ai_calls`, `ai_cache`, and `ai_provider_state` are
   all *new* tables, so nothing here requires an `ALTER`, and the API key itself lives in the
   pre-existing `settings` table. This is precisely what allows the AI Service Layer to land first.
-- **The three `leads` columns land in `0007` (Phase 6), not earlier.** Nothing writes them until
-  Phase 6, and touching a live 459-row table once is better than twice.
+- **The four `leads` columns land in `0006` (P8), not earlier.** Nothing writes them until the
+  phases that populate them, and touching the live `leads` table once is better than twice.
+  *(Corrected 2026-08-11: previously "three columns … `0007` (Phase 6)". The count is four —
+  `source` was added by [02c](02c-research-final-review.md) — and the revision is `0006`.)*
 - **There is no `llm_batches` revision.** DeepSeek has no batch endpoint; bulk enrichment is a
   bounded concurrency pool with no persisted batch state to track.
 
 ### 7.1 Deferred foreign keys
 
-Three columns reference a table that does not yet exist when their own table is created. Because
-the AI layer lands first and `projects` lands in Phase 4, this is unavoidable — and it is cheap,
-because SQLite ignores `REFERENCES` clauses in `CREATE TABLE` only insofar as `PRAGMA foreign_keys`
-is on, and the constraint can be added later by table rebuild.
+**Eight** columns reference a table that does not yet exist when their own table is created. Because
+the AI layer lands first and `projects` does not arrive until `0007` (P12), this is unavoidable.
+
+> ⚠️ **It is not "cheap because SQLite ignores `REFERENCES` unless `PRAGMA foreign_keys` is on."**
+> That sentence was here until 2026-08-11 and **it is wrong in the way that matters.** A
+> `REFERENCES` clause naming a table that does not exist makes **every `INSERT` into the child table
+> fail** — with `no such table: main.projects`, *regardless of the pragma*, and even when the column
+> is set to `NULL` — because SQLite resolves the parent table when it **prepares** the statement,
+> not when it checks the constraint. Measured on SQLite 3.45.3, twice, in two sessions.
+>
+> Worse, it is silent: the migration applies, `SELECT` works, `PRAGMA foreign_key_check` returns
+> `[]`, the up/down/up round-trip passes and `check_schema.py` reports OK. Deferral is therefore
+> **mandatory, not an optimisation**. `tests/test_migrations.py::test_no_revision_leaves_a_dangling_foreign_key`
+> now enforces it across every revision.
 
 | Column | Created in | References | FK added in |
 |---|---|---|---|
 | `ai_calls.run_id` | `0002` | `runs` (`0004`) | `0004` |
-| `ai_calls.project_id` | `0002` | `projects` (`0005`) | `0005` |
-| `runs.project_id` | `0004` | `projects` (`0005`) | `0005` |
+| `ai_calls.project_id` | `0002` | `projects` (`0007`) | `0007` |
+| `runs.project_id` | `0004` | `projects` (`0007`) | `0007` |
+| `prescores.comment_id` | `0005` | `comments` (`0006`) | **`0006` ✅ closed** |
+| **`leads.project_id`** | **`0006`** | `projects` (`0007`) | **`0007`** |
+| **`comments.project_id`** | **`0006`** | `projects` (`0007`) | **`0007`** |
+| **`dedup_groups.project_id`** | **`0006`** | `projects` (`0007`) | **`0007`** |
+| **`minhash_bands.project_id`** | **`0006`** | `projects` (`0007`) | **`0007`** |
+
+> **P12 inherits four `batch_alter_table` rebuilds**, one of them over `leads`. Take an M7 backup
+> first. A rebuild is a genuine copy-and-move **when it changes constraints**, which is exactly what
+> `0007` does — note that `batch_alter_table` does *not* rebuild when its only operation is
+> `add_column`; alembic emits a plain `ALTER` there (measured: `rootpage` unchanged).
+>
+> **P12 must also decide** whether `dedup_groups.project_id` and `minhash_bands.project_id` become
+> `NOT NULL` when their FKs close. [34 §P12](34-implementation-plan.md) tightens only
+> `runs.project_id` and says nothing about these two, so on the documents as written they are
+> nullable forever. P8 did not pre-empt that choice.
 
 **Each of these columns is created with a bare type and no `REFERENCES` clause.** The constraint is
 added later:
@@ -1128,21 +1197,59 @@ with op.batch_alter_table("runs") as b:
 ### 7.1a Intra-revision table ordering
 
 Alembic executes `upgrade()` top to bottom, so **table creation order within a single revision is a
-real constraint, not a formality.** `0007_content_and_dedup` creates five tables with dependencies
+real constraint, not a formality.** `0006_content_and_dedup` creates four tables with dependencies
 between them; the DDL in §5.4b lists them by topic, **not** by creation order. The required order is:
 
 ```
-0007_content_and_dedup:
-  1. ALTER leads (3 columns + 4 indexes)
-  2. CREATE comments                 ← referenced by 3, 4, 5
+0006_content_and_dedup:
+  1. ALTER leads (4 columns + 4 indexes)   ← project_id BARE (§7.1)
+  2. CREATE comments                 ← referenced by 3, 4, 5, 6
   3. CREATE dedup_groups             ← references leads, comments
   4. CREATE dedup_members            ← references dedup_groups, leads, comments
   5. CREATE minhash_bands            ← references leads, comments
-  6. CREATE prescores                ← references runs, leads, comments
+  6. batch_alter_table('prescores'): close comment_id -> comments
 ```
 
-`downgrade()` drops them in exactly the reverse order. Writing the DDL in the order it appears in
-§5.4b would fail on `dedup_groups` because `comments` would not yet exist.
+`downgrade()` drops them in exactly the reverse order, and **the `prescores` constraint is dropped
+first** — it references `comments`, which cannot be dropped while a constraint points at it. Writing
+the DDL in the order it appears in §5.4b would fail on `dedup_groups` because `comments` would not
+yet exist.
+
+> ⚠️ **Corrected 2026-08-11 (P8), in three ways.** The block was titled `0007` (it is `0006`); said
+> *"3 columns"* (it is four — `source`); and its step 6 was **`CREATE prescores`**, which would fail
+> with *"table prescores already exists"* because [33 §2.4](33-final-review.md) moved `prescores`
+> into `0005`, where `migrations/versions/0005_discovery.py` creates it. Worse, the block **omitted
+> the one thing `0006` actually owes `prescores`** — closing the `comment_id` FK that `0005`
+> deliberately left bare, which is [34 §P8](34-implementation-plan.md) task 4 and appeared nowhere
+> in this document. Step 6 now names it.
+
+### 7.1b The `0006` rollback, executed
+
+Not described — **run**, on a copy of the live database, 2026-08-11. Actual terminal output:
+
+```
+P8 ROLLBACK DRILL — executed on a copy of data/leads.db
+==============================================================
+start      rev=0005_discovery           leads=478  fp=52b2ebb2aeaf9165
+upgrade    rev=0006_content_and_dedup   leads=478  fp=52b2ebb2aeaf9165
+           check_schema --revision 0006 : exit=0  OK — all 52 checks passed.
+DOWNGRADE  rev=0005_discovery           leads=478  fp=52b2ebb2aeaf9165
+           check_schema --skip-p8       : exit=0  OK — all 31 checks passed.
+           P8 tables remaining          : NONE
+           P8 leads columns remaining   : NONE
+re-upgrade rev=0006_content_and_dedup   leads=478  fp=52b2ebb2aeaf9165
+           check_schema --revision 0006 : exit=0  OK — all 52 checks passed.
+==============================================================
+baseline fingerprint expected: 52b2ebb2aeaf9165
+```
+
+`fp` is the first 16 hex of the `intent_score` fingerprint over the 459 baseline rows — the same
+digest `tests/baseline/db_fingerprint.json` pins. **The lead count and the fingerprint are identical
+at every stage, and the fingerprint matches the recorded baseline**, so the round-trip neither lost a
+row nor altered a score.
+`tests/test_migrations.py::test_a1_up_down_up_on_a_copy_of_the_live_database` asserts the same
+round-trip on every run, and additionally asserts that the four tables and four columns are **gone**
+at `0005` — a downgrade that silently left them behind would otherwise pass a row-count check.
 
 **`0005_projects_and_knowledge_base` now has the same hazard**, and a longer chain — §5.1 and §5.1a
 list its tables by topic. The required order is:

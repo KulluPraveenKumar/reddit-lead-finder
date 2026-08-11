@@ -281,6 +281,31 @@ def test_backup_uses_sqlite_api(temp_db):
     assert "leads" in tables
 
 
+def _dangling_foreign_keys(conn: sqlite3.Connection) -> list[str]:
+    """Every FK whose parent table does not exist in this database.
+
+    Shared by the chain guard and the rollback test, so both mean the same thing
+    by "dangling". SQLite table names are case-insensitive, so the parent named
+    in a REFERENCES clause need not match ``sqlite_master``'s casing.
+    """
+    tables = [
+        row[0]
+        for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' "
+            "AND name NOT LIKE 'alembic%' AND name NOT LIKE 'sqlite_%'"
+        )
+    ]
+    present = {name.lower() for name in tables}
+
+    dangling: list[str] = []
+    for table in tables:
+        for row in conn.execute(f"PRAGMA foreign_key_list({table})"):
+            parent, column = row[2], row[3]
+            if parent.lower() not in present:
+                dangling.append(f"{table}.{column} -> {parent} (missing)")
+    return dangling
+
+
 def _revisions_oldest_first() -> list[str]:
     """Every revision id in the chain, `0001` first.
 
@@ -338,23 +363,7 @@ def test_no_revision_leaves_a_dangling_foreign_key(revision):
 
         conn = sqlite3.connect(db_path)
         try:
-            tables = [
-                row[0]
-                for row in conn.execute(
-                    "SELECT name FROM sqlite_master WHERE type='table' "
-                    "AND name NOT LIKE 'alembic%' AND name NOT LIKE 'sqlite_%'"
-                )
-            ]
-            # SQLite table names are case-insensitive, so the parent named in a
-            # REFERENCES clause need not match sqlite_master's casing.
-            present = {name.lower() for name in tables}
-
-            dangling: list[str] = []
-            for table in tables:
-                for row in conn.execute(f"PRAGMA foreign_key_list({table})"):
-                    parent, column = row[2], row[3]
-                    if parent.lower() not in present:
-                        dangling.append(f"{table}.{column} -> {parent} (missing)")
+            dangling = _dangling_foreign_keys(conn)
         finally:
             conn.close()
 
@@ -632,7 +641,26 @@ def test_the_deferred_prescores_fk_is_enforced_not_merely_present(tmp_path):
 
 
 def test_a1_up_down_up_on_a_copy_of_the_live_database(tmp_path):
-    """A1 — the rollback, on real data, with the count checked at every stage."""
+    """A1 — the rollback, on real data, with the count checked at every stage.
+
+    ⚠️ **The downgraded schema is checked for validity, not only for absence.**
+    Row counts, missing tables and missing columns are all satisfied by a
+    rollback that leaves ``prescores`` pointing at the ``comments`` table it just
+    dropped -- and that database is **broken**: every INSERT into ``prescores``
+    fails with ``no such table: main.comments``. It is F1 again, arriving through
+    the rollback path rather than the upgrade path.
+
+    ``test_no_revision_leaves_a_dangling_foreign_key`` cannot catch it, because
+    it walks the chain *upward* and never observes the post-downgrade state. That
+    asymmetry was found by mutation S3, which deleted step 2.9's
+    ``drop_constraint`` and survived every assertion this test originally made.
+
+    It also means step 2.9's stated reason is not the real one: SQLite permits
+    dropping a referenced parent in every configuration (measured, with
+    ``foreign_keys`` both ON and OFF, with the child table both empty and
+    populated). The hazard is not the drop failing -- it is the reference left
+    behind.
+    """
     from src.db.migrate import MigrationRunner
 
     db_path = _raw_copy(tmp_path)
@@ -657,13 +685,50 @@ def test_a1_up_down_up_on_a_copy_of_the_live_database(tmp_path):
     assert down_rev == "0005_discovery"
 
     conn = sqlite3.connect(db_path)
+    conn.execute("PRAGMA foreign_keys=ON")
     try:
         tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         columns = {r[1] for r in conn.execute("PRAGMA table_info(leads)")}
+
+        # (a) The downgraded schema references nothing that is gone.
+        dangling = _dangling_foreign_keys(conn)
+
+        # (b) And it is actually writable. A dangling REFERENCES is invisible to
+        #     every structural check -- foreign_key_check returns [] -- so the
+        #     only thing that proves it is a write.
+        conn.execute(
+            "INSERT INTO leads (reddit_id, subreddit, author, title, url, created_utc, scraped_at) "
+            "VALUES ('t3_rb', 's', 'a', 't', 'u', '2026-01-01', '2026-01-01')"
+        )
+        lead_id = conn.execute("SELECT id FROM leads WHERE reddit_id='t3_rb'").fetchone()[0]
+        conn.execute(
+            "INSERT INTO runs (state, started_at, updated_at) "
+            "VALUES ('complete', '2026-01-01', '2026-01-01')"
+        )
+        run_id = conn.execute("SELECT id FROM runs ORDER BY id DESC LIMIT 1").fetchone()[0]
+        conn.execute(
+            "INSERT INTO prescores (run_id, lead_id, comment_id, total, components_json, "
+            "stage, gate_decision, created_at) "
+            "VALUES (?, ?, NULL, 1.0, '{}', 'full', 'admit', '2026-01-01')",
+            (run_id, lead_id),
+        )
+        conn.rollback()  # leave the copy as the later stages expect to find it
+
+        # (c) PRAGMA integrity/foreign_key_check on the rolled-back schema.
+        fk_violations = conn.execute("PRAGMA foreign_key_check").fetchall()
+        integrity = conn.execute("PRAGMA integrity_check").fetchone()[0]
     finally:
         conn.close()
+
     assert not (set(P8_TABLES) & tables), f"downgrade left P8 tables behind: {tables}"
     assert not (set(P8_LEAD_COLUMNS) & columns), f"downgrade left P8 columns behind: {columns}"
+    assert not dangling, (
+        f"the downgrade left a dangling foreign key: {dangling}. Every INSERT "
+        f"into that table now fails with 'no such table'. 0006's downgrade must "
+        f"drop the prescores constraint BEFORE dropping comments (step 2.9)."
+    )
+    assert not fk_violations, f"downgrade left FK violations: {fk_violations}"
+    assert integrity == "ok", f"downgrade corrupted the database: {integrity}"
 
     runner.upgrade("head")
     re_count, re_rev = leads_and_head()
