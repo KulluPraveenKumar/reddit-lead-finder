@@ -1,13 +1,17 @@
 # P08 — Manual Testing Guide · Content & dedup schema
 
 **Phase:** P8 (frozen numbering) · **Revision:** `0006_content_and_dedup`
-**Part A written:** 2026-08-11 · **Part B:** not yet executed
+**Part A written:** 2026-08-11 · **Part B executed:** 2026-08-13
 
-> ⚠️ **This guide is Part A.** P8 has not been implemented, so the guide cannot yet be *passed*.
-> But **every command below has been executed verbatim in PowerShell against the current
-> (`0005_discovery`) database** and corrected until it ran — see
-> [Part A command verification](#part-a-verification). What remains for Part B is running them
-> against the finished phase and recording the results.
+> ✅ **P8 has shipped, and every command below has now been executed against the finished phase.**
+> The expected outputs in this guide are **measured, not predicted** — Part A's originals were
+> written before the code existed and are recorded, with their corrections, in
+> [Part B](#part-b--execution-record).
+>
+> **What is still yours to do:** T9 is a visual check of the dashboard and cannot be signed by a
+> machine. Its executable half — the routes still serve and the CSV still has 13 columns — was run
+> and is recorded. **The sign-off table is deliberately blank**: a machine executing the commands is
+> not a human accepting the phase.
 
 > ⚠️ **This is not `docs/testing/phase-08-testing.md`.** That file belongs to the superseded
 > eight-phase numbering and covers quality metrics, exports and production readiness. If you opened a
@@ -36,8 +40,10 @@ single new lead.
 
 ### ⚠️ Three honesty notes — read before recording anything
 
-1. **"All 31 checks passed" will become a different number.** P8 adds checks to `check_schema.py`.
-   Record what you actually see.
+1. **"All 31 checks passed" became a different number.** P8 adds twenty checks to `check_schema.py`.
+   **Measured 2026-08-13: `all 51 checks passed`** when run plainly, as T1 does. It reports **52** if
+   you also pass `--revision 0006`, because the revision comparison is then a check rather than an
+   `INFO` line. Both are correct; record what you actually see.
 2. **Your lead total is not fixed.** It was **478** on 2026-08-11 (459 original + 19 collected since),
    and the scraper keeps running. **459 is the only number that must never change** — it is the
    frozen guarantee. Everywhere else, this guide says "the total from T1", and you should compare
@@ -208,9 +214,9 @@ P8 must be the instant kind, because rebuilding is when data gets damaged.
 python -c "import sqlite3; c=sqlite3.connect('data/leads.db'); print('leads rootpage =', c.execute('SELECT rootpage FROM sqlite_master WHERE type=? AND name=?', ('table','leads')).fetchone()[0])"
 ```
 
-**Expected:** the same number as before the migration. The pre-P8 value measured on 2026-08-11 was
-**2**, and `docs/PHASE-08-COMPLETION-REPORT.md` records the value taken immediately before the
-upgrade — compare against that.
+**Expected: `leads rootpage = 2`.** Measured immediately **before** the live upgrade on 2026-08-13:
+**2**. Measured immediately **after**: **2**. Both are recorded in
+[PHASE-08-COMPLETION-REPORT.md](../PHASE-08-COMPLETION-REPORT.md) §4.
 
 An unchanged `rootpage` means the table was never rebuilt, so your 459 rows were never copied, so
 they cannot have been damaged in the copying.
@@ -336,12 +342,24 @@ python -m alembic current
 python -m pytest
 ```
 
-**Expected:** a final line like `1143 passed in 200.12s`, and **no failures**.
+**Expected — measured 2026-08-13: `1148 passed, 2 skipped in 497.27s`**, and **no failures**.
 
 > ⚠️ Do **not** add `-q`. The project already passes `-q` internally, so a second one suppresses the
 > summary line you are being asked to record ([DI19](../DEFERRED-IMPROVEMENTS.md)).
 
-**Record the count.** Before P8 it was **1133**; it must be higher, never lower.
+**Record the count.** Before P8 it was **1131 passed, 2 skipped** (1133 collected); P8 adds
+**+17** and it must be higher, never lower.
+
+> ⚠️ **Two tests in this suite fail intermittently for machine load, not for correctness, and P8 hit
+> both.** If your run fails on either, re-run that test alone before recording a failure:
+>
+> | Test | Register |
+> |---|---|
+> | `test_parse_speed_stays_inside_the_budget` | [DI18](../DEFERRED-IMPROVEMENTS.md) — a wall-clock budget |
+> | `test_does_not_write_to_the_database_it_checks` | a WAL/mtime race; proposed as DI20, still unregistered |
+>
+> **A re-run is not a pass**, and this note is not permission to ignore a red suite — it is so that a
+> real regression is not lost among two known ones. Any *other* failure is a genuine result.
 
 If a test fails, record its full name and error. One named failure is far more useful than "some
 tests failed".
@@ -371,6 +389,22 @@ Stop the server with `Ctrl+C`.
 
 > **If anything looks different, that is a failure** — even if it looks like an improvement. P8 is
 > required to change nothing you can see.
+
+**The executable half was run for you, 2026-08-13.** A machine cannot sign "it looks the same", but
+it can prove the routes did not break:
+
+```
+GET /                    -> 200
+GET /health              -> 200
+GET /api/leads/export    -> 200
+CSV columns              -> 13
+CSV header               -> ['ID', 'Reddit ID', 'Subreddit', 'Author', 'Title', 'URL', 'Score',
+                             'Comments', 'Intent Score', 'Keywords', 'Status', 'Created UTC',
+                             'Scraped At']
+```
+
+Thirteen columns, unchanged — that is the R20 legacy contract. **The four boxes above are still
+yours**: they are about what the page *looks* like, which is exactly the part no command can check.
 
 ---
 
@@ -460,16 +494,51 @@ Every command was executed verbatim in PowerShell against the current `0005_disc
 <a id="part-b"></a>
 ## Part B — execution record
 
-**Status: NOT YET EXECUTED.** P8 is not implemented.
+**Status: EXECUTED 2026-08-13**, against the live database at `0006_content_and_dedup`, commit
+`74f9380`. Every command was run verbatim. Actual output:
 
-Part B is completed by running the whole guide against the finished phase. It must record:
+| Step | Command output | vs. Part A |
+|---|---|---|
+| **T1** | `INFO leads = 478 (459 baseline + 19 collected since)` · `PASS the 459 original leads are all still present` · `PASS max = 164.28` · `PASS avg = 42.29` · **`OK — all 51 checks passed`** | 31 → **51** |
+| **T2a** | `['comments', 'dedup_groups', 'dedup_members', 'minhash_bands']` | `[]` → all four |
+| **T2b** | `{'comments': 0, 'dedup_groups': 0, 'dedup_members': 0, 'minhash_bands': 0}` | ✅ all empty |
+| **T3a** ⭐ | `INSERT OK` / `rolled back, nothing kept` | ✅ **F1 absent** |
+| **T3b** ⭐ | `COMMENT INSERT OK` / `rolled back, nothing kept` | now runnable |
+| **T4** | `(478, 478, 478, 478, 478)` | was `no such column` |
+| **T5** | `leads rootpage = 2` | **2 → 2, no rewrite** |
+| **T6a** | `[('runs','run_id','id'), ('leads','lead_id','id'), ('comments','comment_id','id')]` | `comments` **added** |
+| **T6b** | `ck_prescores_one_target present: True` | survived the rebuild |
+| **T7** | copy made · `Running downgrade 0006_content_and_dedup -> 0005_discovery` · `leads = 478`, `new tables left behind: []` · re-upgrade `leads = 478` · `cleaned up; ALEMBIC_DB_URL is now []` · `alembic current` → `0006_content_and_dedup (head)` | ✅ full round-trip |
+| **T8** | **`1148 passed, 2 skipped in 497.27s`** | 1133 collected → 1150 |
+| **T9** | `GET /` 200 · `/health` 200 · `/api/leads/export` 200 · **13 CSV columns** | executable half only |
+| **T10** | `git status --short` → empty · `alembic heads` → `0006_content_and_dedup (head)` | ✅ |
 
-- [ ] Every command's real output at revision `0006`
-- [ ] The real check count from T1 (Part A baseline: 31)
-- [ ] The real T1 total, and confirmation that 459 originals and the `164.28` / `42.29` fingerprint
-      are intact
-- [ ] The real test count from T8 (baseline: 1133)
-- [ ] The `rootpage` from T5, compared against the value recorded in the completion report
-- [ ] Confirmation that T3's inserts left nothing behind — T1 re-run, total identical
-- [ ] Confirmation that T7 Step 5 ran and `alembic current` points back at the real database
-- [ ] Any step that could not be executed, marked **BLOCKED** rather than passed
+**Confirmations the guide asks for explicitly:**
+
+- ✅ **T3 left nothing behind.** T4 ran after T3 and reported **478**, identical to T1.
+- ✅ **T7 Step 5 ran**, and `alembic current` points back at the real database, not the copy.
+- ✅ **The 459 originals and the `164.28` / `42.29` fingerprint are intact** on the live database
+  after the real upgrade — not only on a copy.
+
+**Corrections forced by executing Part B:**
+
+1. **T1's check count was wrong in both directions.** Part A predicted the number would change; it
+   did not predict that the *same script* reports **51** plainly and **52** with `--revision 0006`,
+   because the revision comparison is an `INFO` line in the first case and a check in the second. A
+   tester following the guide plainly would have found 51 against an expectation of 52 and correctly
+   reported a mismatch. Both numbers are now stated.
+2. **T8's example count (`1143 passed`) and baseline (`1133`) conflated passed with collected.** The
+   real before-state is `1131 passed, 2 skipped` (1133 **collected**). Corrected to name both.
+3. **T8 needed the flake warning it did not have.** P8's own gate lost three runs to
+   [DI18](../DEFERRED-IMPROVEMENTS.md) and the WAL/mtime race. Without the note, a tester hitting
+   either would record a phase failure for a machine-load problem — and, worse, a tester hitting a
+   *real* regression might now dismiss it. The note names exactly two tests and says a re-run is not
+   a pass.
+4. **T9 named no route.** The guide asked for a CSV export with 13 columns but never said where it
+   is; the executable check first tried `/export/csv` and got **404**. The real route is
+   `/api/leads/export`. Recorded above so the next guide does not repeat the guess.
+5. **T5's expected value was stated as "compare against the completion report"** before the
+   completion report existed. It now carries the measured pre- and post-upgrade values directly.
+
+**Nothing was marked BLOCKED.** T9's four visual boxes are **unexecuted, not blocked** — they are
+the operator's to sign.
