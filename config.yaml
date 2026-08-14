@@ -18,6 +18,56 @@ keywords:
     - "is there a way to"
     - "frustrated with"
 
+# ---------------------------------------------------------------------------
+# The deterministic pipeline (P9+). Nothing here costs a token, and nothing
+# here may reach the AI layer -- ARCHITECTURE_FREEZE R3, enforced by fence 2
+# over src/rules/ in tests/test_boundaries.py.
+#
+# ⚠️ ROLLBACK: `rules_enabled: false` is P9's documented rollback (docs/34
+# section P9). It is read by src/rules/ itself, so switching it off makes every
+# rule admit everything without running a single regex. Try it without editing
+# this file:
+#
+#     python -m src.rules --rules-enabled false "Weekly megathread"
+#
+# Deleting this whole block also works: every key below reproduces its default
+# when absent, so a rollback by deletion behaves identically to a rollback by
+# flag -- the same property the `discovery:` and `notify:` blocks document.
+# ---------------------------------------------------------------------------
+pipeline:
+  # On, because `false` is the rollback state rather than the resting state. A
+  # filter that shipped off by default would be a documented capability that
+  # does not exist -- the trap the absent `density_threshold` note below records.
+  rules_enabled: true
+
+rules:
+  # Text shorter than this is not worth analysing.
+  #
+  # ⚠️ 80 comes from docs/06b, where it sits in a prefilter that runs *after* a
+  # body has been fetched -- so it measures a BODY. P9's rules see titles and
+  # authors only, and nothing binds this key to a body until P11 fetches one.
+  # It is shipped now because it is P9's Config row and the predicate is four
+  # lines; it is not yet doing anything on a real run.
+  min_chars: 80
+
+  # `[deleted]` and `[removed]` authors are never leads.
+  skip_deleted_authors: true
+
+  # AutoModerator, the known bot accounts, and names ending in `Bot`.
+  #
+  # The suffix rule is case-sensitive on the capital B on purpose: Abbot,
+  # Talbot and Cabot are surnames ending in b-o-t, and discarding those people
+  # would be invisible -- there is no report of the leads never collected. The
+  # deliberate cost is that a lower-case `somebot` with no separator is missed.
+  skip_bot_authors: true
+
+  # NOTE: there is deliberately no `competitors:` key. Competitor matching in
+  # src/rules/competitors.py resolves through the EntityRegistry that P15 builds
+  # over bkb_entities, and those tables arrive in 0007 (P12) -- so between now
+  # and then there is nothing to build a registry from. The rule ships inert,
+  # and tests/test_boundaries.py fails if anyone wires it early: a rule that
+  # quietly matches nothing looks exactly like a business with no competitors.
+
 scoring:
   keyword_weight: 3
   upvote_weight: 1

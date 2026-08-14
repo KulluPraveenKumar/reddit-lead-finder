@@ -109,8 +109,12 @@ why.
 python -m src.rules "Weekly megathread - ask your questions here"
 ```
 
-**Expected:** a line saying it was rejected, naming `structural_noise`, and naming `megathread` as
-the specific reason.
+**Expected — two lines**, the settings it used and then the verdict:
+
+```
+rules: on   min_chars=80
+reject · structural_noise · megathread
+```
 
 **A hiring ad:**
 
@@ -118,7 +122,7 @@ the specific reason.
 python -m src.rules "[HIRING] Senior Python developer, remote"
 ```
 
-**Expected:** rejected · `structural_noise` · `hiring`.
+**Expected:** a `rules: on …` line, then `reject · structural_noise · hiring`.
 
 **A post it should keep:**
 
@@ -126,7 +130,7 @@ python -m src.rules "[HIRING] Senior Python developer, remote"
 python -m src.rules "Looking for a tool to track competitor pricing"
 ```
 
-**Expected:** **admitted.** No rejection reason.
+**Expected:** a `rules: on …` line, then `admit`. No rejection reason.
 
 - [ ] The megathread is rejected, and the output names `megathread`
 - [ ] The hiring ad is rejected, and the output names `hiring`
@@ -145,11 +149,17 @@ to find.
 python -m src.rules "Our hiring process is broken and I need a tool to fix it"
 ```
 
-**Expected:** **admitted.** Not rejected.
+**Expected:** a `rules: on …` line, then `admit`. Not rejected.
 
 > **Why this matters more than it looks.** If this comes back rejected, the filter is throwing away
 > real customers who happen to use a common word, and **nothing else in the system would ever tell
 > you.** There is no report that shows you the leads you never collected.
+
+> ⚠️ **A real difference you should know about.** The *discovery* path that runs during a live scrape
+> uses an older rule that **does** reject this post. That is a known defect, found while writing this
+> very test, and it is registered as **[DI25](../DEFERRED-IMPROVEMENTS.md)** for a later phase to fix
+> and measure. So: this command admits the post (correct), and a real run today would still lose it.
+> Nothing you can do about that here — it is recorded so the difference does not look like a lie.
 
 - [ ] The post is **admitted**
 - [ ] If it was rejected, write down exactly what it said: ______________________________
@@ -359,7 +369,7 @@ Every command was executed verbatim in PowerShell against the current tree at `0
 **before** any P9 code existed — so that a command which cannot run is found now rather than by the
 tester.
 
-**Executed verbatim, exactly as printed above:**
+**Executed verbatim, exactly as printed above** (pre-implementation pass, 2026-08-13):
 
 | Command | Result today, pre-implementation | Meaning |
 |---|---|---|
@@ -394,6 +404,30 @@ here explicitly rather than left to look measured.
 <a id="part-b--execution-record"></a>
 ## Part B — execution record
 
-*To be filled in when P9 has shipped, per [checklist P.2](../P9-IMPLEMENTATION-CHECKLIST.md). Every
-predicted output above is replaced by the measured one, and every correction is recorded here with
-what the prediction had said.*
+**Status: PARTIAL — executed through Stage 4, 2026-08-14.** T2, T3, T4, T5, T6 and T9 are now
+runnable and their predicted wording has been replaced with measured output. **T1, T7 and T8 stay
+predicted until the phase closes**, because the suite count still moves with every stage.
+
+| Step | Measured output | vs. the prediction |
+|---|---|---|
+| **T2a** | `rules: on   min_chars=80` / `reject · structural_noise · megathread` | ✅ as predicted, plus a settings line the prediction did not have |
+| **T2b** | `rules: on   min_chars=80` / `reject · structural_noise · hiring` | ✅ |
+| **T2c** | `rules: on   min_chars=80` / `admit` | ✅ |
+| **T3** ⭐ | `admit` for *"Our hiring process is broken and I need a tool to fix it"* | ✅ — and see the finding below |
+| **T4** | on → `reject · structural_noise · megathread`; `--rules-enabled false` → `admit`; restored → `reject` | ✅ **rollback executed**, also against the real `config.yaml` value, sha256 `37e88b3d…` byte-identical before and after |
+| **T5** | `1 passed` | ✅ |
+| **T6** | `2 passed` | ✅ |
+| **T9** | one head, `0006_content_and_dedup` | ✅ unchanged, as P9 adds no migration |
+
+**Corrections forced by executing rather than predicting:**
+
+1. **The demo prints a settings line first.** Predicted output was the verdict alone; it actually
+   prints `rules: on   min_chars=80` above it, so a tester comparing the first line against the
+   guide would have reported a mismatch. The expected outputs in T2–T4 now show both lines.
+2. **The rollback needed no file edit.** Part A predicted T4 as a Notepad exercise; the shipped demo
+   takes `--rules-enabled true|false`, which removes the BOM hazard entirely. T4 was rewritten
+   before this run and the file-editing route is kept only as a documented alternative.
+3. **T3's post is admitted here and rejected by the live discovery path.** Not a guide defect and
+   not a P9 defect — `src/discovery/triage.py` carries a bare `\bhiring\b` that P9's own pattern
+   deliberately omits. Registered as **[DI25](../DEFERRED-IMPROVEMENTS.md)**, owner **P11**. A tester
+   who runs T3 and then wonders why real runs still lose such posts is reading a real difference.
