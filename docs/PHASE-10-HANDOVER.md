@@ -100,6 +100,11 @@ silent quality regression exactly. Found by mutation testing, not review. **Do n
 `_Clusters.attach`'s `admissible()` away**; three mutations (M37, M38, M39) exist to stop that, and
 the fix itself needed two passes because the first version checked the wrong item.
 
+⚠️ **`attach()`'s `similarity` argument defaults to `None`, and that default IS single linkage.**
+With nothing to compare against, `admissible()` returns `True`. Both call sites in `build_groups`
+pass it and the three mutations guard them — but **a fourth tier that forgot to would silently get
+the 0.445 behaviour back**, with no test failing. If you add a tier, pass it.
+
 **T1b — a corpus-driven test of grouping can be a coin flip.** LSH banding is **probabilistic**: a
 0.906-similar pair shares a band only ~83% of the time at 8 bands of 16 rows. A test asserting *which*
 items group is therefore flaky; assert the **property** (no group contains a below-threshold pair)
@@ -197,7 +202,7 @@ one.**
 | Phase | Test | Why it is there |
 |---|---|---|
 | **P15** | `test_the_competitor_registry_was_not_wired_before_p15` | *(P9's)* A competitor rule that quietly matches nothing looks exactly like a business with no competitors |
-| **P12** | *(none)* | But when `0007` creates the vector tables, `src/dedupe/semantic.py`'s in-memory comparison is the thing to revisit — and `test_tier_three_off_is_the_shipped_default` is what will fail if the default changes without a decision |
+| **P12** | *(none)* | But when `0007` creates the vector tables, `src/dedupe/semantic.py`'s in-memory comparison is the thing to revisit — and `test_tier_three_off_is_the_shipped_default` is what will fail if the default changes without a decision. **The specific thing to revisit:** complete linkage means tier 3 can extend a group tiers 1–2 opened only if the new item clears the *cosine* threshold against **every** existing member — and `similar_pairs` only returns pairs it scored above that threshold, so any unscored pair reads as `0.0` and refuses. Cross-tier extension is therefore rare by construction. That is **correct** under the linkage rule and invisible today (the tier ships off, and P0 measured both libraries absent), but a persisted vector index would make it observable, and it should be a decision rather than a rediscovered mystery |
 | **P19** | *(none yet)* | **`build_groups()` is not `PreAIGate` and must not become it.** It composes only P10's three tiers. Nothing enforces that boundary today |
 
 ---
@@ -243,7 +248,7 @@ one.**
 - [ ] **[§4 T8/T9 read]** — normalise before shingling, and the two `normalise` functions are not the same function
 - [ ] [34 §P11](34-implementation-plan.md) read — all thirteen fields, including the **2% stage-3 holdout** and **`SELECT COUNT(*) FROM ai_calls WHERE run_id=?` = 0**
 - [ ] `phase-manager` skill loaded before the first edit under `src/`
-- [ ] The full suite recorded green before the first change — **1623 passed, 2 skipped**
+- [ ] The full suite recorded green before the first change — **1640 passed, 2 skipped**
 - [ ] `git status` clean · `alembic heads` = one `0006` · `check_schema.py` 51/51
 - [ ] `gh run list` checked: P10 green on `origin/main`
 - [ ] ⚠️ **`config.yaml` checked for uncommitted local values** — it carried a real chat id at the

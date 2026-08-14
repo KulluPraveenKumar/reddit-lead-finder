@@ -294,6 +294,14 @@ class _Clusters:
         When ``matches`` spans two clusters the best admissible one wins and the
         other is left alone; members of other clusters are never stolen, which is
         what keeps DI22 true.
+
+        ⚠️ **Omitting ``similarity`` restores single linkage, silently.** With it
+        ``None`` there is nothing to compare against, so :func:`admissible`
+        returns ``True`` and the 0.445 behaviour above comes back. Both call
+        sites in :func:`build_groups` pass it and M37–M39 guard them, but a
+        **fourth tier that forgot to** would get no warning. It is a default
+        rather than a required argument because tier 1 groups items that are
+        byte-identical after normalisation, where the constraint is vacuous.
         """
         if key in self._of:
             return

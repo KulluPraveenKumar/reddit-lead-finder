@@ -44,7 +44,7 @@ reads, writes or derives a per-item score, and `test_grouping_mutates_no_per_ite
 | **A group of N yields N distinct pre-scores** *(bold)* | **Reconciled — D1.** `src/scoring/prescore.py` is P11's Files row and P11 depends on P10, so no pre-score exists. P10 proves the checkable half: `test_a_group_of_n_keeps_n_members_and_n_identities`, `test_grouping_mutates_no_per_item_score`. [freeze §11.1](ARCHITECTURE_FREEZE.md) |
 | **MinHash indexes and queries 2,000 items in < 2 s CPU** *(bold)* | **Measured and met — 0.59 s / 0.87 s.** The literal *"128 perms"* reading measured **6.36 s / 11.11 s** and fails. `test_a5_minhash_indexes_and_queries_2000_items_under_two_seconds`. D5, [freeze §11.1](ARCHITECTURE_FREEZE.md) |
 | **No `src.ai` import** *(bold)* | `test_the_dedupe_package_is_inside_the_ai_fence` + `test_the_dedupe_package_exists`. Fence 2 now covers **3 of 6** paths |
-| DI22 — at most one group per run | `test_no_item_belongs_to_two_groups`, `test_validate_membership_catches_a_hand_built_violation`, `test_persistence_refuses_a_result_that_violates_di22`, `test_tier_three_cannot_steal_a_member_from_an_earlier_tier`, and a 40-corpus property test. Mutations M24, M25, M26, M31 |
+| DI22 — at most one group per run | `test_no_item_belongs_to_two_groups`, `test_validate_membership_catches_a_hand_built_violation`, `test_persistence_refuses_a_result_that_violates_di22`, `test_tier_three_cannot_steal_a_member_from_an_earlier_tier`, and a 40-corpus property test. Mutations **M25** (the inner claim guard) and **M26** (the check itself) — **not** M24/M31, which survived as equivalents and therefore discharge nothing |
 
 ### Metrics
 
