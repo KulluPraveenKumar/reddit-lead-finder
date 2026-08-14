@@ -310,6 +310,82 @@ def test_notify_imports_no_model():
     )
 
 
+def test_the_rules_package_is_inside_the_ai_fence():
+    """Grep fence 2 (R3), over ``src/rules/`` -- and the first implementation of it.
+
+    ``docs/35`` §2.1 check 9 specifies fence 2 over **six** paths::
+
+        src/rules/ src/dedupe/ src/scoring/ src/knowledge/ src/feedback/
+        src/discovery/policy.py
+
+    **Five of those six have never existed.** Only ``discovery/policy.py`` ships,
+    guarded by :func:`test_the_policy_module_exists_and_is_inside_the_ai_fence`.
+    So for eight phases the check has been passing over an empty set, and P8's
+    handover could record *"grep fences 4 of 4"* truthfully while the fence with
+    the widest scope covered one path of six.
+
+    **P9 creates the first of the missing five**, which is why this is written
+    here rather than later. It is the same defect P4 found for fence 4 and P7
+    found for fence 3 -- both ticked as delivered while absent, and fence 4 failed
+    on seven identifiers the moment it was written.
+
+    The rule is not academic. ``src/ai/gate.py`` already defines ``PreAIGate``,
+    whose rule plugins are callables returning a ``GateDecision``; a rule under
+    ``src/rules/`` that returned one would import ``src.ai`` and breach R3, and
+    every other gate in this project would still report green. P9's D1 settles
+    it the other way: this package owns a neutral result type, and the adapter is
+    P19's, on the side where the import is legal.
+
+    Uses :func:`_imports_any` rather than the token match
+    :func:`test_discovery_makes_no_ai_calls` uses. Both are defensible; the AST
+    import form is stricter and resolves relative imports, so
+    ``from ..ai import gate`` inside ``src/rules/`` is reported as ``src.ai`` and
+    cannot slip past a check written for the absolute spelling. ``hermes`` is
+    included for the same reason ``src/notify/`` includes it: R4 is a one-way
+    dependency, and an agent runtime reaching the deterministic tier would defeat
+    R3 by another route.
+    """
+    rules = SRC / "rules"
+    assert rules.exists(), "src/rules/ is P9's package; its absence is a failure, not a skip"
+
+    scanned = 0
+    offenders = []
+    for path in _python_files(rules):
+        scanned += 1
+        hits = _imports_any(path, {"src.ai", "hermes"})
+        if hits:
+            offenders.append(f"{path.relative_to(PROJECT_ROOT)}: {hits}")
+
+    # A fence that walked nothing would report no violations while checking
+    # nothing -- P6's F3, and the reason every fence here counts its own inputs.
+    assert scanned > 0, "fence 2 scanned no files under src/rules/"
+    assert offenders == [], (
+        "R3: src/rules/ imports neither the AI layer nor an agent runtime. The "
+        "deterministic tier is the whole cost argument (docs/06c §2); code built "
+        "to avoid paying for a model must not be able to call one. A rule returns "
+        "its own neutral result; the adapter to GateDecision is P19's. "
+        "Offenders: " + str(offenders)
+    )
+
+
+def test_the_rules_package_exists():
+    """The fence above walks whatever is there, so absence must fail loudly.
+
+    P5's F3, fourth occurrence -- *a guard that cannot fail is documentation.*
+    ``test_the_notify_package_exists`` is the established form and this follows
+    it deliberately.
+
+    The failure mode is specific and was measured on 2026-08-13, before P9's code
+    existed: the manual guide's shell form of this check
+    (``Get-ChildItem src\\rules -Filter *.py -Recurse | Select-String ...``)
+    printed **nothing and raised no error** against a tree with no such folder --
+    output identical to a clean pass. Deleting or renaming this package must
+    break a test, not quietly reduce fence 2 to a no-op.
+    """
+    package = SRC / "rules" / "__init__.py"
+    assert package.exists(), "R3 and docs/34 §P9 both name src/rules/ by path"
+
+
 def test_notify_confines_the_http_client_to_transport():
     """``docs/34`` §P7: *"renderers.py imports neither src.ai nor an HTTP client."*
 
