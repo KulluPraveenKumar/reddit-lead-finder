@@ -232,9 +232,48 @@ casing vary far more than substance. LSH banding avoids the O(n²) comparison.
 2,000 items completes in **< 2 s on CPU**; the surveyed literature covers different techniques at
 different scales, so this number is validated in testing rather than assumed here.
 
-**No embedding model, no vector database, no embeddings API.** That tier is deliberately excluded:
-it needs new infrastructure and new per-item cost to catch a tail Jaccard already largely covers.
-Recorded as a future enhancement.
+> ⚠️ **Measured in P10, 2026-08-14 — and the literal reading of *"128 perms"* fails.** Classic
+> MinHash re-hashes every shingle under 128 independent permutations, which cost **6.36 s** for
+> 2,000 305-character documents and **11.11 s** for 870-character ones on the reference host. The
+> shipped `src/dedupe/minhash.py` uses **One-Permutation Hashing with densification**: the same
+> 128-slot signature, the same banding, the same estimator, measured at **0.27 s / 0.55 s** — and
+> *more* accurate (0.0279 against 0.0308 mean absolute Jaccard error). This paragraph's caution was
+> right: the number needed validating, and validating it changed the implementation.
+> [freeze §11.1](ARCHITECTURE_FREEZE.md), 2026-08-14.
+
+> ⚠️ **The paragraph that stood here — *"No embedding model, no vector database, no embeddings API.
+> That tier is deliberately excluded"* — was superseded by [AD-16](03-architecture.md) and is
+> struck.** [freeze §5](ARCHITECTURE_FREEZE.md) lists *"Vectors — Model2Vec + `sqlite-vec`,
+> optional"*, and [34 §P10](34-implementation-plan.md) task 3 specifies the tier explicitly.
+>
+> Its objection is answered rather than overruled. Model2Vec is a **static distillation** — one
+> matrix lookup per token, no GPU, no server, no API call — and `sqlite-vec` is a SQLite extension
+> rather than a datastore, so neither is the *"new infrastructure and new per-item cost"* the
+> exclusion rejected. §4.2a below is what actually ships.
+> [freeze §11.1](ARCHITECTURE_FREEZE.md), 2026-08-14.
+
+### 4.2a Tier 3 — paraphrase via a static embedding
+
+*"Which CRM should I use"* and *"any recommendations for customer relationship software"* are the
+same question and share **no** character 5-gram. Tiers 1 and 2 cannot see that; an embedding can.
+
+```python
+SEMANTIC_THRESHOLD = 0.88   # cosine; `null` means the tier does not run
+```
+
+**Optional, local, and never authoritative** ([AD-16](03-architecture.md)). It ships **off**
+(`dedup.semantic_threshold: null`) because P0 measured neither `model2vec` nor `sqlite_vec` as
+installed ([SPRINT-0-MEASUREMENTS §3.1](SPRINT-0-MEASUREMENTS.md)) — a tier defaulting to on would be
+off in practice on every host, and a default that lies about what runs is worse than one that does
+not.
+
+When the library is absent the tier contributes nothing, raises nothing, and **the run produces the
+identical lead set**. That is the acceptance criterion, not a hope: tier 3 is additive by
+construction — it can only merge items tiers 1 and 2 left ungrouped, it never splits a group, and it
+never removes an item.
+
+The vector *store* (`bkb_embeddings`, `sqlite-vec`) arrives in `0007` with **P12**. P10's DB row is
+*"None"*, so its tier 3 compares within the run's own items and persists nothing.
 
 ### 4.3 Group representative selection
 
@@ -244,6 +283,15 @@ def choose_representative(group: list[Item]) -> Item:
 ```
 
 The representative is enriched; **the analysis is linked to every member of the group.**
+
+> ⚠️ **`prescore` does not exist until P11, and P11 depends on P10.** `src/scoring/prescore.py` is
+> [34 §P11](34-implementation-plan.md)'s Files row, so the cascade that ships in P10 takes the
+> pre-score as an **injected** value (`DedupItem.rank`, default `None`) and falls back to
+> `(score, created_utc, row_id)` — the trailing row id being the tie-break that keeps selection
+> deterministic when the first three are equal. P11 fills `rank` in without a signature change.
+> [34 §P10](34-implementation-plan.md)'s *"a group of N yields N distinct pre-scores"* moves to P11
+> with it; what P10 proves is that grouping preserves N distinct members and mutates no per-item
+> score. [freeze §11.1](ARCHITECTURE_FREEZE.md), 2026-08-14.
 
 ### 4.4 The correctness rule: group for analysis, score individually
 

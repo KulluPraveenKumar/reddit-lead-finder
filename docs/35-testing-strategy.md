@@ -78,15 +78,21 @@ Every check below runs at the end of every phase. **`make gate` runs all of them
 > |---|---|---|
 > | `src/discovery/policy.py` | P5 | P5 — `test_the_policy_module_exists_and_is_inside_the_ai_fence` |
 > | `src/rules/` | **P9** | **P9** — `test_the_rules_package_is_inside_the_ai_fence`, plus an existence guard |
-> | `src/dedupe/` | P10 | P10 |
+> | `src/dedupe/` | **P10** | **P10** — `test_the_dedupe_package_is_inside_the_ai_fence`, plus an existence guard |
 > | `src/scoring/` | P11 | P11 |
 > | `src/knowledge/` | P15 | P15 |
 > | `src/feedback/` | P19 | P19 |
 >
 > **Each of those phases owns extending the fence to its own path**, with the existence guard beside
 > it — P9's pairing is the pattern to copy, because a fence that walks whatever is there passes
-> vacuously the moment the package is deleted (P5's F3, recorded four times now). This note changes
-> no pass condition: row 9 still requires 0 matches.
+> vacuously the moment the package is deleted (P5's F3, **recorded five times now**). This note
+> changes no pass condition: row 9 still requires 0 matches.
+>
+> **Fence 2 covers three of six as of P10.** The temptation it guards is sharpest on the path P10 just
+> added: `src/ai/gate.py`'s `RejectionReason` already contains `duplicate_exact` and `duplicate_near`,
+> so a dedupe module importing those two constants would breach **R3** while looking like good
+> practice. It spells them instead, and `tests/test_rules_vocabulary.py` — the one file permitted to
+> import both sides — asserts the agreement.
 | 12 | **Migration round-trip** | `upgrade head` → `downgrade -1` → `upgrade head` on a **copy** of `leads.db` | Succeeds; `alembic heads` = 1 |
 | 13 | **Legacy regression** | 459 leads · `intent_score` SHA-256 unchanged · `GET /` byte-identical · 13 CSV columns · 17 endpoints identical | All |
 | 14 | Secret scan | grep logs, DB, templates, repo, API responses for credential shapes | 0 matches |
@@ -320,7 +326,7 @@ Beyond the universal gate. Only the additions are listed.
 | **P7** | **Token cost = 0**; duplicate = 0 over 20 replays; transport-down path | Complete a run; **receive one Telegram message**; check `ai_calls` for zero agent rows |
 | **P8** | Migration ordering; 459 rows get correct defaults | Confirm the four new columns and their values on a legacy lead |
 | **P9** | Grep fence 2; 11 reasons counted; property test | Feed a hiring post through; see it rejected with reason `structural_noise` |
-| **P10** | **2,000 items < 2 s**; identical lead set with tier 3 off; N distinct pre-scores | Two near-identical posts group; both still appear in the list |
+| **P10** | **2,000 items < 2 s** — measured, and the literal *"128 perms"* reading fails it ([freeze §11.1](ARCHITECTURE_FREEZE.md)); identical lead set with tier 3 off; ~~N distinct pre-scores~~ → **N distinct members, no per-item score mutated** *(the pre-scores are P11's; §11.1)* | `python -m src.dedupe` — two near-identical posts group, both still listed, and `--minhash-enabled false` visibly reduces the collapse |
 | **P11** | **0 AI calls**; comment requests −5%; triage miss rate < 5% | Read the funnel counts on the run page; they sum correctly |
 | **P12** | **Migration completes with `sqlite-vec` absent**; 4 FKs; payload-NULL rule | `/health` shows `semantic_layer` state |
 | **P13** | Direct egress asserted; L1 hit = 0 fetches; `file://` → 422 | Paste a URL; see the snapshot; paste it again; **no second fetch** |

@@ -393,6 +393,39 @@ predecessor has not been approved. The `.claude/skills/phase-manager` skill enfo
 | **Rollback** | `dedup.minhash_enabled: false` / `semantic_threshold: null` |
 | **Docs** | [06c §4](06c-local-first-pipeline.md); [AD-16](03-architecture.md) degradation confirmed |
 
+> **Reconciliations, P10, 2026-08-14 — four, each carrying the measurement that forced it.** Recorded
+> in full at [freeze §11.1](ARCHITECTURE_FREEZE.md) and reasoned at
+> [P10-DECISION-ANALYSIS.md](P10-DECISION-ANALYSIS.md). **None is a §11 amendment**: no technology,
+> table, decision or dependency changes in any of them.
+>
+> 1. **Task 2's *"MinHash 128 perms"*, read as 128 independent permutations, misses A5 by 3–5.5×** —
+>    measured **6.36 s / 11.11 s** for 2,000 items against a **2 s** budget, before any code was
+>    written. `src/dedupe/minhash.py` ships **One-Permutation Hashing**: the same 128-slot signature,
+>    the same banding, the same estimator, measured **0.27 s / 0.55 s** and *more* accurate.
+>    **A5 is now measured and met** — 0.59 s / 0.87 s end to end.
+> 2. **The Acceptance row's *"a group of N yields N distinct pre-scores"* is not satisfiable here.**
+>    `src/scoring/prescore.py` is §P11's Files row and **P11 depends on P10**. `DedupItem.rank`
+>    carries the pre-score as an injected value; the assertion moves to P11. P10 proves grouping
+>    preserves N distinct members and mutates no per-item score.
+> 3. **The Metrics row's *"collapse rate > 8% on real data"* is an intra-run quantity.** Measured
+>    **5.74%** on the live 488 leads and **flat down to a 0.60 threshold**, because ID-level dedup is
+>    already spent (all 488 `reddit_id` distinct) and the corpus is 59 runs over 29 months rather
+>    than one run. The intra-run measurement belongs to **P11**, which has the first live call site.
+>    No threshold was tuned.
+> 4. **[06c §4.2](06c-local-first-pipeline.md) forbade the tier task 3 requires** — *"No embedding
+>    model, no vector database, no embeddings API"* — while [freeze §5](ARCHITECTURE_FREEZE.md) lists
+>    Model2Vec and `sqlite-vec` and [AD-16](03-architecture.md) names the layer. 06c predates AD-16
+>    and is corrected; the tier ships **off by default**, because P0 measured both libraries absent.
+>
+> **The Files row is honoured, and two files sit outside it deliberately.** `src/dedupe/__main__.py`
+> exists because [35 §1](35-testing-strategy.md) requires a manual guide a non-developer can execute
+> and this phase adds no page, endpoint or row — the precedent P5's `feed` CLI, P6's `triage.py` and
+> P9's `python -m src.rules` each set, under §1.1's *"a guide, not a contract"*. And P10 declares its
+> two rejection reasons **in `src/dedupe/`** rather than extending `src/rules/REASONS` as
+> [PHASE-09-HANDOVER §3.3](PHASE-09-HANDOVER.md) proposed, because `src/rules/__init__.py` is outside
+> this row and [lock §3](EXECUTION_MODE_LOCK.md) step 4 forbids editing it. The six-of-eleven subset
+> claim is asserted across both packages by `tests/test_rules_vocabulary.py`.
+
 ## P11 — Pre-score, funnel & comments
 
 | | |
