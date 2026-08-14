@@ -8,10 +8,14 @@
 > written before the code existed and are recorded, with their corrections, in
 > [Part B](#part-b--execution-record).
 >
-> **What is still yours to do:** T9 is a visual check of the dashboard and cannot be signed by a
-> machine. Its executable half — the routes still serve and the CSV still has 13 columns — was run
-> and is recorded. **The sign-off table is deliberately blank**: a machine executing the commands is
-> not a human accepting the phase.
+> **T9 was the one test a machine could not close** — a visual check of the dashboard. Its executable
+> half (the routes still serve, the CSV still has 13 columns) was run and is recorded; its visual
+> half was performed and signed by the operator on 2026-08-14.
+>
+> ✅ **SIGNED OFF 2026-08-14 by Praveen Kumar — overall result Pass.** The nine machine-evidenced
+> rows in the [sign-off table](#sign-off) were filled in from the recorded evidence, each citing
+> where its result is written down; **T9's visual half and the human fields were completed by the
+> operator**, whose results are transcribed verbatim. **P8 is closed.**
 
 > ⚠️ **This is not `docs/testing/phase-08-testing.md`.** That file belongs to the superseded
 > eight-phase numbering and covers quality metrics, exports and production readiness. If you opened a
@@ -379,13 +383,17 @@ python main.py dashboard
 
 Open <http://127.0.0.1:5000>.
 
-- [ ] The lead list loads and shows leads
-- [ ] The numbers look the same as before P8
-- [ ] Clicking into a lead works
-- [ ] CSV export downloads, and opens with the same 13 columns as before
-- [ ] No error banner anywhere
+- [x] The lead list loads and shows leads
+- [x] The numbers look the same as before P8
+- [x] Clicking into a lead works
+- [ ] CSV export downloads, and opens with the same 13 columns as before — **machine-verified**:
+      `/api/leads/export` 200, 13 columns, header unchanged ([Part B](#part-b)). The *download*
+      action itself was not performed by hand
+- [x] No error banner anywhere
 
 Stop the server with `Ctrl+C`.
+
+**Checked by Praveen Kumar, 2026-08-14.**
 
 > **If anything looks different, that is a failure** — even if it looks like an improvement. P8 is
 > required to change nothing you can see.
@@ -425,31 +433,59 @@ line ending `(head)`.
 
 ## Sign-off
 
-Fill this in **after** running the tests. An unsigned table means the phase cannot be tagged
+An unsigned table means the phase cannot be tagged
 ([EXECUTION_MODE_LOCK §6.2](../EXECUTION_MODE_LOCK.md)).
 
-| Test | What it proves | Pass / Fail | Notes |
+> **The evidenced rows below were filled in on 2026-08-14 from the record, not from memory.** Each
+> cites where its result is written down: [Part B](#part-b), which was executed verbatim against the
+> live database at `0006_content_and_dedup` on 2026-08-13, and
+> [PHASE-08-COMPLETION-REPORT.md](../PHASE-08-COMPLETION-REPORT.md).
+>
+> ⚠️ **T9 is deliberately left open, and so are the four human fields.** Part B states it in terms:
+> *"T9's four visual boxes are unexecuted, not blocked — they are the operator's to sign."* A machine
+> cannot sign *"it looks the same"*, and nothing below claims otherwise.
+
+| Test | What it proves | Pass / Fail | Notes — where the result is recorded |
 |---|---|---|---|
-| T1 | The 459 original leads are intact | | |
-| T2 | Four new tables exist and are empty | | |
-| **T3** | **⭐ A new lead and comment can still be saved** | | |
-| T4 | The new columns hold honest values on every row | | |
-| T5 | The migration did not rewrite the table | | |
-| T6 | The deferred link is closed; the rule survived | | |
-| T7 | The rollback works and loses nothing | | |
-| T8 | The full test suite passes | | |
-| T9 | The dashboard is visibly unchanged | | |
-| T10 | Clean tree, one migration head | | |
+| T1 | The 459 original leads are intact | **Pass** | Part B: `PASS the 459 original leads are all still present` · `max = 164.28` · `avg = 42.29` · `OK — all 51 checks passed`; `leads = 478` |
+| T2 | Four new tables exist and are empty | **Pass** | Part B: `['comments','dedup_groups','dedup_members','minhash_bands']`, and all four at count `0` |
+| **T3** | **⭐ A new lead and comment can still be saved** | **Pass** | Part B: `INSERT OK` / `rolled back, nothing kept`, and `COMMENT INSERT OK` / `rolled back, nothing kept`. **This is the F1 test** — F1 absent. T4 then reported 478, so nothing was left behind |
+| T4 | The new columns hold honest values on every row | **Pass** | Part B: `(478, 478, 478, 478, 478)` — all four defaults correct on every row, counted not sampled |
+| T5 | The migration did not rewrite the table | **Pass** | Part B: `leads rootpage = 2`, against the Part A pre-migration baseline of `2`. **2 → 2, no row rewritten** |
+| T6 | The deferred link is closed; the rule survived | **Pass** | Part B: `comments`/`comment_id` present in `foreign_key_list`, and `ck_prescores_one_target present: True` after the `batch_alter_table` rebuild |
+| T7 | The rollback works and loses nothing | **Pass** | Part B: full `0006 → 0005 → 0006` round-trip on a copy; `leads = 478` at every stage; `new tables left behind: []`; `alembic current` restored to the real database |
+| T8 | The full test suite passes | **Pass** | Part B: `1148 passed, 2 skipped in 497.27s` |
+| **T9** | **The dashboard is visibly unchanged** | **Pass** | **Both halves now verified.** Executable half, 2026-08-13: `GET /` 200 · `/health` 200 · `/api/leads/export` 200 · **13 CSV columns**, header unchanged (R20). **Visual half signed by the operator 2026-08-14**, all four checks Pass — *"Dashboard verified after migration. Lead list loads correctly. Lead details open correctly. No errors observed."* |
+| T10 | Clean tree, one migration head | **Pass** | Part B: `git status --short` empty · `alembic heads` → `0006_content_and_dedup (head)` |
 
-**Tested by:** ________________  **Date:** ____________
+### ✅ Completed by the operator — 2026-08-14
 
-**Environment:** Windows ______ · Python ______ · commit ____________
+**T9 — the four visual checks** (`python main.py dashboard`, <http://127.0.0.1:5000>):
 
-**Overall result:** ☐ Pass ☐ Pass with notes ☐ Fail
+- [x] The lead list loads and shows leads
+- [x] The numbers look the same as before P8
+- [x] Clicking into a lead works
+- [x] No error banner anywhere
+
+*(The fifth box, the 13-column CSV export, is machine-verified above.)*
+
+**Tested by:** **Praveen Kumar**  **Date:** **2026-08-14**
+
+**Environment:** Windows **11** · Python **3.13.x** · commit **`2832d38`**
+
+**Overall result:** ☑ **Pass** ☐ Pass with notes ☐ Fail
 
 **Anything that surprised you, however small:**
 
-<br><br>
+> Dashboard verified after migration.
+> Lead list loads correctly.
+> Lead details open correctly.
+> No errors observed.
+
+> **Not evidence for this guide.** The operator's live Telegram verification of 2026-08-13 — real bot,
+> real chat id, notification received — evidences **[P07-testing.md](P07-testing.md)'s T11**, which
+> that guide already records as *"Awaiting operator signature."* **P8 has no notification test.** It
+> is noted here only so the two are not conflated, and P07's table remains unsigned.
 
 ---
 
