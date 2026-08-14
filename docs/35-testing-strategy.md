@@ -67,6 +67,26 @@ Every check below runs at the end of every phase. **`make gate` runs all of them
 > Corrected in P0; see [SPRINT-0-MEASUREMENTS §7](SPRINT-0-MEASUREMENTS.md).
 >
 > Fences 2 and 3 remain `grep` because they match on `import` statements, which do not appear in prose.
+
+> ⚠️ **Fence 2 names six paths and only two exist. Added P9, 2026-08-14.** The command in row 9 is
+> correct as a *specification* and misleading as a *status*: `grep` over a path that does not exist
+> reports nothing, so from P0 to P8 the check passed over an almost-empty set while reading as fully
+> enforced. [PHASE-08-HANDOVER §6](PHASE-08-HANDOVER.md) could record *"grep fences 4 of 4"* truthfully
+> on that basis. Which phase creates each:
+>
+> | Path | Created by | Enforced since |
+> |---|---|---|
+> | `src/discovery/policy.py` | P5 | P5 — `test_the_policy_module_exists_and_is_inside_the_ai_fence` |
+> | `src/rules/` | **P9** | **P9** — `test_the_rules_package_is_inside_the_ai_fence`, plus an existence guard |
+> | `src/dedupe/` | P10 | P10 |
+> | `src/scoring/` | P11 | P11 |
+> | `src/knowledge/` | P15 | P15 |
+> | `src/feedback/` | P19 | P19 |
+>
+> **Each of those phases owns extending the fence to its own path**, with the existence guard beside
+> it — P9's pairing is the pattern to copy, because a fence that walks whatever is there passes
+> vacuously the moment the package is deleted (P5's F3, recorded four times now). This note changes
+> no pass condition: row 9 still requires 0 matches.
 | 12 | **Migration round-trip** | `upgrade head` → `downgrade -1` → `upgrade head` on a **copy** of `leads.db` | Succeeds; `alembic heads` = 1 |
 | 13 | **Legacy regression** | 459 leads · `intent_score` SHA-256 unchanged · `GET /` byte-identical · 13 CSV columns · 17 endpoints identical | All |
 | 14 | Secret scan | grep logs, DB, templates, repo, API responses for credential shapes | 0 matches |

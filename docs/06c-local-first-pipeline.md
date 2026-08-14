@@ -99,7 +99,7 @@ Enumerated so it is auditable, not aspirational. Each has a home in deterministi
 | URL parsing / normalisation | `urllib.parse` | `net/urls.py` |
 | Website crawling | `ProxiedHTTPClient` | `ai/website_fetcher.py` |
 | HTML parsing | BeautifulSoup + trafilatura | `ai/website_fetcher.py` |
-| Subreddit filtering | set membership | `rules/subreddits.py` |
+| Subreddit filtering | set membership | `discovery/` — **not** `rules/subreddits.py`; see the note below |
 | Age / recency calculation | `datetime` arithmetic | `scoring/features.py` |
 | Upvote / comment scoring | arithmetic | `scoring/features.py` |
 | Author normalisation, bot detection | regex + allowlist | `rules/authors.py` |
@@ -108,6 +108,14 @@ Enumerated so it is auditable, not aspirational. Each has a home in deterministi
 | **Tech-stack / pricing signals on a website** | regex + `schema.org` parse | `ai/site_signals.py` |
 | Rule-based pre-scoring | weighted arithmetic | `scoring/prescore.py` |
 | Similarity hashing | MinHash | `dedupe/minhash.py` |
+
+> **Reconciliation, P9, 2026-08-14 — `rules/subreddits.py` does not exist and is not planned.**
+> This table was the only document naming it. [34 §P9](34-implementation-plan.md)'s Files row lists
+> five modules and not that one, and [03 §2](03-architecture.md)'s map likewise lists
+> *"keywords · negatives · structural · competitors · authors"* while placing subreddit work in
+> `src/discovery/` (*"subreddit candidate generation + validation + rank"*), which is
+> [34 §P17](34-implementation-plan.md)'s. P9 built the five and deliberately did not create a sixth.
+> The row is corrected rather than deleted because the *task* is real; only its address was wrong.
 
 **Competitor detection deserves emphasis.** Once the business profile names competitors, finding
 them in a Reddit post is a dictionary lookup with alias and misspelling variants — not a reasoning

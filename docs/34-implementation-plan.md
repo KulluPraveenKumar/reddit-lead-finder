@@ -357,11 +357,24 @@ predecessor has not been approved. The `.claude/skills/phase-manager` skill enfo
 | **Config** | `rules.{min_chars,skip_deleted_authors,skip_bot_authors}` |
 | **Depends on** | P8 |
 | **Tasks** | 1. Keyword matching with tiers and negatives — set membership + compiled regex<br>2. Structural regex: hiring, giveaway, megathread, AMA, promo<br>3. Author heuristics: `[deleted]`, AutoModerator, `*Bot`, allowlist<br>4. Competitor matching **via the entity registry interface** (stub until P15; dictionary fallback)<br>5. Every rejection returns a **counted reason string** |
-| **Acceptance** | 11 rejection reasons implemented and counted · **`grep -rn "import.*src\.ai" src/rules/` returns nothing** · a post using only a competitor alias matches · negative terms are case- and punctuation-insensitive · property test: no input crashes |
+| **Acceptance** | **Four** rejection predicates implemented — `negative_term`, `structural_noise`, `too_short`, `bot_or_deleted` — each returning a reason drawn from `RejectionReason`'s spelling; three operate on data P9's callers have, and `too_short` is text-agnostic until P11 binds it to a body. **Counting them is P19's** · **`grep -rn "import.*src\.ai" src/rules/` returns nothing** · a post using only a competitor alias matches · negative terms are case- and punctuation-insensitive · property test: no input crashes |
 | **Metrics** | Rule evaluation < 1 ms/item · 100% branch coverage on rejection reasons |
 | **Time / Risk** | **2 days · Low** |
 | **Rollback** | `pipeline.rules_enabled: false` |
 | **Docs** | [06c §2](06c-local-first-pipeline.md) |
+
+> **Reconciliation, P9, 2026-08-14 — the Acceptance row said *"11 rejection reasons implemented and
+> counted"*, and that was not satisfiable.** §P19's Deliverables row below claims the same eleven
+> (*"`PreAIGate` with 11 counted reasons"*), and both cannot be true.
+> Mapping [06c §3.2](06c-local-first-pipeline.md)'s table to the phase that can produce each, P9's
+> five Tasks reach **four**; the other seven need a content hash (P10), a MinHash index (P10),
+> comments (P11), a pre-score (P11), a response cache (P19/P20) or an `ai_budgets` row (`0009`, P19).
+> *"Counted"* was independently unsatisfiable: P9's **DB** row is `None`, so there is no store to
+> count into, and `GateReport` lives in `src/ai/gate.py` — across the **R3** boundary from
+> `src/rules/`. Operator decision **D2**, recorded in
+> [P9-DECISION-ANALYSIS.md](P9-DECISION-ANALYSIS.md). **§P19's row is deliberately left unchanged:**
+> it is the one that was correct. The Objective row is likewise untouched — *"works and is counted"*
+> remains true of the pipeline as a whole, once P19 supplies the counter.
 
 ## P10 — Dedup cascade
 
