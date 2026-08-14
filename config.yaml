@@ -68,6 +68,81 @@ rules:
   # and tests/test_boundaries.py fails if anyone wires it early: a rule that
   # quietly matches nothing looks exactly like a business with no competitors.
 
+# ---------------------------------------------------------------------------
+# Deduplication (P10) -- near-identical discussions are analysed once and
+# scored individually
+#
+# Three near-identical "which CRM should I use" threads cost three AI
+# enrichments today. After this phase they cost one: the group is analysed
+# through a REPRESENTATIVE and the shared judgement is linked to every member.
+#
+# ⚠️ Grouping is for ANALYSIS ONLY. Every member keeps its own confidence score
+# (docs/06c section 4.4). Three threads with different authors, subreddits and
+# recency are worth different amounts as leads, and emitting three identical
+# numbers would make the ranking untrustworthy. Nothing in src/dedupe/ reads or
+# writes a per-item score.
+#
+# Nothing calls this yet. P10 builds the cascade; P11 is its first caller.
+#
+# Try it without editing this file:
+#
+#     python -m src.dedupe
+#     python -m src.dedupe --minhash-enabled false
+#
+# ⚠️ ROLLBACK: `minhash_enabled: false` and `semantic_threshold: null` are the
+# phase's two documented rollbacks (docs/34 section P10). Switching a tier off
+# can only ever produce MORE groups of size one -- never a different lead set --
+# which is what makes them rollbacks rather than behaviour changes. Deleting
+# this whole block also works: every key below reproduces its default when
+# absent, the same property the `rules:`, `notify:` and `discovery:` blocks
+# document for themselves.
+# ---------------------------------------------------------------------------
+dedup:
+  # Tier 1 -- sha256 of the normalised title and body. Crossposts, reposts and
+  # quoted duplicates. One dictionary lookup, and it runs first because
+  # everything it catches is something tier 2 would otherwise pay MinHash
+  # prices for.
+  exact_enabled: true
+
+  # Tier 2 -- MinHash + LSH banding. This is the phase's rollback switch.
+  minhash_enabled: true
+
+  # Character 5-grams, not word n-grams: Reddit text is noisy, and typos,
+  # punctuation and casing vary far more than substance (docs/06c section 4.2).
+  shingle_k: 5
+
+  # Signature width. 128 slots, banded into 8 bands of 16 rows -- the band count
+  # is COMPUTED from this and the threshold below, so changing either actually
+  # moves where the filter turns on.
+  #
+  # ⚠️ A5 was measured before this module was written, and the literal
+  # "128 independent permutations" reading FAILS it: 6.36s for 2,000 items
+  # against a 2s budget, and 11.11s for longer bodies. src/dedupe/minhash.py
+  # ships One-Permutation Hashing instead -- the same 128-slot signature, the
+  # same banding, the same estimator, measured at 0.27s / 0.55s and slightly
+  # MORE accurate. Recorded with both measurements in ARCHITECTURE_FREEZE
+  # section 11.1, 2026-08-14.
+  num_perm: 128
+
+  # Two posts group when their estimated Jaccard similarity reaches this.
+  # 0.85 is docs/06c section 4.2's LSH_THRESH.
+  jaccard_threshold: 0.85
+
+  # Tier 3 -- Model2Vec cosine, catching paraphrases that share no 5-grams
+  # ("which CRM" vs "customer relationship software"). `null` means OFF, and it
+  # is the shipped default for a measured reason: P0 found neither `model2vec`
+  # nor `sqlite_vec` installed (docs/SPRINT-0-MEASUREMENTS section 3.1), so a
+  # tier that defaulted to on would be off in practice on every host anyway --
+  # and a default that lies about what runs is worse than one that does not.
+  #
+  # AD-16 makes the semantic layer local, OPTIONAL and never authoritative: when
+  # the library is absent this tier contributes nothing and the run produces the
+  # identical lead set. Set it to 0.88 on a host that has model2vec installed.
+  #
+  # The vector STORE (sqlite-vec, bkb_embeddings) arrives in 0007 with P12; this
+  # tier compares within the run's own items and stores nothing.
+  semantic_threshold: null
+
 scoring:
   keyword_weight: 3
   upvote_weight: 1

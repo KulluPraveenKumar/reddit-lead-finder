@@ -20,6 +20,25 @@ python-dotenv>=1.0
 # spans both would make the warning depend on which version CI resolved.
 python-json-logger>=3.1
 
+# P10 — the dedup cascade adds NO required dependency.
+#
+# Tiers 1 and 2 are stdlib: `hashlib`, `zlib.crc32` and `re`. `datasketch` was
+# not used because ARCHITECTURE_FREEZE §5 closes the technology set and §12
+# forbids introducing one not named there — the same reasoning by which P9
+# refused `hypothesis` for its property tests. MinHash is ~120 lines in
+# src/dedupe/minhash.py and is measured against A5 rather than assumed.
+#
+# Tier 3 is OPTIONAL and listed here rather than required, deliberately.
+# AD-16 makes the semantic layer local, optional and never authoritative, and
+# `dedup.semantic_threshold: null` ships it off. Installing these two enables
+# it; not installing them is a supported state that the test suite exercises
+# on every run — which it could not do if they were hard requirements.
+#
+#   pip install model2vec sqlite-vec
+#
+# `sqlite-vec` is the vector STORE and is not read until P12 creates
+# `bkb_embeddings` in 0007; P10's tier 3 compares in memory within one run.
+
 # Phase 1 — tooling
 pytest>=8.0
 pytest-cov>=5.0
