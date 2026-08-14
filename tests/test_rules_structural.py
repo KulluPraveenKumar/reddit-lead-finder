@@ -9,6 +9,8 @@ pattern's own vocabulary that must be **admitted**.
 
 from __future__ import annotations
 
+import time
+
 import pytest
 
 from src.rules import STRUCTURAL_NOISE
@@ -145,6 +147,103 @@ def test_a_hiring_tag_must_be_at_the_start_or_be_an_explicit_phrase():
     """
     assert check_structural("[HIRING] dev").detail == "hiring"
     assert check_structural("Great news - we're hiring!").detail == "hiring"
+
+
+# ------------------------------------------- the AMA backtracking regression
+
+# The AMA pattern was `^\s*\[?\s*ama\b\s*\]?` until 2026-08-14. Two `\s*`
+# quantifiers separated by an optional means the engine tries every way of
+# splitting a whitespace run between them: quadratic, and `re` has no timeout,
+# so the failure is a wedged worker rather than an exception. Post titles are
+# attacker-supplied. Measured on the old form: 2,000 spaces 0.031s, 4,000
+# 0.063s, 8,000 0.266s, and a 100,000-space title burned 67.8s inside
+# `evaluate`. Found by the A5 property test in P9 Stage 5.
+#
+# The fix makes the bracket and its trailing space one optional group. The two
+# patterns were compared over 22,847 generated inputs with zero behavioural
+# differences before it landed; the four tests below pin the behaviour that
+# matters so the fix cannot be undone by a later "simplification".
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "AMA: I built a SaaS to $10k MRR",
+        "AMA: ask away",
+        "[AMA] founder of a dev tools company",
+        "[ AMA ] with spacing",
+        "   [   ama   ]   lowercase and padded",
+        "ama",
+        "Ask me anything about bootstrapping",
+    ],
+)
+def test_ama_titles_still_match_after_the_backtracking_fix(title: str):
+    assert check_structural(title).detail == "ama", f"{title!r} should still be an AMA"
+
+
+@pytest.mark.parametrize(
+    "title",
+    ["Amazon FBA tools - what do you use?", "Amateur mistake", "Amazing how hard invoicing is"],
+)
+def test_the_word_boundary_survived_the_backtracking_fix(title: str):
+    assert not check_structural(title).rejected
+
+
+@pytest.mark.parametrize("size", [2_000, 8_000, 32_000, 100_000])
+def test_a_whitespace_payload_completes_within_the_budget(size: int):
+    """The old pattern took 67.8s at 100,000. One second is a generous ceiling.
+
+    CPU time, not wall clock: on a loaded machine wall time measures the
+    neighbours, which is the DI18 trap this project has already paid for.
+    """
+    payload = " " * size
+    started = time.process_time()
+    check_structural(payload)
+    elapsed = time.process_time() - started
+    assert elapsed < 1.0, (
+        f"{size} spaces took {elapsed:.2f}s of CPU; the old quadratic pattern is back"
+    )
+
+
+def test_whitespace_scaling_is_not_quadratic():
+    """Growth, not a single number — a threshold alone would miss a *slower* quadratic.
+
+    **Four times the input must not cost sixteen times the time.** Linear is ~4x;
+    quadratic is ~16x; the ceiling sits between them at 10x.
+
+    ⚠️ **The sizes are chosen so that a quadratic still finishes.** A first draft
+    used 8,000 against 128,000 with 20 repeats, which is fine on fixed code and
+    took **over fifteen minutes** when mutation testing reverted the fix — the
+    verdict was a harness timeout rather than a clean failure, which is not a
+    result. 4,000 against 16,000 keeps a reverted pattern at roughly twenty
+    seconds, so the mutation dies quickly and legibly. A guard that cannot be
+    exercised in a mutation run is a guard nobody will keep exercising.
+
+    Wall clock, deliberately: this measures a *ratio* of two adjacent
+    measurements, so machine load inflates both and divides out — the same
+    reasoning as the parser's calibration ratio. It was the absolute use of wall
+    clock that DI18 punished, not the clock.
+    """
+    small_payload = " " * 4_000
+    large_payload = " " * 16_000
+    repeats = 20
+
+    started = time.perf_counter()
+    for _ in range(repeats):
+        check_structural(small_payload)
+    small = time.perf_counter() - started
+
+    started = time.perf_counter()
+    for _ in range(repeats):
+        check_structural(large_payload)
+    large = time.perf_counter() - started
+
+    ratio = large / small if small else float("inf")
+    assert ratio < 10, (
+        f"4x the input cost {ratio:.1f}x the time ({small:.4f}s -> {large:.4f}s). "
+        f"Linear is ~4x and quadratic is ~16x, so this is superlinear — the "
+        f"`\\[?\\s*` backtracking form is back."
+    )
 
 
 def test_dropping_any_pattern_would_be_caught():

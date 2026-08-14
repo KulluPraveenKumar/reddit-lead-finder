@@ -47,7 +47,18 @@ STRUCTURAL_PATTERNS: tuple[tuple[str, str], ...] = (
     # `\bama\b` and not `ama` -- "Amazon" begins with the same three letters, and
     # a word boundary is the whole defence. The optional brackets sit inside the
     # anchor so "[AMA]" and "AMA:" both match while "Amazon FBA tools" does not.
-    (r"^\s*\[?\s*ama\b\s*\]?|\bask me anything\b", "ama"),
+    #
+    # ⚠️ The bracket and the space after it are ONE optional group -- `(?:\[\s*)?`
+    # and **not** `\[?\s*`. The second form has two `\s*` quantifiers separated by
+    # an optional, so on a whitespace-only prefix the engine tries every way of
+    # splitting that run between them: quadratic, and `re` has no timeout, so a
+    # long enough title wedges the worker rather than raising. Measured
+    # 2026-08-14 on the old form -- 2,000 spaces 0.031s, 4,000 spaces 0.063s,
+    # 8,000 spaces 0.266s (doubling the input quadrupled the time), and a
+    # 100,000-space title burned **67.8 seconds** of CPU inside `evaluate`.
+    # Post titles are attacker-supplied. Found by the A5 property test in P9
+    # Stage 5, on its first run.
+    (r"^\s*(?:\[\s*)?ama\b\s*\]?|\bask me anything\b", "ama"),
     (
         r"\bpromo(?:tional)? code\b|\bdiscount code\b|\buse code\s+\w+"
         r"|\baffiliate link\b|\bupvote (?:this )?if\b",
