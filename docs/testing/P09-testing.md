@@ -419,6 +419,24 @@ predicted until the phase closes**, because the suite count still moves with eve
 | **T6** | `2 passed` | ✅ |
 | **T9** | one head, `0006_content_and_dedup` | ✅ unchanged, as P9 adds no migration |
 
+**Stage 5 additions, 2026-08-14** — these are automated checks rather than guide
+steps, recorded here because T7's count moves with them and because one of them found a
+live defect:
+
+| Check | Result |
+|---|---|
+| Property tests (A5) | **40 passed** — hostile corpus plus 300 seeded random inputs |
+| Performance: 1 ms/item budget (A6) | **passed** — ~0.008 ms/item, ~100× headroom |
+| Performance: drift ratio | **passed** — catches a 3× regression |
+| Branch coverage, `src/rules/` | **100%** across all six modules |
+| Mutations, all four sets | **31 designed, 31 died** |
+
+> 🔴 **A property test found a real defect on its first run.** `evaluate()` burned
+> **67.8 seconds of CPU** on a 100,000-space title — quadratic backtracking in the AMA
+> pattern, on attacker-supplied input, with no exception to notice. Fixed under its own
+> commit; regression tests added at 2k/8k/32k/100k plus a scaling-shape check. **T2–T4
+> are unaffected** and their expected output is unchanged.
+
 **Corrections forced by executing rather than predicting:**
 
 1. **The demo prints a settings line first.** Predicted output was the verdict alone; it actually
