@@ -386,6 +386,85 @@ def test_the_rules_package_exists():
     assert package.exists(), "R3 and docs/34 §P9 both name src/rules/ by path"
 
 
+def test_the_competitor_registry_was_not_wired_before_p15():
+    """P9's D5: `src/rules/competitors.py` ships inert, and must stay inert.
+
+    Its data comes from the ``EntityRegistry`` that ``docs/34`` §P15 builds over
+    ``bkb_entities``/``bkb_entity_aliases``, and those tables arrive in ``0007``
+    (**P12**). ``docs/34`` §P9's Config row names no competitor key, so between
+    P9 and P15 there is nothing to construct a registry *from*.
+
+    **The failure mode this guards is invisibility, not breakage.** A competitor
+    rule that quietly matches nothing looks exactly like a business with no
+    competitors, and no page, log line or counter in this system reports the
+    difference. So the inert state is asserted rather than assumed, and
+    **deleting this test is how P15 turns the rule on** -- a deliberate act, the
+    same discipline PHASE-08-HANDOVER §4 T1 demands for
+    ``notify.min_confidence_alert``: *"delete that fence deliberately when P21
+    ships the kind, do not discover it failing."*
+
+    **Executable code and settings only**, exactly as
+    :func:`test_min_confidence_alert_was_not_shipped` and the density fence are
+    scoped. ``src/rules/competitors.py`` explains its own inertness in prose and
+    names the key it does not read; a fence that matched prose would force
+    deleting that explanation -- the failure ARCHITECTURE_FREEZE §11.1 already
+    records for literally-read greps.
+
+    Three things are checked, because no two of them are sufficient: a config key
+    with no reader is dead weight, a reader with no config key is a rule wired to
+    a hardcoded list, and the module's own default could carry data while neither
+    of the first two fires.
+    """
+    offenders = []
+
+    # 1. No `rules.competitors:` setting. A *setting* is `key:` at the start of a
+    #    line; the explanatory comments in config.yaml are not.
+    config_text = (PROJECT_ROOT / "config.yaml").read_text(encoding="utf-8")
+    if re.search(r"^\s*competitors\s*:", config_text, re.MULTILINE):
+        offenders.append("config.yaml defines a competitors: setting")
+
+    # 2. No *caller* under src/ constructs a registry with data.
+    #
+    #    `competitors.py` itself is excluded, and must be: it defines
+    #    `registry_from_mapping`, whose entire job is to construct one from a
+    #    mapping. A guard that failed on the factory would be a guard against
+    #    the module existing. Check 3 covers the blind spot that exclusion opens.
+    import ast
+
+    defining_module = SRC / "rules" / "competitors.py"
+    for path in _python_files(SRC):
+        if path == defining_module:
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            name = getattr(node.func, "attr", None) or getattr(node.func, "id", None)
+            if name in {"DictionaryEntityRegistry", "registry_from_mapping"} and (
+                node.args or node.keywords
+            ):
+                offenders.append(
+                    f"{path.relative_to(PROJECT_ROOT)}:{node.lineno} constructs {name}(...)"
+                )
+
+    # 3. The module's own default registry knows nothing. This is what stops the
+    #    exclusion above from becoming a hiding place: a hardcoded competitor
+    #    list inside `competitors.py` would satisfy checks 1 and 2 and still be
+    #    exactly the early wiring being guarded against.
+    from src.rules.competitors import EMPTY_REGISTRY, competitor_mentions
+
+    probe = "we moved off Notion and Airtable to monday.com last year"
+    if competitor_mentions(probe) or EMPTY_REGISTRY.resolve(probe):
+        offenders.append("the default registry resolves something; it must know nothing")
+
+    assert offenders == [], (
+        "src/rules/competitors.py is inert until P15 builds the EntityRegistry over "
+        "bkb_entities (0007, P12). A rule that matches nothing is indistinguishable "
+        "from a business with no competitors, so the inert state is asserted. If you "
+        "are P15: delete this test on purpose. Offenders: " + str(offenders)
+    )
+
+
 def test_notify_confines_the_http_client_to_transport():
     """``docs/34`` §P7: *"renderers.py imports neither src.ai nor an HTTP client."*
 
