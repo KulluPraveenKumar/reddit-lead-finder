@@ -437,6 +437,23 @@ live defect:
 > commit; regression tests added at 2k/8k/32k/100k plus a scaling-shape check. **T2–T4
 > are unaffected** and their expected output is unchanged.
 
+**Stage 6, 2026-08-14 — the flaky-test decision, closed by measurement:**
+
+| | |
+|---|---|
+| `test_parse_speed_stays_inside_the_budget` | **Fixed** (DI18) — reproduced on demand, cause measured, metric redesigned. Earlier commits |
+| `test_the_heartbeat_thread_extends_a_lease_while_a_handler_runs` | **Left unchanged, registered as [DI27](../DEFERRED-IMPROVEMENTS.md)** — 56 adversarial runs, zero failures, two hypotheses falsified |
+| `test_does_not_write_to_the_database_it_checks` | Still **DI20**, Stage 7's registration |
+
+> **Why the heartbeat test was not "fixed".** It failed once in P8 and has not
+> reproduced since: 12 quiet runs, 12 under twelve competing processes, 8 with the
+> claim window cut to **zero**, and 24 with the heartbeat margin cut from +0.40 s to
+> **+0.02 s**. Both mechanisms inspection suggested were tested and disproved. Rewriting a
+> passing concurrency test against a cause twice refuted would risk introducing a real
+> defect to chase a ghost, so the evidence was written down instead. **This does not
+> affect any manual test step** — the heartbeat test is automated and appears only in T7's
+> count.
+
 **Corrections forced by executing rather than predicting:**
 
 1. **The demo prints a settings line first.** Predicted output was the verdict alone; it actually
