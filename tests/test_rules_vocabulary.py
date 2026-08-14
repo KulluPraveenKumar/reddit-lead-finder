@@ -1,4 +1,4 @@
-"""P9's four reasons must stay a strict subset of P19's eleven.
+"""P9's four and P10's two must stay a strict subset of P19's eleven.
 
 This file is the one place in the project that may import **both** sides of the
 R3 boundary, because it is a test and not production code. That is what lets the
@@ -13,6 +13,9 @@ from __future__ import annotations
 import pytest
 
 from src.ai.gate import RejectionReason
+from src.dedupe import DUPLICATE_EXACT, DUPLICATE_NEAR, DedupItem, DedupSettings, duplicate
+from src.dedupe import REASONS as DEDUPE_REASONS
+from src.dedupe.groups import build_groups
 from src.rules import (
     BOT_OR_DELETED,
     NEGATIVE_TERM,
@@ -58,6 +61,95 @@ def test_p9_does_not_claim_the_seven_reasons_it_cannot_produce():
         "below_prescore",
         "budget_exhausted",
     }
+
+
+# --------------------------------------------------------------------- P10
+#
+# P10 owns two more. They live in `src/dedupe/`, NOT in `src/rules/REASONS`,
+# which is operator decision **D3**: PHASE-09-HANDOVER §3.3 asked for them to be
+# added here, and `src/rules/__init__.py` is outside docs/34 §P10's Files row,
+# which EXECUTION_MODE_LOCK §3 step 4 forbids editing. The subset claim is
+# therefore asserted across both packages rather than within one.
+
+
+def test_p10_owns_exactly_two_reasons():
+    assert {DUPLICATE_EXACT, DUPLICATE_NEAR} == DEDUPE_REASONS
+    assert len(DEDUPE_REASONS) == 2
+
+
+def test_every_p10_reason_is_one_of_p19s_eleven():
+    """The same claim as P9's, for the package that could not extend P9's set."""
+    p19_vocabulary = set(RejectionReason.ALL)
+    assert p19_vocabulary >= DEDUPE_REASONS, (
+        f"P10 invented a reason P19 does not count: {DEDUPE_REASONS - p19_vocabulary}"
+    )
+
+
+def test_the_two_vocabularies_do_not_overlap():
+    """Two packages owning one reason would make the funnel double-count it."""
+    assert set() == REASONS & DEDUPE_REASONS
+
+
+def test_p9_and_p10_together_reach_six_of_p19s_eleven():
+    """The running total, asserted so the next phase inherits a number rather
+    than recounting. The remaining five need comments (P11), a pre-score (P11),
+    a response cache (P19/P20) or an ``ai_budgets`` row (``0009``, P19)."""
+    combined = REASONS | DEDUPE_REASONS
+    assert len(combined) == 6
+    assert set(RejectionReason.ALL) - combined == {
+        "already_analyzed",
+        "out_of_window",
+        "downvoted",
+        "below_prescore",
+        "budget_exhausted",
+    }
+
+
+def test_dedupe_reject_refuses_a_reason_outside_its_vocabulary():
+    """Mutation M8 — ``src.rules.reject``'s guard, reproduced in the package that
+    could not reuse it. Without it, D3's cost would be an unguarded call site."""
+    with pytest.raises(ValueError, match="not one of the two reasons"):
+        duplicate("duplicate_semantic")
+
+
+def test_no_dedupe_call_site_returns_a_reason_outside_the_vocabulary():
+    """Every rejecting path in the cascade, checked against the closed set."""
+    body = "our spreadsheets are falling apart and we need a real crm for five people here"
+    items = [
+        DedupItem(("lead", 1), "Which CRM?", body, score=99),
+        DedupItem(("lead", 2), "**Which CRM?**", body, score=5),
+        DedupItem(("lead", 3), "Which CRM?", body.replace("five", "six"), score=5),
+    ]
+    rejections = build_groups(items, DedupSettings()).rejections
+    assert rejections, "the fixture must produce at least one rejection"
+    for result in rejections.values():
+        assert result.rejected
+        assert result.reason in DEDUPE_REASONS
+
+
+def test_the_dedupe_package_does_not_import_the_gate_it_agrees_with():
+    """R3. ``RejectionReason`` already contains both of P10's spellings, so
+    importing them would look like good practice and breach the fence."""
+    import src.dedupe
+    import src.dedupe.exact
+    import src.dedupe.groups
+    import src.dedupe.minhash
+    import src.dedupe.semantic
+
+    modules = (
+        src.dedupe,
+        src.dedupe.exact,
+        src.dedupe.minhash,
+        src.dedupe.semantic,
+        src.dedupe.groups,
+    )
+    for module in modules:
+        leaked = [
+            name
+            for name in ("GateDecision", "GateReport", "RejectionReason", "PreAIGate")
+            if hasattr(module, name)
+        ]
+        assert leaked == [], f"{module.__name__} has gate symbols in scope: {leaked}"
 
 
 def test_reject_refuses_a_reason_outside_the_vocabulary():

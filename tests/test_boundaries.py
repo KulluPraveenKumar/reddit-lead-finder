@@ -386,6 +386,100 @@ def test_the_rules_package_exists():
     assert package.exists(), "R3 and docs/34 §P9 both name src/rules/ by path"
 
 
+def test_the_dedupe_package_is_inside_the_ai_fence():
+    """Grep fence 2 (R3), over ``src/dedupe/`` — the **second** of the six paths.
+
+    ``docs/35`` §2.1's table names which phase creates each of the six, and
+    [PHASE-09-HANDOVER §3.2](../docs/PHASE-09-HANDOVER.md) hands this one to P10:
+    *"extend fence 2 to ``src/dedupe/``, with an existence guard beside it. Copy
+    P9's pairing exactly."* This is that copy, and the pairing is deliberate — a
+    fence that walks whatever is there passes **vacuously** the moment the
+    package is deleted, which is P5's F3 and is now recorded five times.
+
+    ``docs/34`` §P10's Acceptance row ends *"no ``src.ai`` import"*. Before this
+    test that was a grep somebody would have had to remember to run; it is now a
+    fence.
+
+    The temptation here is the same one P9 documented and is worth restating
+    because P10 is where it first has teeth: ``src/ai/gate.py`` ships
+    ``RejectionReason`` with ``duplicate_exact`` and ``duplicate_near`` **already
+    in it**. A dedupe module that imported those two constants — rather than
+    spelling them and letting ``tests/test_rules_vocabulary.py`` assert the
+    agreement — would breach R3 while looking like good practice.
+    """
+    dedupe = SRC / "dedupe"
+    assert dedupe.exists(), "src/dedupe/ is P10's package; its absence is a failure, not a skip"
+
+    scanned = 0
+    offenders = []
+    for path in _python_files(dedupe):
+        scanned += 1
+        hits = _imports_any(path, {"src.ai", "hermes"})
+        if hits:
+            offenders.append(f"{path.relative_to(PROJECT_ROOT)}: {hits}")
+
+    assert scanned > 0, "fence 2 scanned no files under src/dedupe/"
+    assert offenders == [], (
+        "R3: src/dedupe/ imports neither the AI layer nor an agent runtime. The "
+        "dedup cascade exists to REMOVE model calls; code built to avoid paying "
+        "for a model must not be able to call one. It returns src.rules.RuleResult, "
+        "and the adapter to GateDecision is P19's. Offenders: " + str(offenders)
+    )
+
+
+def test_the_dedupe_package_exists():
+    """The fence above walks whatever is there, so absence must fail loudly.
+
+    P5's F3, fifth occurrence — *a guard that cannot fail is documentation.*
+    ``test_the_rules_package_exists`` is the established form and this follows it
+    deliberately, including the reason: the manual guide's shell form of this
+    check prints **nothing and raises no error** against a tree with no such
+    folder, output identical to a clean pass.
+    """
+    package = SRC / "dedupe" / "__init__.py"
+    assert package.exists(), "R3 and docs/34 §P10 both name src/dedupe/ by path"
+
+
+def test_the_dedup_cascade_is_keyed_on_content_not_on_url():
+    """DI14 does not bite P10, and this is what keeps that true.
+
+    [DEFERRED-IMPROVEMENTS DI14](../docs/DEFERRED-IMPROVEMENTS.md) records that the
+    live database splits **444 ``old.reddit.com`` / 27 ``www.reddit.com``** across
+    471 rows, and names *"an export or dedup step keys on ``url``"* as its
+    trigger — [PHASE-09-HANDOVER §4 T1](../docs/PHASE-09-HANDOVER.md) flags
+    P10 as *"the first place that bites"*.
+
+    It does not bite, because the cascade is **content-keyed throughout**: tier 1
+    hashes title and body, tier 2 shingles them, tier 3 embeds them, and identity
+    is the database primary key. Two rows for one post under two hostnames would
+    hash identically and group — which is the correct outcome and the opposite of
+    the failure DI14 predicts.
+
+    This test exists so that stays an architectural property rather than an
+    accident. A future reader adding ``url`` to ``DedupItem`` "for debugging" is
+    one step from keying on it, at which point 444 rows silently stop matching 27.
+    DI14 remains **open**, on its own merits, and is not closed by this phase.
+    """
+    dedupe = SRC / "dedupe"
+    offenders = []
+    for path in _python_files(dedupe):
+        source = path.read_text(encoding="utf-8")
+        for number, line in enumerate(source.splitlines(), start=1):
+            stripped = line.strip()
+            if stripped.startswith("#") or stripped.startswith('"') or stripped.startswith("*"):
+                continue
+            # `url` as an identifier, not the word inside prose. The dotted and
+            # subscript forms are the ones that would actually key on it.
+            if ".url" in line or "['url']" in line or '["url"]' in line:
+                offenders.append(f"{path.relative_to(PROJECT_ROOT)}:{number}: {stripped}")
+
+    assert offenders == [], (
+        "DI14: the dedup cascade must key on content, never on url. The live database "
+        "carries the same post under two hostnames 444/27 times, so a url-keyed step "
+        "would treat one post as two. Offenders: " + str(offenders)
+    )
+
+
 def test_the_competitor_registry_was_not_wired_before_p15():
     """P9's D5: `src/rules/competitors.py` ships inert, and must stay inert.
 
