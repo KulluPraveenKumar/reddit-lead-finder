@@ -1,13 +1,19 @@
 # P09 — Manual Testing Guide · Rule engine
 
 **Phase:** P9 (frozen numbering) · **Revision:** none — P9 adds no migration
-**Part A written:** 2026-08-13 · **Part B:** to be executed against the finished phase
+**Part A written:** 2026-08-13 · **Part B executed:** 2026-08-14
 
-> ⚠️ **This guide is written before the code exists.** Every expected output below is **predicted,
-> not measured**. Before this guide ships, every command is executed against the finished phase and
-> the predictions are corrected in [Part B](#part-b--execution-record) — because two guides in this
-> project have already shipped with commands that could not produce the output they promised
-> ([DI19](../DEFERRED-IMPROVEMENTS.md), and P7's 31 corrections).
+> ✅ **P9 has shipped, and every command below has now been executed against the finished phase.**
+> The expected outputs are **measured, not predicted** — Part A's originals were written before the
+> code existed and are recorded, with their corrections, in
+> [Part B](#part-b--execution-record). That verification pass found **two steps that promised output
+> the implementation does not produce**, both now corrected: T6's search matched its own explanatory
+> comments, and T4's step 3 promised one line where two appear.
+>
+> **What is still yours to do:** run the tests and sign the table. T8's four visual checks especially
+> — a machine can prove the routes still serve and the CSV still has 13 columns, and did, but it
+> cannot sign *"it looks the same"*. **The sign-off table is deliberately blank**: a machine executing
+> the commands is not a human accepting the phase.
 >
 > ⚠️ **This is not `docs/testing/phase-06-testing.md`.** That file belongs to the superseded
 > eight-phase numbering and covers scraping, comments, dedup and pre-scoring all at once. If you
@@ -195,7 +201,16 @@ python -m src.rules --rules-enabled false "Weekly megathread - ask your question
 Select-String -Path config.yaml -Pattern 'rules_enabled'
 ```
 
-**Expected:** one line reading `rules_enabled: true`.
+**Expected — two lines.** The setting itself, and a comment above it that names the same key while
+explaining what the rollback does:
+
+```
+config.yaml:26:# ⚠️ ROLLBACK: `rules_enabled: false` is P9's documented rollback (docs/34
+config.yaml:41:  rules_enabled: true
+```
+
+**The line that matters is the second one**: `rules_enabled: true`, with no `#` in front of it. The
+first is prose and is expected.
 
 > ⚠️ **If you would rather test it by editing `config.yaml`, you may — but save the file as
 > UTF-8 *without* a BOM.** Notepad's default on Windows can add an invisible marker to the start of
@@ -219,8 +234,8 @@ confirms that is a deliberate state and not a bug.
 python -m pytest tests\test_boundaries.py -k "competitor"
 ```
 
-**Expected:** ends with `1 passed`. That test is the enforcement: it **fails** if anyone wires the
-competitor list up before the phase that owns it.
+**Expected:** ends with `1 passed, 37 deselected`. That test is the enforcement: it **fails** if
+anyone wires the competitor list up before the phase that owns it.
 
 > **Why this is a test and not an omission.** A competitor rule that quietly matches nothing looks
 > exactly like a business with no competitors. So switching it on later has to be a deliberate act —
@@ -243,16 +258,32 @@ competitor list up before the phase that owns it.
 The rule that makes this system cheap.
 
 ```powershell
-Get-ChildItem src\rules -Filter *.py -Recurse | Select-String -Pattern 'import.*src\.ai'
+Get-ChildItem src\rules -Filter *.py -Recurse | Select-String -Pattern '^\s*(from|import)\s+.*src\.ai'
 ```
 
 **Expected:** **no output at all.** Not "0 results" — literally nothing printed.
 
-> ⚠️ **This command alone is not sufficient, and you should know why.** It also prints nothing if the
-> `src\rules` folder has been deleted — verified 2026-08-13, when it printed nothing and raised no
-> error against a tree where the folder did not exist. So a blank result means *either* "the boundary
-> holds" *or* "there is no code left to check." **The second command below is the half that tells
-> them apart:** one of its two tests exists solely to fail if the package disappears.
+> ⚠️ **Why the pattern looks fussy.** It matches lines that *begin* with `from` or `import`, because
+> those are the only lines that can actually reach the AI code. An earlier draft of this step used the
+> simpler `'import.*src\.ai'` and **printed two matches against perfectly correct code** — both from
+> comments explaining why the boundary exists:
+>
+> ```
+> src\rules\__init__.py:13:  ``discovery/policy.py`` never import ``src.ai``. That rule carries
+> src\rules\__main__.py:15:⚠️ **It imports nothing from ``src.ai``**, and fence 2 covers it …
+> ```
+>
+> A tester would have read that as a breach and reported a failure on working code. This project has
+> recorded the same trap twice already ([ARCHITECTURE_FREEZE §11.1](../ARCHITECTURE_FREEZE.md)): a
+> text search that matches prose forces someone to delete the sentence explaining the rule. Corrected
+> 2026-08-14, and verified both ways — silent against the real tree, and it still catches a genuine
+> `from src.ai.gate import …` when one is added.
+
+> ⚠️ **This command alone is still not sufficient, and you should know why.** It also prints nothing
+> if the `src\rules` folder has been deleted — verified 2026-08-13, when it printed nothing and raised
+> no error against a tree where the folder did not exist. So a blank result means *either* "the
+> boundary holds" *or* "there is no code left to check." **The second command below is the half that
+> tells them apart:** one of its two tests exists solely to fail if the package disappears.
 
 Now confirm the automatic version of this check is running, so it is enforced on every future change
 rather than only when someone remembers:
@@ -269,7 +300,7 @@ line you are being asked to read ([DI19](../DEFERRED-IMPROVEMENTS.md)).
 
 - [ ] The first command printed **nothing**
 - [ ] The second command passed
-- [ ] **How many tests passed:** ______
+- [ ] **How many tests passed:** ______ *(expected `2 passed, 36 deselected`)*
 
 ---
 
@@ -281,9 +312,14 @@ python -m pytest
 
 This takes about six minutes. Let it finish.
 
-**Expected:** the last line reads `NNNN passed, 2 skipped`, with **no failures**.
+**Expected:** the last line reads **`1380 passed, 2 skipped`**, with **no failures**.
 
-The count was **1148 passed, 2 skipped** before this phase and will be higher now.
+The count was **1148 passed, 2 skipped** before this phase; P9 added 232 tests. Measured 2026-08-14
+on the finished phase.
+
+> **The 2 skips are expected and are not failures.** They are the two performance tests, which skip
+> themselves when run under a coverage tracer or a debugger — timing an instrumented interpreter
+> measures the instrument. If you see `2 skipped`, that is the correct number.
 
 ⚠️ **If it reports a failure, do not re-run it and record the second result.** Write down which test
 failed. A re-run is not a pass. Three tests in this project have a history of failing when the
@@ -436,6 +472,44 @@ live defect:
 > pattern, on attacker-supplied input, with no exception to notice. Fixed under its own
 > commit; regression tests added at 2k/8k/32k/100k plus a scaling-shape check. **T2–T4
 > are unaffected** and their expected output is unchanged.
+
+**Full guide execution against the finished phase, 2026-08-14.** Every command in every test was run
+verbatim, with the virtual environment active as the Prerequisites require. **Two steps promised
+output the implementation does not produce**; both are corrected above.
+
+| Step | Executed result | vs. the documented expectation |
+|---|---|---|
+| Start here | `11f9728 docs(P9)…` · `0006_content_and_dedup (head)` | ✅ |
+| **T1** | `leads = 488 (459 baseline + 29 collected since)` · 459 present · `max 164.28` · `avg 42.29` · **`OK — all 51 checks passed`** | ✅ |
+| **T2a** | `rules: on   min_chars=80` / `reject · structural_noise · megathread` | ✅ exact |
+| **T2b** | `reject · structural_noise · hiring` | ✅ |
+| **T2c** | `admit` | ✅ |
+| **T3** ⭐ | `admit` | ✅ |
+| **T4** steps 1–2 | `reject …` then `rules: OFF (rollback state)` / `admit` | ✅ |
+| **T4** step 3 | **two** lines, not one | 🔴 **corrected** — see below |
+| **T5** | `1 passed, 37 deselected` | ✅ count now stated |
+| **T6** first command | **two matches**, both from docstrings | 🔴 **corrected** — see below |
+| **T6** second command | `2 passed, 36 deselected` | ✅ count now stated |
+| **T7** | **`1380 passed, 2 skipped`** in 9m17s | ✅ count now stated instead of `NNNN` |
+| **T8** executable half | `GET /` 200 · `/health` 200 · `/api/leads/export` 200 · **13 CSV columns**, header unchanged | ✅ — the four visual boxes remain the operator's |
+| **T9** | `git status --short` empty · `0006_content_and_dedup (head)` | ✅ |
+
+**The two corrections, and why each mattered:**
+
+1. **T6's search matched its own explanation.** The pattern was `'import.*src\.ai'`, which found two
+   lines of *prose* — `` never import ``src.ai`` `` in `__init__.py` and `` imports nothing from
+   ``src.ai`` `` in `__main__.py` — and printed them against entirely correct code. A tester would
+   have read the phase's most important boundary as breached. This is the trap
+   [ARCHITECTURE_FREEZE §11.1](../ARCHITECTURE_FREEZE.md) already records twice, and which T5's own
+   warning describes; T6 had fallen into it. The pattern now anchors on `from`/`import` at the start
+   of a line, verified silent against the real tree **and** verified to still catch a genuine
+   `from src.ai.gate import …` when one is temporarily added.
+2. **T4 step 3 promised one line and produces two.** The `rules_enabled` key appears twice in
+   `config.yaml` — once as the setting, once inside the ROLLBACK comment that explains it. Expected
+   output corrected to both lines, with the one that matters identified.
+
+Also filled in: the pass counts for T5, T6 and T7, which were `NNNN` or unstated and are now the
+measured values.
 
 **Stage 6, 2026-08-14 — the flaky-test decision, closed by measurement:**
 
