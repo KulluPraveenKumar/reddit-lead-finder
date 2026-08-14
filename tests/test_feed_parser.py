@@ -237,8 +237,25 @@ def test_parse_speed_stays_inside_the_budget():
 
     Measured over several runs and compared on the best one: a single timing on
     a shared CI runner measures the runner's neighbours as much as the parser.
-    The budget is the published one; the headroom here is real, not a fudge --
-    a regression that doubled the cost would still fail.
+    The budget is the published one and is **unchanged** by the DI18 fix below.
+
+    .. note::
+
+       **An earlier version of this docstring claimed *"a regression that
+       doubled the cost would still fail"*. That was measured on 2026-08-14 and
+       is false**, and it was false before this test was touched. Against a
+       deliberately 2x-slowed parser on an idle machine, the original wall-clock
+       form passed **5/5**. The parser costs ~23-25 ms and the budget is 50 ms,
+       so 2x lands just under the wire.
+
+       This matters for what DI18 actually was. The premise was *"a good test
+       that flakes under load"*; the measurement says it was a **weak test whose
+       only failures were load artifacts** -- it never had the 2x sensitivity it
+       advertised, and the six recorded failures were all the machine, never the
+       parser. The fix below therefore gives up no sensitivity, because there was
+       none at 2x to give up. Tightening the budget to restore real sensitivity
+       is a separate decision about the metric, not about the instrument, and is
+       left to the operator.
 
     Skipped under a tracer. ``coverage`` calls back into Python on every line,
     which multiplies the measured cost several times over -- so without this the
@@ -249,11 +266,89 @@ def test_parse_speed_stays_inside_the_budget():
         pytest.skip("timing is meaningless under coverage or a debugger")
 
     raw = _read("listing_100")
-    best = min(_time_one(raw) for _ in range(5))
-    assert best < 0.050, f"100 entries took {best * 1000:.1f} ms, budget is 50 ms"
+    parse_feed(raw)  # warm up; the first parse pays costs no later parse pays
+    best = min(_cpu_seconds_per_parse(raw) for _ in range(_SAMPLES))
+    assert best < 0.050, f"100 entries took {best * 1000:.1f} ms CPU, budget is 50 ms"
 
 
-def _time_one(raw: bytes) -> float:
-    started = time.perf_counter()
-    parse_feed(raw)
-    return time.perf_counter() - started
+#: Parses per batch, and batches per sample. Both chosen from measurements
+#: rather than guesses -- see :func:`_cpu_seconds_per_parse`.
+_BATCH = 20
+
+#: ⚠️ **Three, and raising it trades away sensitivity in the direction nobody
+#: notices.** ``min`` over more batches returns a lower estimate, which buys
+#: load-immunity and spends regression-sensitivity -- the two come out of the
+#: same budget. Three keeps the estimate closest to the parser's real cost while
+#: still discarding a disturbed sample, so it is the conservative choice.
+#: Raising it is a decision, not a tuning knob.
+_SAMPLES = 3
+
+
+def _cpu_seconds_per_parse(raw: bytes) -> float:
+    """CPU seconds for one parse, measured over a batch.
+
+    **Two deliberate departures from the obvious ``time.perf_counter()`` around
+    a single parse**, and neither is a relaxation of the budget -- the 50 ms
+    figure is unchanged, and so is the guarantee.
+
+    *CPU time, not wall clock.* ``perf_counter`` measures the machine, not the
+    parser: under load it counts the time the OS spent running something else.
+    That is DI18, and it is why this test failed twice in P7, twice more during
+    P8's gate, and again in P9 -- six recorded occurrences, every one of them on
+    unchanged parser code. ``process_time`` counts only this process's own CPU,
+    so a busy machine no longer registers as a slow parser. DI18 names this fix
+    and names the alternative -- raising the threshold -- as the wrong one,
+    because that would weaken an assertion rather than fix a measurement.
+
+    *Batched, and this part is not optional on Windows.* ``process_time`` is
+    backed by ``GetProcessTimes()``, whose ``resolution`` field advertises 1e-07
+    and whose real tick is **15.625 ms**. Measured on this machine 2026-08-14: a
+    single parse produced exactly **two** distinct readings across 60 runs,
+    15.625 and 31.25 ms. Swapping the clock without batching would therefore have
+    replaced a flaky test with a nearly insensitive one -- ``min()`` would settle
+    on the quantisation floor and report 15.6 ms almost regardless of what the
+    parser did. Averaging over ``_BATCH`` parses puts the measured interval two
+    orders of magnitude above the tick, leaving a quantisation error of about
+    +/-0.8 ms.
+
+    Measured, idle, warm, 2026-08-14: wall clock spans **20.3-40.6 ms** while
+    batched CPU spans **25.0-28.9 ms**. The budget did not need to move; the
+    instrument did.
+
+    .. warning::
+
+       **This reduces the flake substantially. It does not eliminate it, and the
+       difference was measured rather than assumed.** Numbers from 2026-08-14 on
+       an 8-core machine, ``min`` of ``_SAMPLES`` batches:
+
+       ===========================  ==================  ==============
+       Condition                    worst per-parse     vs 50 ms
+       ===========================  ==================  ==============
+       idle                         32.0 ms             x1.56 margin
+       4 busy processes             39.8 ms             x1.25 margin
+       14 competing CPU workers     >50 ms              **fails 3/6**
+       ===========================  ==================  ==============
+
+       The residual cause is not the clock. Under contention a process burns
+       *more of its own CPU* for identical work -- cache eviction and scheduling
+       are real costs and ``process_time`` counts them honestly. **Raising
+       ``_SAMPLES`` is not the fix**, and is actively dangerous: see the note on
+       that constant.
+
+       **The root cause is the ratio.** The parser costs ~25 ms CPU against a
+       50 ms budget, so there is only ~2x headroom, and any measurement
+       inflation past 2x fails. That is the same 2x the docstring above relies
+       on to catch a regression -- the sensitivity and the fragility are the
+       same number, and one cannot be improved without the other. Moving the
+       budget would weaken the assertion, which DI18 forbids and which is not
+       this change's business.
+
+       A measurement that *would* be load-invariant is a **ratio against a
+       calibration workload** timed in the same conditions, which normalises the
+       machine out entirely. That is a redesign of the metric rather than a fix
+       to the instrument, so it is not done here. Recorded for the operator.
+    """
+    started = time.process_time()
+    for _ in range(_BATCH):
+        parse_feed(raw)
+    return (time.process_time() - started) / _BATCH
