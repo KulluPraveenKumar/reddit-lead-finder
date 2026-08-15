@@ -371,7 +371,7 @@ no ahead count.
 ## 8. CI status
 
 ✅ **Green on the final commit** — run
-[`31893183382`](https://github.com/KulluPraveenKumar/reddit-lead-finder/actions/runs/31893183382)
+[`31896081590`](https://github.com/KulluPraveenKumar/reddit-lead-finder/actions/runs/31896081590)
 (`366695e`, the manual-test fix), `conclusion: success`. `ruff check` clean; `pytest`
 **2034 passed, 12 skipped** in 213.47 s. The first commit's run [`31890330477`](https://github.com/KulluPraveenKumar/reddit-lead-finder/actions/runs/31890330477)
 was also green (**2023 passed, 12 skipped**).
