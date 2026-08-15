@@ -56,8 +56,10 @@ unused. **`ARCHITECTURE_FREEZE.md` is unchanged.**
 
 ## 3. Deferred improvements
 
-**Three opened — [DI31](../DEFERRED-IMPROVEMENTS.md), [DI32](../DEFERRED-IMPROVEMENTS.md),
-[DI33](../DEFERRED-IMPROVEMENTS.md). None closed.** DI33 is **P14's**.
+**Four opened — [DI31](../DEFERRED-IMPROVEMENTS.md), [DI32](../DEFERRED-IMPROVEMENTS.md),
+[DI33](../DEFERRED-IMPROVEMENTS.md), [DI34](../DEFERRED-IMPROVEMENTS.md). None closed.** DI33 is
+**P14's**; DI34 is six pre-existing broken doc links, found by gate check 18 and recorded rather than
+fixed because fixing them is unrelated cleanup.
 
 ---
 

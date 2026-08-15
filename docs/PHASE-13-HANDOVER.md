@@ -148,6 +148,7 @@ check 6) rather than verify anything.
 
 | | Item | Owner |
 |---|---|---|
+| **DI34** | **New.** Six internal doc links point at `02-research-findings.md`, which has never existed. Pre-existing since `87ba926`; found by gate check 18 | Whoever next edits [05](05-database-plan.md), [34](34-implementation-plan.md), [35](35-testing-strategy.md) or [README](README.md) near the citation |
 | **DI33** | 🔴 **New.** A cache hit yields no markup; four of six signals cannot be recomputed | **P14** — §4 T1 |
 | **DI32** | **New.** `website.max_depth` ships unused | A phase needing depth 2. **None planned** |
 | **DI31** | **New.** `tests/integration/` does not exist while gate row 5 names it; `tests/unit/` holds one file while row 4 names it. Bare `pytest` is what every phase has run, so nothing goes unrun | Operator — a documentation decision |
@@ -167,7 +168,7 @@ check 6) rather than verify anything.
 | **L4 (P7)** | Notification retry — **still nobody's** | Open since P7 |
 | **O2** | `mypy`, deferred by D6 in P8. P13's new code ships clean under it | Its own scoped task |
 
-**No Deferred Improvement was closed. Three were opened.**
+**No Deferred Improvement was closed. Four were opened.**
 
 ---
 

@@ -115,6 +115,16 @@ absence a reader has to notice.
 | Offline guarantee | Held — the socket-blocking fixture is autouse and the only live fetch in this phase is the CLI, which no test invokes over the network |
 | AI calls | **0**, asserted as `COUNT(*) FROM ai_calls` |
 | Migration round-trip | Executed — see §4.3 |
+| Documentation validation (check 18) | Every doc edit landed. **586 relative links checked across the twelve documents this phase touched; 6 broken, all six pre-existing** — see below |
+
+> ⚠️ **Six broken internal links, none of them P13's.** Gate check 18 requires *"no broken internal
+> link"*, and running it found six, every one pointing at `02-research-findings.md`, a file that has
+> never existed. They date from the initial commit `87ba926`, appear **nowhere in P13's diff**
+> (`git diff d0ef28c..HEAD` matches nothing), and sit in four documents this phase edited for
+> unrelated reasons. **They were recorded rather than fixed** — [DI34](DEFERRED-IMPROVEMENTS.md) —
+> because the four citations are to different claims and each needs checking against
+> [02b](02b-research-2026-07.md) and [02c](02c-research-final-review.md) individually. That is a
+> reading task, not a search-and-replace, and it is unrelated cleanup in this phase.
 
 > ⚠️ **On the whole-tree figure.** [PHASE-12-HANDOVER §7](PHASE-12-HANDOVER.md) records **89.20%**,
 > and today's run reports **88.89%** — 0.31 pp lower. **P13 is not the cause and the arithmetic says
@@ -217,10 +227,11 @@ sentence and no traceback; `https://example.com/definitely-not-a-real-page` fail
 
 ## 6. Deferred improvements opened and closed
 
-**Three opened. None closed.** All three are things the phase chose not to build.
+**Four opened. None closed.** All four are things the phase chose not to build or fix.
 
 | | Entry | Owner |
 |---|---|---|
+| **DI34** | Six internal links point at `02-research-findings.md`, which has never existed. Found by gate check 18; pre-existing since `87ba926` and absent from P13's diff | Whoever next edits one of the four documents — it needs a person to decide which document each of the four claims lives in |
 | **DI31** | `tests/integration/` does not exist while [35 §2.1](35-testing-strategy.md) row 5 runs `pytest tests/integration -q` as a gate check. Measured: exit code **4**, `ERROR: file or directory not found`. **Row 4 has the same defect** — `tests/unit/` holds exactly one file, so `pytest tests/unit -q` runs one file and reports success. What every phase has actually run is bare `pytest`, so **no test goes unrun**; the defect is in what the table claims. Same family as [DI29](DEFERRED-IMPROVEMENTS.md) and P5's F3 | Operator — it is a documentation decision (does row 5 name a directory or a marker?), which is why P13 did not make it unilaterally |
 | **DI32** | `website.max_depth` ships, is validated, and is read by nothing | A phase needing a page two hops from the landing page. **None is planned** |
 | **DI33** | An L1 cache hit yields no HTML, so four of the six signals cannot be recomputed from it | **P14**, the first consumer |
