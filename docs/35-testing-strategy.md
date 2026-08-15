@@ -49,6 +49,23 @@ Every check below runs at the end of every phase. **`make gate` runs all of them
 | 3 | Type check | `mypy src/ --ignore-missing-imports` | No new errors vs the baseline |
 | 4 | Unit tests | `pytest tests/unit -q` | All pass |
 | 5 | Integration tests | `pytest tests/integration -q` | All pass |
+
+> ⚠️ **`tests/integration/` does not exist, and row 5 has never run. Added P13, 2026-08-15.**
+> Measured: `pytest tests/integration` exits **4** with `ERROR: file or directory not found`. Every
+> integration-shaped test in this repository lives flat in `tests/` — `test_orchestration.py`,
+> `test_run_api.py`, `test_schema_0007.py` and forty others — which is the shipped convention and is
+> why P13 added its tests there rather than creating the directory and splitting the layout in two.
+> This is [DI29](DEFERRED-IMPROVEMENTS.md)'s family and P5's F3's: a check whose command describes a
+> layout the repository does not have. **Whether row 5 should name a directory or a marker is a
+> documentation decision**, recorded as [DI31](DEFERRED-IMPROVEMENTS.md) rather than made in passing
+> by the phase that noticed it.
+>
+> **Row 4 has the same defect and it is worth naming**: `tests/unit/` exists but holds exactly one
+> file (`test_probe_transport.py`), so `pytest tests/unit -q` runs one file and reports success. What
+> every phase has actually executed is bare **`pytest`**, which collects all of `tests/` — so no test
+> goes unrun, and the defect is in what rows 4 and 5 *claim*, not in coverage. That is precisely why
+> it is worth fixing: a reader auditing the gate would conclude the suite is split into two layers
+> that are each verified, and neither command is what verified it.
 | 6 | **Offline guarantee** | Socket-blocking autouse fixture | **Zero network calls** |
 | 7 | Coverage | `pytest --cov=src --cov-fail-under=70` | ≥70%; ≥85% on `src/{ai,net,scoring,knowledge}` |
 | 8 | **Fence 1** — no vendor coupling outside `src/ai/providers/` | `pytest tests/test_boundaries.py` | Passes |
@@ -345,7 +362,7 @@ Beyond the universal gate. Only the additions are listed.
 | **P10** | **2,000 items < 2 s CPU** — measured on a corpus matching real leads on length *and* distinct-5-gram density (revised 2026-08-15; the literal *"128 perms"* reading fails it, [freeze §11.1](ARCHITECTURE_FREEZE.md)); identical lead set with tier 3 off; ~~N distinct pre-scores~~ → **N distinct members, no per-item score mutated** *(the pre-scores are P11's; §11.1)* | `python -m src.dedupe` — two near-identical posts group, both still listed, and `--minhash-enabled false` visibly reduces the collapse |
 | **P11** | **0 AI calls** (asserted as `COUNT(*) FROM ai_calls WHERE run_id=?`, not inferred from the fence); comment requests −5% as a **within-run counterfactual** — nothing called `get_post_comments` before this phase, so there is no live baseline to A/B against; triage miss rate < 5%; grep fence 2 over `src/scoring/`; ~~N distinct pre-scores~~ → **N independently computed scores, distinct whenever a scored input differs** *(measured: two of 23 real groups are reposts minutes apart; [freeze §11.1](ARCHITECTURE_FREEZE.md))* | `python -m src.scoring` — the six components, their weights and the total, on a fixed corpus. Then read the funnel counts on the run page; **they sum correctly** |
 | **P12** | **Migration completes with `sqlite-vec` absent** — *forced by injecting a `sqlite_vec` whose `load()` raises, because the extension is genuinely absent on every host measured and the branch would otherwise pass vacuously*; **6** FKs, not 4 ([freeze §11.1](ARCHITECTURE_FREEZE.md)); payload-NULL rule **both ways**, `ideal_customer_profiles` not exempt; ~~`runs.project_id NOT NULL`~~ → **stays nullable**, AD-5 and M5 *(measured: 11 of 11 live runs are NULL; §11.1)* | `/health` shows `semantic_layer` state |
-| **P13** | Direct egress asserted; L1 hit = 0 fetches; `file://` → 422 | Paste a URL; see the snapshot; paste it again; **no second fetch** |
+| **P13** | Direct egress asserted **under `proxy_only` with a healthy pool** — under the shipped `prefer_proxy` + `[direct, dc]` the direct provider is first anyway and the assertion passes whatever the code does (revised 2026-08-15; P5's F3 again); L1 hit = 0 fetches, **counted, not timed**; `file://` → 422 **as an exception attribute** — P13 ships no route, so the response code is P16's ([34 §P13](34-implementation-plan.md) clarification 1); scheme **allowlist**, not a denylist of the two named; 0 AI calls asserted as `COUNT(*) FROM ai_calls` | Paste a URL; see the snapshot; paste it again; **no second fetch** |
 | **P14** | **Exactly 1 `ai_calls` row**; < $0.05; section isolation | See 23 sections render; cost chip shows one call |
 | **P15** | **Regenerate twice, lose no learned row**; clock advance changes no score | Edit a section; regenerate a different one; the edit survives |
 | **P16** | **`GET /` byte-identical snapshot** | Open `/`; it looks exactly as before |

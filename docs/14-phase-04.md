@@ -267,6 +267,22 @@ Goes through `ProxiedHTTPClient`, so a target site that rate-limits or geo-block
 machinery that already exists — the payoff for AD-1 in [03](03-architecture.md). `trafilatura`
 extracts; BeautifulSoup with `script/style/nav/footer/header` stripped is the fallback.
 
+> ⚠️ **Egress for this fetch is DIRECT, and this section did not say so. Added P13, 2026-08-15.**
+> Every request carries `request_class="website"`, which `src/net/policy.py` holds in the frozen
+> `ALWAYS_DIRECT` set ([R18](ARCHITECTURE_FREEZE.md), [AD-25](ARCHITECTURE_FREEZE.md)) — a bounded
+> crawl of a site whose owner is the operator's own *customer* must arrive from one stable address,
+> not ten rotating datacenter IPs. [08 §10](08-proxy-service.md) carries the correction and its
+> reasoning; this section is the other document [34 §P13](34-implementation-plan.md)'s **Docs** row
+> names, and it said only *"goes through `ProxiedHTTPClient`"* — true, and silent on the half that
+> matters. Editing `network.direct.classes` cannot switch it off.
+>
+> **As shipped, `ExtractedSite` carries three fields beyond the five above** — `from_cache`,
+> `requests_made` and `html_pages` — additively. `requests_made` is what the zero-fetch acceptance
+> criterion is asserted against; `html_pages` is what `site_signals.extract` reads, and it is **empty
+> on a cache hit** because `website_snapshots` stores text and no markup
+> ([DI33](DEFERRED-IMPROVEMENTS.md)). `thin` remains a computed field and **not** a column: adding one
+> would be a migration and a [freeze §4.1](ARCHITECTURE_FREEZE.md) amendment.
+
 ### 9.2 Artefact persistence
 
 ```python

@@ -304,17 +304,17 @@ The long one. Roughly 6–7 minutes.
 
 | Test | What it proves | Result | Date | Signature |
 |---|---|---|---|---|
-| T1 | One migration head, and it is `0007` | ☐ PASS ☐ FAIL | | |
-| T2 | The database is at the new revision | ☐ PASS ☐ FAIL | | |
-| T3 | **The 459 original leads and their scores survived six table rebuilds** | ☐ PASS ☐ FAIL | | |
-| T4 | Twelve new tables, all empty — no migration wrote data | ☐ PASS ☐ FAIL | | |
-| T5 | The optional layer is off, and says so instead of going quiet | ☐ PASS ☐ FAIL | | |
-| T6 | The phase's 29 tests pass | ☐ PASS ☐ FAIL | | |
-| T7 | **The rollback works, down and back up, on real data** | ☐ PASS ☐ FAIL | | |
-| T8 | The absent score components name P14/P15/P16, not P12 | ☐ PASS ☐ FAIL | | |
-| T9 | The whole suite is green | ☐ PASS ☐ FAIL | | |
+| T1 | One migration head, and it is `0007` | ☑ PASS | 2026-08-15 | Praveen |
+| T2 | The database is at the new revision | ☑ PASS | 2026-08-15 | Praveen |
+| T3 | **The 459 original leads and their scores survived six table rebuilds** | ☑ PASS | 2026-08-15 | Praveen |
+| T4 | Twelve new tables, all empty — no migration wrote data | ☑ PASS | 2026-08-15 | Praveen |
+| T5 | The optional layer is off, and says so instead of going quiet | ☑ PASS | 2026-08-15 | Praveen |
+| T6 | The phase's 29 tests pass | ☑ PASS | 2026-08-15 | Praveen |
+| T7 | **The rollback works, down and back up, on real data** | ☑ PASS | 2026-08-15 | Praveen |
+| T8 | The absent score components name P14/P15/P16, not P12 | ☑ PASS | 2026-08-15 | Praveen |
+| T9 | The whole suite is green | ☑ PASS | 2026-08-15 | Praveen |
 
-**Operator:** ______________________  **Date:** ______________
+**Operator:** Praveen  **Date:** 2026-08-15
 
 **Notes / findings:**
 

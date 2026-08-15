@@ -133,6 +133,23 @@ CREATE TABLE website_snapshots (
     fetched_at    DATETIME NOT NULL
 );
 CREATE INDEX ix_website_snapshots_project ON website_snapshots (project_id);
+-- ⚠️ P13, 2026-08-15: this table now has a WRITER (`src/ai/website_fetcher.py::save_snapshot`)
+--    and no schema change. Two properties of how it is used are worth recording here,
+--    because both are decisions rather than consequences:
+--
+--    * `url` holds the NORMALISED form -- scheme+host, lowercased, no trailing slash,
+--      the same rule `projects.normalized_url` is defined by above. It is half the L1
+--      cache key, the other half being `project_id`, and it is why `https://Example.com/`
+--      and `example.com` are one cache entry. The rule is REPRODUCED in the fetcher and
+--      not imported from a project writer, because P16 owns that column and P13 must not
+--      become a second writer of `projects`.
+--    * Every fetch past the TTL INSERTS, even when `content_hash` is unchanged. The
+--      comment above -- "separate from projects so a re-analysis can compare" -- is the
+--      whole reason the table exists, and suppressing an identical-hash insert would
+--      save a few kilobytes and delete the evidence it is for.
+--
+--    `extracted_text` is the only copy of what was read: no markup is stored, so four of
+--    the six local signals cannot be recomputed from a row. See DEFERRED-IMPROVEMENTS DI33.
 
 -- The Business Knowledge Base: one current row per project. Replaces `ai_artifacts`.
 CREATE TABLE bkb (

@@ -561,6 +561,52 @@ predecessor has not been approved. The `.claude/skills/phase-manager` skill enfo
 | **Rollback** | `alembic downgrade 0006`; no consumer yet |
 | **Docs** | [08 §10](08-proxy-service.md) and [14 §9.1](14-phase-04.md) — **egress is direct** ([33 §2.2](33-final-review.md)) |
 
+> **Clarifications, P13, 2026-08-15 — four, and none of them is a [§11](ARCHITECTURE_FREEZE.md)
+> amendment or a [§11.1](ARCHITECTURE_FREEZE.md) reconciliation.** A reconciliation needs a *failed
+> measurement*, which is the standard P12's three met and these do not: no technology, table,
+> decision or dependency changes, no migration is added, and the chain stays at seven revisions of
+> ten. They are recorded because each one is a place where a careful reader would otherwise stop.
+>
+> 1. **`file://` → 422 is an exception attribute, not a response code, because P13 ships no route.**
+>    The Tasks row says *"URL scheme allowlist; `file://`/`javascript:` → 422"* and the Acceptance row
+>    says *"`file://` rejected at validation"*. `POST /api/projects` — the only place a 422 could be
+>    returned from — is **P16's** ([14 §4](14-phase-04.md), [14 §9.1](14-phase-04.md)), and P16's
+>    Files row is where the route first appears. So `InvalidWebsiteURL` carries
+>    `status_code = 422`, matching the shape `ProviderError` already has in `src/ai/errors.py`, and
+>    P16 maps it in one line instead of re-deriving which failures are the caller's fault. **The
+>    validation itself is built, and is an allowlist**: a denylist of the two schemes the row names by
+>    example would pass `data:`, `ftp:` and `gopher:`, and the requirement is that the operator's disk
+>    is not reachable from a text box.
+> 2. **The L1 cache is keyed on `(project_id, normalised URL)` plus the freshness window, not on the
+>    content fingerprint.** [06 §2.3](06-ai-pipeline.md) words the hit condition as *"fingerprint
+>    matches a snapshot < 7 days old"*, which cannot be evaluated as written — a content fingerprint
+>    is not knowable before fetching the content, so a cache needing one would make zero requests only
+>    after making seven. [35 §6](35-testing-strategy.md)'s manual step for this phase settles the
+>    intent: *"Paste a URL; see the snapshot; paste it again; **no second fetch**."* `content_hash` is
+>    still computed and stored, and it is what makes the *reuse* meaningful to **P14**, whose L2
+>    profile cache is keyed on fingerprint plus prompt version.
+> 3. **`max_pages: 7` is the total, landing page included.** Task 1 reads *"landing + ≤6 priority
+>    paths"* and the Metrics row reads *"≤7 requests per project version"* — the same number said two
+>    ways. [06 §2.1](06-ai-pipeline.md)'s `MAX_PAGES = 7` is the one that ships. Reading Task 1 as
+>    *seven beyond the landing page* fetches eight and fails the metric it was meant to satisfy.
+> 4. **`max_depth` ships and is read by nothing.** The Config row names five keys, so five keys ship;
+>    the crawl [06 §2.1](06-ai-pipeline.md) specifies is the landing page plus priority-scored links
+>    found on it, which is depth 1. Building recursive traversal because a key hints at it would be
+>    scope creep. It ships with its docstring and its `config.yaml` comment both saying it is unused —
+>    [DI32](DEFERRED-IMPROVEMENTS.md).
+>
+> **Two things P13 deliberately did not do.** **No migration**: `website_snapshots` was created by
+> `0007` and the DB row is *"writes"*, not *"creates"* — the Rollback row's `alembic downgrade 0006`
+> is P12's revision boundary, unchanged, and `test_the_chain_is_still_ten_revisions_or_fewer` stays
+> **P17's** ([PHASE-12-HANDOVER §6](PHASE-12-HANDOVER.md)). And **no `projects` writer**: the first
+> row is still P16's `project add`, and P13's tests create one in a fixture, exactly as
+> [PHASE-12-HANDOVER §3.2](PHASE-12-HANDOVER.md) required.
+>
+> **The Files row is honoured and nothing sits outside it** — the first phase since P4 for which that
+> is true. `save_snapshot` lives in `src/ai/website_fetcher.py` rather than in a new
+> `src/db/repositories/website.py` for exactly that reason: P14's Files row is where a knowledge
+> repository first appears.
+
 ## P14 — `analyze_business`
 
 | | |

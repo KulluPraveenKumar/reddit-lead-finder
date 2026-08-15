@@ -438,6 +438,45 @@ discovery:
   # that does not exist, so it is absent rather than ignored.
 
 # ---------------------------------------------------------------------------
+# Website fetch (P13) — a URL becomes clean text, with zero AI
+#
+# The customer's own site, read once per version: the landing page plus a small
+# set of high-signal internal pages. Bounded on every axis, because an unbounded
+# crawl of a stranger's site is the one thing in this system most likely to
+# annoy the person the operator least wants to annoy.
+#
+# ⚠️ Egress for this fetch is DIRECT and is NOT configurable here. `website` is
+# in the frozen ALWAYS_DIRECT set (R18 / AD-25, src/net/policy.py): arriving at
+# a customer's site from ten rotating datacenter IPs looks like an attack.
+# Editing `network.direct.classes` cannot switch that off — see docs/08 §10.
+#
+# ⚠️ ROLLBACK: deleting this whole block reproduces these defaults exactly, the
+# property the `rules:`, `dedup:`, `notify:` and `discovery:` blocks all carry.
+# ---------------------------------------------------------------------------
+website:
+  # The TOTAL page budget, landing page INCLUDED. docs/06 §2.1 fixes it at 7 and
+  # docs/34 §P13's Metrics row reads "≤7 requests per project version", so
+  # reading this as "7 beyond the landing page" fetches 8 and fails the metric.
+  max_pages: 7
+
+  # Reserved by docs/34 §P13's Config row. The shipped crawl is landing +
+  # priority-scored links off it, which is depth 1 — no recursive traversal is
+  # built, and building one on the strength of this key would be scope creep.
+  max_depth: 2
+
+  # Everything extracted, concatenated, then truncated to this. It is also what
+  # bounds P14's single AI call: the whole site arrives as ≤40 KB of prompt.
+  max_total_chars: 40000
+
+  # Seconds, per page. A slow internal page is skipped and logged; only the
+  # landing page failing is fatal (docs/06 §2.3).
+  per_page_timeout: 15
+
+  # The L1 cache window. A project re-analysed inside it reuses the stored
+  # snapshot and makes ZERO requests. 7 days is docs/06 §2.3's figure.
+  cache_ttl_days: 7
+
+# ---------------------------------------------------------------------------
 # Network policy (P4) — egress is a policy, not a mandate (AD-25)
 #
 # Two axes, deliberately separate:

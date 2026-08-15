@@ -169,14 +169,23 @@ change follows, and [docs/README.md](docs/README.md) for the architecture.
 
 ## Status
 
-**P0 (validation sprint) and P1 (run & job schema) complete**, against the frozen
-P0–P30 plan in
-[docs/34-implementation-plan.md](docs/34-implementation-plan.md).
+**P0 through P13 complete**, against the frozen P0–P30 plan in
+[docs/34-implementation-plan.md](docs/34-implementation-plan.md). *(This section
+had said "P0 and P1" since P1; corrected in P13.)*
 
-P1 ships **shape, not behaviour**: three new tables (`runs`, `jobs`,
-`run_events`), one nullable column on `scrape_runs`, and the run/job state
-machines. There is no worker, no run API and no run page yet — those arrive in
-P2 and P3. The legacy dashboard and its 459 leads are unaffected, which
+What exists: the run and job schema with a worker and run pages (P1–P3), a
+network provider abstraction where **egress is chosen per request class** (P4),
+RSS discovery and watermarks (P5–P6), a notification tier that never invokes a
+model (P7), the content and dedup schema (P8), a rule engine (P9), a three-tier
+dedup cascade (P10), pre-scoring with the funnel and comment collection (P11),
+the project and knowledge-base schema (P12), and website fetching with local
+signal extraction (P13).
+
+**No model has been called yet.** Every phase to here is deterministic Python —
+`SELECT COUNT(*) FROM ai_calls` is `0`, asserted rather than assumed. The first
+AI call in the pipeline is **P14**'s single `analyze_business` request.
+
+The legacy dashboard and its 459 leads are unaffected throughout, which
 `tests/test_boundaries.py` enforces after every phase.
 
 Verify a phase yourself with its guide in
