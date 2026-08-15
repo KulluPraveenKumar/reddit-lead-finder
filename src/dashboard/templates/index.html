@@ -251,8 +251,15 @@
                             <td><a href="{{ lead.url }}" target="_blank" rel="noopener">{{ lead.title[:70] }}{% if lead.title|length > 70 %}...{% endif %}</a></td>
                             <td>r/{{ lead.subreddit }}</td>
                             <td>u/{{ lead.author }}</td>
-                            <td>{{ lead.score }}</td>
-                            <td>{{ lead.num_comments }}</td>
+                            {# P11: these two are NULL when unknown -- a search
+                               result carries no score, and the `default=0` that
+                               used to hide that was the DI13 defect. Jinja
+                               renders None as the literal string "None", so an
+                               em dash says "not known" instead. Byte-identical
+                               for every row that HAS a value, which is all 459
+                               legacy leads. #}
+                            <td>{{ lead.score if lead.score is not none else '—' }}</td>
+                            <td>{{ lead.num_comments if lead.num_comments is not none else '—' }}</td>
                             <td>
                                 {% for kw in lead.matched_keywords.split(', ') if lead.matched_keywords %}
                                 <span class="keyword-tag {% if '[HIGH]' in kw %}keyword-high{% endif %}">{{ kw.replace('[HIGH]', '').replace('[MED]', '') }}</span>

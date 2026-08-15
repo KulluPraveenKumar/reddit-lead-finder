@@ -28,6 +28,20 @@
   .feed-row.warning .feed-msg{color:var(--warn)}
   .feed-row.error .feed-msg{color:var(--bad)}
   .live{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.06em}
+  /* P11 funnel. Monospaced numbers so the column reads as a column and the
+     reader can add it up by eye -- which is what docs/35 §6's manual check for
+     this phase literally asks a tester to do. */
+  .funnel{font-size:13px;margin-top:4px}
+  .funnel-row{display:flex;justify-content:space-between;gap:12px;padding:5px 0;
+              border-bottom:1px solid rgba(255,255,255,.04)}
+  .funnel-row:last-child{border-bottom:0}
+  .funnel-row.total{font-weight:600;border-top:1px solid rgba(255,255,255,.12);border-bottom:0}
+  .funnel-n{font-variant-numeric:tabular-nums;white-space:nowrap}
+  .funnel-detail{color:var(--muted);font-size:11.5px;padding-left:14px}
+  .funnel-sub{color:var(--muted);font-size:11px;text-transform:uppercase;
+              letter-spacing:.06em;margin:14px 0 2px}
+  .badge-bad{color:var(--bad)}
+  .badge-ok{color:var(--ok)}
 </style>
 
 <p class="crumbs"><a href="/">Dashboard</a> › <a href="/runs">Runs</a> › #{{ run.id }}</p>
@@ -55,6 +69,23 @@
   <div class="banner bad {{ 'show' if progress.last_error }}" id="error-banner">
     {{ progress.last_error or '' }}
   </div>
+</div>
+
+{#
+  P11's funnel. docs/34 §P11 task 2, and docs/06c §3.2: "Every reason is counted,
+  persisted on the run, and rendered. A gate whose statistics are invisible is a
+  gate nobody will ever tune."
+
+  HIDDEN until the pre-score stage has run, rather than shown full of zeroes.
+  That is this template's rule from P3, in its own header: "Fields the design
+  shows that P3 has no source for are ABSENT rather than rendered as zeroes. A
+  zero is a measurement; a blank is an honest 'not yet'." A run mid-scrape has
+  genuinely not measured a funnel.
+#}
+<div class="card" id="funnel-card" style="display:none">
+  <h2>Funnel</h2>
+  <p class="sub" id="funnel-sub"></p>
+  <div class="funnel" id="funnel-body"></div>
 </div>
 
 <div class="card">
@@ -88,6 +119,7 @@ function render(p){
   banner.className = 'banner bad' + (p.last_error ? ' show' : '');
 
   document.getElementById('cancel-btn').disabled = p.terminal;
+  renderFunnel(p.funnel);
 
   if(p.terminal){
     /* Stop both polls together. A finished run whose feed kept polling would
@@ -97,6 +129,110 @@ function render(p){
     return false;
   }
   return true;
+}
+
+/* Every node below is built with createElement + textContent, never innerHTML.
+   These strings come from the database and carry scraped subreddit names and
+   operator-supplied negative terms -- redacted on write, escaped on render, the
+   same rule appendEvents() states. A funnel built by string concatenation would
+   be the one place on this page a scraped title could become markup. */
+function funnelRow(label, value, opts){
+  const row = document.createElement('div');
+  row.className = 'funnel-row' + (opts && opts.total ? ' total' : '');
+  const k = document.createElement('span');
+  k.textContent = label;
+  const v = document.createElement('span');
+  v.className = 'funnel-n' + (opts && opts.cls ? ' ' + opts.cls : '');
+  v.textContent = value;
+  row.append(k, v);
+  return row;
+}
+
+function funnelHeading(text){
+  const h = document.createElement('div');
+  h.className = 'funnel-sub';
+  h.textContent = text;
+  return h;
+}
+
+function pct(x){ return x === null || x === undefined ? '—' : (x * 100).toFixed(1) + '%'; }
+
+function renderFunnel(f){
+  const card = document.getElementById('funnel-card');
+  if(!f || !f.full){ card.style.display = 'none'; return; }
+  card.style.display = '';
+
+  const full = f.full;
+  const body = document.getElementById('funnel-body');
+  body.replaceChildren();
+
+  body.append(funnelRow('Collected', full.collected));
+
+  /* Rejections, largest first: the operator wants to know which rule is doing
+     the most work, and alphabetical order buries it. */
+  const reasons = Object.entries(full.rejected_by_reason || {})
+                        .sort((a, b) => b[1] - a[1]);
+  for(const [reason, n] of reasons){
+    body.append(funnelRow('− ' + reason.replace(/_/g, ' '), n));
+    /* The sub-reasons under structural_noise. docs/34 §P9's D3: "5-12%
+       structural noise" is not something an operator can act on; "8%
+       megathread, 1% hiring" is. */
+    const details = (full.detail_by_reason || {})[reason] || {};
+    for(const [detail, dn] of Object.entries(details).sort((a, b) => b[1] - a[1])){
+      const row = funnelRow(detail.replace(/_/g, ' '), dn);
+      row.firstElementChild.className = 'funnel-detail';
+      body.append(row);
+    }
+  }
+
+  body.append(funnelRow('Grouped as duplicates', f.grouped));
+  body.append(funnelRow(
+    'Admitted', full.admitted, {total: true, cls: full.sums ? '' : 'badge-bad'}));
+
+  /* The arithmetic the manual guide asks a tester to check by eye, checked in
+     code too -- and said out loud when it fails, rather than silently rendering
+     numbers that do not add up. */
+  if(!full.sums){
+    body.append(funnelRow('⚠ counters do not sum', 'check the run', {cls: 'badge-bad'}));
+  }
+
+  body.append(funnelHeading('Measured'));
+  body.append(funnelRow('Hard-filter rate (A2)',
+    pct(f.hard_filter_rate) + '  ·  assumed ' + pct(f.hard_filter_rate_assumed)));
+  body.append(funnelRow('Collapse rate, this run', pct(f.collapse_rate) +
+    '  ·  ' + f.groups + ' group(s)'));
+
+  const h = f.holdout;
+  if(h && h.measured){
+    body.append(funnelRow('Gate miss rate', pct(h.gate_miss_rate) + '  ·  target < 5.0%',
+      {cls: h.gate_miss_rate < 0.05 ? 'badge-ok' : 'badge-bad'}));
+    body.append(funnelRow('Holdout sampled', h.sampled + ' reject(s), ' +
+      h.would_have_qualified + ' would have qualified'));
+    if(h.worst_reason){
+      body.append(funnelRow('Worst reason', h.worst_reason.replace(/_/g, ' ')));
+    }
+  }else{
+    /* Not "0.0%". A run that sampled nothing has not demonstrated a miss rate
+       below 5%; it has demonstrated nothing. */
+    body.append(funnelRow('Gate miss rate', 'not measured'));
+  }
+
+  const c = f.comments;
+  if(c){
+    body.append(funnelHeading('Comments'));
+    body.append(funnelRow('Requests made', c.requests + ' of ' + c.eligible + ' eligible'));
+    body.append(funnelRow('Requests saved by ordering',
+      c.saved + '  ·  ' + pct(c.saving_rate) + ' (target ≥ 5.0%)',
+      {cls: c.saving_rate !== null && c.saving_rate >= 0.05 ? 'badge-ok' : ''}));
+    body.append(funnelRow('Comments stored', c.stored));
+    if(c.backfilled){
+      body.append(funnelRow('Scores back-filled', c.backfilled));
+    }
+  }
+
+  document.getElementById('funnel-sub').textContent =
+    full.collected + ' collected · ' + full.admitted + ' admitted · ' +
+    full.rejected + ' rejected · 0 AI calls';
 }
 
 function appendEvents(payload){

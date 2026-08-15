@@ -71,6 +71,19 @@ def handle_finalize_run(session: Session, job: Job) -> dict[str, Any]:
     failed = counts.get(JobState.FAILED.value, 0)
     cancelled = counts.get(JobState.CANCELLED.value, 0)
 
+    # ---- P11's stage, before the run closes --------------------------------
+    #
+    # Placed here because every quantity it produces is RUN-level: the funnel's
+    # denominator, the intra-run collapse rate, and the comment budget. The
+    # scrape handler runs once per subreddit and could produce none of them
+    # correctly. See `handlers/prescore.py`'s module docstring.
+    #
+    # Non-fatal, on AD-9's rule: scoring and comment collection are enrichment,
+    # and a run that collected leads must not be reported as failed because a
+    # comment page was unreachable. The shortfall lands on the timeline rather
+    # than being swallowed -- the same shape `_notify` below uses.
+    funnel = _prescore(session, run_id)
+
     if failed or cancelled:
         emit_event(
             session,
@@ -117,8 +130,60 @@ def handle_finalize_run(session: Session, job: Job) -> dict[str, Any]:
         "subreddits_done": int(stats.get("subreddits_done", 0) or 0),
         "subreddits_failed": failed,
         "subreddits_cancelled": cancelled,
+        "funnel": funnel,
         "notified": _notify(session, run_id),
     }
+
+
+def _prescore(session: Session, run_id: int) -> dict[str, Any]:
+    """P11's stage. Never fatal to a run that collected leads.
+
+    AD-9, *"fail soft on enrichment, loud on collection"*. The pre-score, the
+    dedup cascade and the comment fetch are all enrichment: they add judgement to
+    leads that are already durable. A failure here records itself on the timeline
+    at ``warning`` and the run still completes with what it collected -- the same
+    contract ``_notify`` has, and the same one that keeps one blocked subreddit
+    from stranding eleven that worked.
+
+    ⚠ **The rollback between them.** ``pipeline.prescore_enabled: false`` is
+    checked inside ``run_prescore_stage`` rather than here, so the flag governs
+    one place and this function has one job.
+    """
+    from src.orchestration.handlers.prescore import run_prescore_stage
+
+    try:
+        return run_prescore_stage(session, run_id, _pipeline_config())
+    except Exception as exc:  # noqa: BLE001 - enrichment must not fail collection
+        log.exception("pre-score stage failed for run %s", run_id)
+        session.rollback()
+        emit_event(
+            session,
+            run_id,
+            "pipeline.funnel.failed",
+            level="warning",
+            message=(
+                f"Scoring and comment collection did not finish: {exc}. "
+                "The leads this run collected are unaffected."
+            ),
+        )
+        return {"error": str(exc)}
+
+
+def _pipeline_config() -> dict[str, Any]:
+    """The whole parsed config. Read here so the handler keeps its two arguments.
+
+    Unlike ``_notify_config`` this returns the **whole** mapping rather than one
+    block: the stage reads ``pipeline:``, ``rules:``, ``gate:``, ``scraping:``,
+    ``dedup:``, ``discovery:``, ``scoring:`` and ``keywords:``, and passing seven
+    sub-mappings would put the knowledge of which keys exist in the wrong file.
+    """
+    try:
+        from src.config import load_config
+
+        return load_config() or {}
+    except Exception:  # noqa: BLE001 - a config read must not fail a finished run
+        log.warning("could not read the config; the pre-score stage uses defaults")
+        return {}
 
 
 def _notify(session: Session, run_id: int) -> list[str]:

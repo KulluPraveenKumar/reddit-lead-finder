@@ -40,6 +40,35 @@ pipeline:
   # does not exist -- the trap the absent `density_threshold` note below records.
   rules_enabled: true
 
+  # ⚠ ROLLBACK (P11): `prescore_enabled: false` -> "items keep intent_score only"
+  # (docs/34 section P11). It switches off the whole P11 stage: no prescores row
+  # is written, no dedup group is formed, no comment request is made, and the run
+  # page's funnel card disappears rather than showing zeroes. The run behaves
+  # exactly as it did at P10.
+  #
+  # It is read in TWO places on purpose -- the stage that would run it and the
+  # scorer itself -- so the rollback holds even if a future call site forgets to
+  # check. Try it without editing this file:
+  #
+  #     python -m src.scoring --prescore-enabled false "Looking for a CRM"
+  prescore_enabled: true
+
+  # The admission floor: below this 0-100 pre-score an item is rejected with
+  # reason `below_prescore`, and is not worth a comment request.
+  #
+  # ⚠ 35 is docs/06c section 3.3's `balanced` row -- and it is the FALLBACK
+  # column, "used only when adaptive budgeting cannot run". At P11 it
+  # structurally cannot: the adaptive cut is derived from the pre-score
+  # distribution by docs/06f and needs the `ai_budgets` table, which arrives in
+  # revision 0009 with P19. So the fixed cut is correct here rather than a
+  # shortcut, and the run page names the method rather than substituting it
+  # silently. The same number ships in docs/06b as `prescore_threshold: 35`.
+  #
+  # This is docs/06c section 3.2's "tunable dial" -- the one place an operator
+  # trades money for coverage. Lower it to admit more; the holdout audit below
+  # is what tells you whether the current setting is losing real leads.
+  prescore_admission_floor: 35
+
 rules:
   # Text shorter than this is not worth analysing.
   #
@@ -143,11 +172,90 @@ dedup:
   # tier compares within the run's own items and stores nothing.
   semantic_threshold: null
 
+# ---------------------------------------------------------------------------
+# Comment collection and the gate audit (P11)
+#
+# A comment fetch is ONE HTTP REQUEST PER POST -- by far the most expensive thing
+# in the deterministic pipeline, and the only part of P11 that touches the
+# network. `max_comment_posts` bounds how many are made; the pre-score decides
+# WHICH posts get them, so a fixed budget buys the best evidence rather than
+# whichever post the scraper reached first.
+#
+# ⚠ ROLLBACK: `max_comment_posts: 0` switches comment collection off entirely
+# while leaving scoring and the funnel intact. Deleting this whole block instead
+# reproduces the defaults below exactly -- the property the `rules:`, `dedup:`,
+# `notify:` and `discovery:` blocks each document for themselves.
+# ---------------------------------------------------------------------------
+scraping:
+  # Comments stored per post. 50 is RedditClient.get_post_comments's own default,
+  # cited rather than invented so the key changes behaviour rather than merely
+  # appearing to.
+  max_comments_per_post: 50
+
+  # How many posts get a comment fetch, per run. This is the request budget.
+  max_comment_posts: 25
+
+  # Below this many comments a post is not worth a request: a full page fetch to
+  # collect one or two replies is almost all cost and almost no evidence.
+  #
+  # ⚠ `num_comments = None` means UNKNOWN and is treated as ELIGIBLE, not as
+  # zero. Search-sourced leads carry no count (DI13), and reading unknown as
+  # "nobody commented" would make an entire collection channel permanently
+  # ineligible for the one enrichment step that costs nothing but a request. The
+  # share is counted on the run page as `unknown_comment_count` rather than
+  # assumed.
+  min_post_comments_for_comment_fetch: 3
+
+# ---------------------------------------------------------------------------
+# The gate audit (P11) -- proving the metadata gate is honest
+#
+# freeze R11: "Every gate that discards items must be audited. A 2% holdout
+# applies to the admission gate AND to metadata triage."
+#
+# Metadata triage rejects posts on their TITLE ALONE, before a body is ever
+# looked at. That is the redesign's central move and its central risk, and the
+# loss is invisible by construction: no page, log line or counter in this system
+# reports the posts that were never collected. This key is the mechanism that
+# measures it.
+#
+# 2% of triage rejections are re-scored with their bodies -- which the feed
+# already supplied, so the audit costs NO EXTRA REQUEST -- and the sampled items
+# are stored as real leads with `source='holdout_audit'`. Storing them matters:
+# docs/06c section 6.1 records that keeping only the aggregate counts produced "a
+# metric with no learning signal", because P19's yield curve can only be fitted
+# on leads the operator can actually see and label.
+#
+# The published number is the gate miss rate, target < 5%, shown on the run page
+# with the `worst_reason` that tells you WHICH rule is too aggressive.
+#
+# NO AI IS INVOLVED. P11 makes zero model calls, so "would have qualified" means
+# "the full-stage deterministic gate admits what the metadata gate rejected" --
+# which is exactly the disagreement worth measuring at a stage whose whole
+# premise is deciding without a body. The AI-judged audit needs `gate_audits`
+# (revision 0009) and belongs to P19/P20.
+#
+# ⚠ ROLLBACK: `metadata_holdout_rate: 0` switches the audit off. Note what that
+# costs -- the gate keeps filtering and stops being measurable, which AD-10b
+# names as worse than no filter at all.
+# ---------------------------------------------------------------------------
+gate:
+  metadata_holdout_rate: 0.02
+
 scoring:
   keyword_weight: 3
   upvote_weight: 1
   comment_weight: 2
   recency_weight: 1.5
+
+  # ⚠ P11 reads this key too, and gives it a second meaning that is the same
+  # meaning. In the legacy LeadScorer it multiplies a high-intent keyword's
+  # weight; in the pre-score it is the ratio between one keyword tier and the
+  # next, so `high_intent` scores 1.0 and `medium_intent` scores 1/2. Reusing it
+  # is deliberate: docs/06c section 3.1 names a TIER_VALUE map over high/med/low
+  # and never gives the values, and deriving them from the number this project
+  # already uses keeps the pre-score agreeing with the instrument that produced
+  # the 459 usable leads. Tier ORDER comes from the `keywords:` block above --
+  # first tier is strongest -- so adding a third tier needs no code change.
   high_intent_multiplier: 2
 
 schedule:

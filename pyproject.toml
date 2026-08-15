@@ -40,11 +40,32 @@ ignore = [
 #
 # Remove a line from this list when its module is genuinely rewritten — Phase 2
 # takes reddit_client.py and the scrapers, Phase 6 takes scoring.py.
+#
+# ⚠ P11 narrowed two of these entries, and the narrowing is the point rather
+# than tidying. Both were path patterns that stop meaning what they said the
+# moment the tree changes shape:
+#
+#   `src/scoring.py` -> `src/scoring/legacy.py`. P11's Files row names
+#       `src/scoring/{prescore,features}.py`, so the module becomes a package.
+#       A literal `src/scoring.py` would then match NOTHING: the legacy
+#       `LeadScorer` would silently start being linted and formatted, and
+#       reformatting it is what DI4 says not to do while the R20 `intent_score`
+#       fingerprint rests on it. The exemption follows the code to its new file;
+#       the file itself moved byte-for-byte.
+#
+#   `src/scrapers/*` -> the three legacy scrapers, named. The glob exempted the
+#       DIRECTORY, so P11's new `comment_scraper.py` would have shipped unlinted
+#       and unformatted under a rule written about pre-Phase-1 code. An
+#       exemption that grows to cover files written two years later is not an
+#       exemption, it is a hole.
 "src/reddit_client.py" = ["ALL"]
-"src/scoring.py" = ["ALL"]
+"src/scoring/legacy.py" = ["ALL"]
 "src/subreddit_loader.py" = ["ALL"]
 "src/config.py" = ["ALL"]
-"src/scrapers/*" = ["ALL"]
+"src/scrapers/__init__.py" = ["ALL"]
+"src/scrapers/keyword_scraper.py" = ["ALL"]
+"src/scrapers/subreddit_scraper.py" = ["ALL"]
+"src/scrapers/user_scraper.py" = ["ALL"]
 "src/dashboard/routes.py" = ["ALL"]
 "src/__init__.py" = ["ALL"]
 "src/db/__init__.py" = ["ALL"]
@@ -65,10 +86,16 @@ ignore = [
 exclude = [
     "*.md",
     "src/reddit_client.py",
-    "src/scoring.py",
+    # Narrowed by P11 for the reason given in per-file-ignores above: the module
+    # became a package, and a stale path literal exempts nothing while reading
+    # as though it exempts something.
+    "src/scoring/legacy.py",
     "src/subreddit_loader.py",
     "src/config.py",
-    "src/scrapers/*",
+    "src/scrapers/__init__.py",
+    "src/scrapers/keyword_scraper.py",
+    "src/scrapers/subreddit_scraper.py",
+    "src/scrapers/user_scraper.py",
     "src/dashboard/routes.py",
     "src/__init__.py",
     "src/db/__init__.py",

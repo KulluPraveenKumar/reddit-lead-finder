@@ -268,6 +268,42 @@ class RedditClient:
             return []
         return self._parse_comments(html)[:limit]
 
+    def get_post_detail(self, post_url, limit=50):
+        """The post's own score and comment count, plus its comments. ONE request.
+
+        The eighth public method. AD-2 froze this class's surface as **additive
+        only**, and P5 already added a seventh (`get_feed`) on that basis; the six
+        original signatures are untouched and
+        `tests/test_get_feed.py::test_the_six_frozen_methods_are_untouched`
+        still holds them.
+
+        It exists for docs/34 section P11 task 4, "score back-fill for
+        search-sourced leads **during comment fetch**". A search result carries no
+        score in the HTML -- `_extract_search_post` stores None, which is honest
+        -- and the permalink page has it. Fetching that page a second time just to
+        read one number would double the most expensive request in the pipeline,
+        so the back-fill rides along with the comment fetch that was happening
+        anyway. That is what "during comment fetch" is asking for.
+
+        `get_post_comments` is deliberately left byte-identical rather than
+        widened: its return shape is a list, four callers and a signature test
+        depend on that, and changing it to return a dict would be a breaking
+        change bought to avoid one small method.
+
+        Returns None when the page could not be fetched -- the same "no data"
+        signal `get_subreddit_info` uses, and distinct from a page that loaded and
+        had no comments, which returns a dict with an empty list.
+        """
+        html = self._get(post_url, expect_selector="div.comment")
+        if not html:
+            return None
+        score, num_comments = self._parse_post_metrics(html)
+        return {
+            "score": score,
+            "num_comments": num_comments,
+            "comments": self._parse_comments(html)[:limit],
+        }
+
     def get_user_posts(self, username, limit=50):
         return self._paginate(
             f"{BASE_URL}/user/{username}/submitted/new/",
@@ -512,12 +548,32 @@ class RedditClient:
             if not created_utc:
                 created_utc = _parse_time_element(thing)
 
-            num_comments = 0
+            # DI13, fixed in P11 -- the trigger the register named, firing where
+            # it predicted: "a consumer treats 0 as 'nobody commented' and acts
+            # on it -- most likely the comment-fetch eligibility test in P11,
+            # which is where the distinction first has a decision hanging off
+            # it." `scraping.min_post_comments_for_comment_fetch` is that test.
+            #
+            # Three cases, and the middle one is why this is not a one-line
+            # change to `None`:
+            #   element absent        -> unknown. The markup changed, or the page
+            #                            is a shape we do not parse. None.
+            #   present, no digit     -> old reddit renders exactly "comment" for
+            #                            a post with none. That is a MEASUREMENT
+            #                            of zero, not an absence, and reporting
+            #                            it as None would make every quiet post
+            #                            eligible for a comment fetch that has
+            #                            nothing to collect.
+            #   present, with a digit -> the number.
+            #
+            # The feed path already reported None for unknown; this brings the
+            # HTML path into line with it rather than the reverse.
             comments_el = thing.select_one("a.comments")
-            if comments_el:
+            if comments_el is None:
+                num_comments = None
+            else:
                 match = re.search(r"(\d+)", comments_el.get_text())
-                if match:
-                    num_comments = int(match.group(1))
+                num_comments = int(match.group(1)) if match else 0
 
             body = ""
             expando = thing.select_one("div.expando .md")
@@ -593,6 +649,35 @@ class RedditClient:
         except Exception as exc:
             log.debug("could not parse search result: %s", exc)
             return None
+
+    def _parse_post_metrics(self, html):
+        """(score, num_comments) from a permalink page. Either may be None.
+
+        Read from `div.thing.link`'s data attributes -- the same source
+        `_extract_post` uses on a listing page, so the two paths agree about what
+        a score is rather than parsing two different things and hoping.
+
+        None means unknown throughout, never zero. This feeds a back-fill that
+        overwrites a stored NULL, and writing 0 for "we could not tell" would
+        replace an honest unknown with a confident wrong number -- which is DI13
+        in the other direction, on a column an operator sorts by.
+        """
+        try:
+            soup = BeautifulSoup(html, "lxml")
+            thing = soup.select_one("div.thing.link")
+            if thing is None:
+                return None, None
+
+            score_str = thing.get("data-score", "")
+            score = int(score_str) if score_str.lstrip("-").isdigit() else None
+
+            comments_str = thing.get("data-comments-count", "")
+            num_comments = int(comments_str) if comments_str.lstrip("-").isdigit() else None
+
+            return score, num_comments
+        except Exception as exc:
+            log.debug("could not parse post metrics: %s", exc)
+            return None, None
 
     def _parse_comments(self, html):
         soup = BeautifulSoup(html, "lxml")

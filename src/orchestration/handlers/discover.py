@@ -137,6 +137,7 @@ def handle_discover(session: Session, job: Job) -> dict[str, Any]:
         _report_overflow(session, run_id, channel, sub, results[sub], states[sub], len(recovered))
 
     admitted, rejected, reasons = _triage_all(new_posts, config)
+    holdout = _holdout_audit(session, run_id, new_posts, config)
 
     intervals: dict[str, int] = {}
     for sub in subreddits:
@@ -177,6 +178,7 @@ def handle_discover(session: Session, job: Job) -> dict[str, Any]:
         rejected_by_reason=reasons,
         overflow=bool(overflowed),
         next_interval_seconds=intervals,
+        holdout=holdout,
     )
 
     return {
@@ -191,6 +193,7 @@ def handle_discover(session: Session, job: Job) -> dict[str, Any]:
         "html_recovered": len(recovered),
         "next_interval_seconds": intervals,
         "body_source_counts": _body_source_counts(new_posts),
+        "holdout": holdout,
     }
 
 
@@ -306,6 +309,10 @@ def _triage_all(posts: list[dict], config: dict[str, Any]) -> tuple[int, int, di
     for post in posts:
         judgement = triage(post, cfg)
         post["body_source"] = _body_source(post)
+        # Recorded on the post so the holdout can sample the rejections without
+        # triaging a second time -- triage is pure, but running it twice would
+        # let the two copies disagree if `cfg` were ever built differently.
+        post["_triage_reason"] = None if judgement.admitted else (judgement.reason or "unknown")
 
         if judgement.admitted:
             admitted += 1
@@ -315,6 +322,167 @@ def _triage_all(posts: list[dict], config: dict[str, Any]) -> tuple[int, int, di
             reasons[reason] = reasons.get(reason, 0) + 1
 
     return admitted, rejected, reasons
+
+
+def _holdout_audit(
+    session: Session, run_id: int, posts: list[dict], config: dict[str, Any]
+) -> dict[str, Any]:
+    """**Stage-3 holdout — R11's audit of the gate that decides without a body.**
+
+    [34 §P11](../../../docs/34-implementation-plan.md) task 6: *"2% of
+    metadata-triage rejects get bodies fetched and full-scored"*, and the
+    acceptance line *"metadata-triage miss rate published and < 5%"*.
+
+    **No body is fetched, and none needs to be.** The task says *"get bodies
+    fetched"* on the premise that a triage reject has no body — but P5 measured
+    that the feed carries the body for ~97% of posts **in the request stage 1
+    already makes** (freeze §11.1, 2026-08-08), and stage 4 was reduced to body
+    *accounting* for exactly that reason. The bodies are already in hand. A
+    permalink fetch per sampled reject would spend one request each to re-collect
+    what the feed gave us, so the audit is free rather than nearly free. The ~3%
+    that genuinely have no body are link and media posts with no selftext on any
+    endpoint, and they are scored on their titles like everything else.
+
+    **Sampled rejects become real leads** — ``leads.source='holdout_audit'``,
+    [06c §6.1](../../../docs/06c-local-first-pipeline.md), operator decision
+    **D3**. That is not bookkeeping: *"storing only the aggregate counts — as the
+    original design did — produced a metric with no learning signal."* An audited
+    item must be labellable, or the yield curve P19 fits is trained only on what
+    the gate already admits and the loop degenerates. Storing them is also what
+    makes the ``prescores`` row **possible** — the table's ``CHECK ((lead_id IS
+    NOT NULL) <> (comment_id IS NOT NULL))`` requires a stored row to point at,
+    which is precisely the wall P6 hit and passed to this phase.
+
+    ⚠ **Deliberately non-fatal.** An audit failing must not fail a poll that
+    collected posts: the audit exists to measure quality, and a measurement
+    failure that discarded the thing being measured would be worse than no
+    measurement.
+    """
+    try:
+        return _run_holdout(session, run_id, posts, config)
+    except Exception as exc:  # noqa: BLE001 - an audit must not fail a poll
+        log.warning("stage-3 holdout audit failed for run %s: %s", run_id, exc)
+        return {"error": str(exc)}
+
+
+def _run_holdout(
+    session: Session, run_id: int, posts: list[dict], config: dict[str, Any]
+) -> dict[str, Any]:
+    """The audit proper. Split out so the guard above has one job."""
+    import datetime as _dt
+
+    from src.db.models import Lead
+    from src.db.repositories.discovery import DiscoveryRepository
+    from src.scoring import (
+        DECISION_ADMIT,
+        DECISION_REJECT,
+        SOURCE_HOLDOUT_AUDIT,
+        STAGE_FULL,
+        PrescoreSettings,
+        keyword_tiers_of,
+    )
+    from src.scoring.holdout import audit_sample, miss_rate
+    from src.scoring.prescore import ScoredItem, prescore
+
+    settings = PrescoreSettings.from_config(config)
+    if not settings.enabled or settings.holdout_rate <= 0:
+        return {"sampled": 0, "measured": False, "skipped": "disabled"}
+
+    rejects = [
+        (str(post.get("id") or ""), str(post["_triage_reason"]))
+        for post in posts
+        if post.get("_triage_reason") and post.get("id")
+    ]
+    if not rejects:
+        return {"sampled": 0, "measured": False}
+
+    by_id = {str(post.get("id")): post for post in posts if post.get("id")}
+    sampled = list(audit_sample(rejects, settings.holdout_rate))
+    if not sampled:
+        return {"sampled": 0, "measured": False}
+
+    repo = DiscoveryRepository(session)
+    tiers = keyword_tiers_of(config)
+    negatives = tuple(((config or {}).get("discovery") or {}).get("negative_terms") or ())
+    now = _dt.datetime.now(_dt.UTC).replace(tzinfo=None)
+
+    known = repo.known_ids([reddit_id for reddit_id, _ in sampled])
+    audited: list[tuple[str, bool]] = []
+    stored = 0
+
+    for reddit_id, reason in sampled:
+        post = by_id[reddit_id]
+        result = prescore(
+            ScoredItem(
+                title=post.get("title") or "",
+                body=post.get("body") or "",
+                author=post.get("author"),
+                subreddit=post.get("subreddit"),
+                score=post.get("score"),
+                num_comments=post.get("num_comments"),
+                created_utc=post.get("created_utc"),
+            ),
+            settings,
+            keyword_tiers=tiers,
+            negative_terms=negatives,
+            now=now,
+        )
+        audited.append((reason, result.admitted))
+
+        if reddit_id in known:
+            # Already collected by some other path, so there is nothing to
+            # store -- but it still counts in the denominator. Dropping it would
+            # silently shrink the sample toward whichever posts happened to be
+            # new, which is not the 2% the rate claims.
+            continue
+
+        lead = Lead(
+            reddit_id=reddit_id,
+            subreddit=post.get("subreddit") or "",
+            author=post.get("author") or "[deleted]",
+            title=post.get("title") or "",
+            body=(post.get("body") or "")[:5000],
+            url=post.get("url") or "",
+            post_type="post",
+            score=post.get("score"),
+            num_comments=post.get("num_comments"),
+            # The legacy keyword score is NOT computed for an audited item.
+            # `intent_score` is what `is_lead` gates on, and an audit lead is
+            # stored BECAUSE it was rejected -- writing a score that implies it
+            # passed would make the two populations indistinguishable in the one
+            # column an operator sorts by. 0.0 with `source='holdout_audit'`
+            # says exactly what happened.
+            intent_score=0.0,
+            matched_keywords="",
+            created_utc=post.get("created_utc") or now,
+            source=SOURCE_HOLDOUT_AUDIT,
+        )
+        session.add(lead)
+        session.flush()
+        stored += 1
+
+        row = repo.add_prescore(
+            run_id,
+            lead.id,
+            total=result.total,
+            components=dict(result.components, _absent=dict(result.absent), _triage=reason),
+            gate_decision=DECISION_ADMIT if result.admitted else DECISION_REJECT,
+            gate_reason=result.reason,
+            stage=STAGE_FULL,
+        )
+        # `holdout_sampled` is what separates the audit population from the rest
+        # of the run, and it is the column P19's yield curve must NOT filter on.
+        # `add_prescore` writes False by default because P6 had no audit; setting
+        # it on the returned row keeps that signature unchanged rather than
+        # adding a parameter for one caller.
+        row.holdout_sampled = True
+        session.flush()
+
+    report = miss_rate(audited)
+    payload = report.to_dict()
+    payload["stored_as_leads"] = stored
+    payload["rejects_considered"] = len(rejects)
+    return payload
 
 
 def _body_source(post: dict) -> str:
@@ -465,8 +633,39 @@ def _parse_duration(raw: Any, fallback: datetime.timedelta) -> datetime.timedelt
 
 
 def _triage_config(config: dict[str, Any]) -> TriageConfig:
+    """Build the triage config. **[DI24](../../../docs/DEFERRED-IMPROVEMENTS.md) is fixed here.**
+
+    The line below used to read::
+
+        keywords = tuple(str(k) for k in (config or {}).get("keywords", []) or [])
+
+    ``keywords:`` is a **mapping** of tier name to phrases, and iterating a
+    mapping yields its keys — so ``TriageConfig.keywords`` was
+    ``('high_intent', 'medium_intent')``, measured against the shipped
+    ``config.yaml`` on 2026-08-13. ``triage()`` therefore matched a title only if
+    it literally contained the string ``high_intent``,
+    ``components["keyword_hits"]`` was empty on every real post ever triaged, and
+    the provisional score ``min(len(hits), 5) * 20`` was **always 0.0**.
+
+    Nothing noticed because nothing consumed that score. **P11 consumes it** —
+    which is the exact trigger the register records: *"the first phase where a
+    silently-zero score changes a decision."*
+
+    ``keyword_tiers_of`` reads the block as the mapping it is; the phrases are
+    then flattened, because ``TriageConfig.keywords`` is a flat tuple and
+    ``triage()`` only asks *whether* a keyword hit, not which tier it came from.
+    Tier weighting is the full-stage pre-score's job, and giving triage a
+    tier-aware score would be P11 quietly rewriting P6's provisional one.
+    """
+    from src.scoring import keyword_tiers_of  # noqa: PLC0415
+
     discovery = (config or {}).get("discovery", {}) or {}
-    keywords = tuple(str(k) for k in (config or {}).get("keywords", []) or [])
+    keywords = tuple(
+        str(phrase)
+        for phrases in keyword_tiers_of(config).values()
+        for phrase in phrases
+        if str(phrase).strip()
+    )
     return TriageConfig(
         window_days=int(discovery.get("window_days", TriageConfig().window_days)),
         keywords=keywords,

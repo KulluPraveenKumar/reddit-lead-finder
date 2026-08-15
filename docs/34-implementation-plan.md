@@ -446,6 +446,45 @@ predecessor has not been approved. The `.claude/skills/phase-manager` skill enfo
 > **End of Stage D is the best debugging position in the plan.** The full funnel runs, every
 > rejection has a counted reason, nothing is probabilistic, and nothing has cost money.
 
+> **Reconciliations, P11, 2026-08-15 — three, each carrying the measurement that forced it.**
+> Recorded in full at [freeze §11.1](ARCHITECTURE_FREEZE.md) and reasoned at
+> [P11-DECISION-ANALYSIS.md](P11-DECISION-ANALYSIS.md). **None is a §11 amendment**: no technology,
+> table, decision or dependency changes in any of them, and P11 ships **no migration**.
+>
+> 1. **[06c §3.1](06c-local-first-pipeline.md) never supplies `W`, and three of its nine components
+>    have no data source at `0006`.** Six ship; `pain_phrase`, `competitor` and `subreddit_fit` are
+>    **declared absent** with the phase that supplies each (P12, P15, P12), because a component
+>    contributing a silent zero is DI24 inside the phase that fixes DI24. The weights are cited from
+>    [04 §9.1](04-system-design.md)'s non-AI classes and normalised at call time, so P12's three slot
+>    in without re-tuning the six. **D1, D2.**
+> 2. **The `prescores` CHECK wall P6 filed is discharged without a schema change.** The 2% holdout
+>    sample is persisted as real leads with `source='holdout_audit'` — which
+>    [06c §6.1](06c-local-first-pipeline.md) already required so the audit has a learning signal —
+>    and that is what makes its `prescores` row possible. **D3.**
+> 3. **"A group of N yields N distinct pre-scores" is not literally satisfiable.** Measured on the
+>    live 492 leads: two of 23 real groups are repost pairs created **one minute apart** whose
+>    components agree to four decimals. What ships is the property that carries the meaning — N
+>    independently computed scores, distinct whenever any scored input differs — with selection kept
+>    deterministic under the tie. **D4.**
+>
+> **A2 is measured**, which is what the Acceptance row asks: *"real hard-filter rate **recorded**
+> against the assumed 73%"*. On the full 492-lead archive the hard filters remove **75.4%** against
+> the assumed 73% — but **68.9 points of that is `out_of_window`**, because the archive spans 29
+> months and the window is 30 days. Restricted to the in-window population the hard filters remove
+> **20.9%** and **73.2%** are admitted. Both numbers are published rather than one being chosen:
+> [06c §8](06c-local-first-pipeline.md)'s 73% counts `already_analyzed` (26% of its example, and
+> P19/P20's response cache) and `negative_term` (its single largest hard filter, and
+> `discovery.negative_terms` ships **empty**), neither of which P11 can produce. The intra-run
+> measurement arrives with them.
+>
+> **The Files row is honoured, and the files outside it are enumerated in
+> [PHASE-11-COMPLETION-REPORT §2](PHASE-11-COMPLETION-REPORT.md) with a reason each.** The row lists
+> four modules and a template, and **every acceptance criterion in this phase needs a live call
+> site** — *"every collected item has a `prescores` row"*, *"A2 measured"*, *"comment requests −5%"*,
+> *"miss rate published"*, *"`COUNT(*) FROM ai_calls` = 0"* — while the row names no handler. Wiring
+> is therefore the phase, under [§1.1](#)'s *"a guide, not a contract"* and the precedent P5's `feed`
+> CLI, P6's `triage.py`, P9's `python -m src.rules` and P10's `__main__.py` each set.
+
 ---
 
 # STAGE E — KNOWLEDGE

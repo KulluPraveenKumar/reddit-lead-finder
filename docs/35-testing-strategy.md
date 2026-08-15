@@ -79,7 +79,7 @@ Every check below runs at the end of every phase. **`make gate` runs all of them
 > | `src/discovery/policy.py` | P5 | P5 — `test_the_policy_module_exists_and_is_inside_the_ai_fence` |
 > | `src/rules/` | **P9** | **P9** — `test_the_rules_package_is_inside_the_ai_fence`, plus an existence guard |
 > | `src/dedupe/` | **P10** | **P10** — `test_the_dedupe_package_is_inside_the_ai_fence`, plus an existence guard |
-> | `src/scoring/` | P11 | P11 |
+> | `src/scoring/` | **P11** | **P11** — `test_the_scoring_package_is_inside_the_ai_fence`, plus an existence guard |
 > | `src/knowledge/` | P15 | P15 |
 > | `src/feedback/` | P19 | P19 |
 >
@@ -88,11 +88,27 @@ Every check below runs at the end of every phase. **`make gate` runs all of them
 > vacuously the moment the package is deleted (P5's F3, **recorded five times now**). This note
 > changes no pass condition: row 9 still requires 0 matches.
 >
-> **Fence 2 covers three of six as of P10.** The temptation it guards is sharpest on the path P10 just
-> added: `src/ai/gate.py`'s `RejectionReason` already contains `duplicate_exact` and `duplicate_near`,
-> so a dedupe module importing those two constants would breach **R3** while looking like good
-> practice. It spells them instead, and `tests/test_rules_vocabulary.py` — the one file permitted to
-> import both sides — asserts the agreement.
+> **Fence 2 covers four of six as of P11.** The temptation it guards has been the same at each of the
+> three packages so far: `src/ai/gate.py`'s `RejectionReason` already contains the reasons each one
+> owns — `duplicate_exact`/`duplicate_near` for P10, `below_prescore`/`out_of_window` for P11 — so a
+> module importing those constants would breach **R3** while looking like good practice. Each spells
+> them instead, and `tests/test_rules_vocabulary.py` — the one file permitted to import both sides —
+> asserts the agreement, now across **eight of eleven** and a fourth vocabulary
+> (`src/discovery/triage.py`'s nine, [DI23](DEFERRED-IMPROVEMENTS.md)).
+>
+> ⚠️ **`src/scoring/` carries a temptation the other two do not, and P11 records it for P21.** This
+> package will hold `ConfidenceScorer`, the component that turns the AI's categoricals into a number,
+> and every instinct will say a module consuming an AI judgement should import the AI layer. It must
+> not: **R6** is *"categoricals in, arithmetic out"*, and the analysis arrives as a **stored row**,
+> not as a call.
+>
+> ⚠️ **A second, quieter trap this path had and the others did not.** `src/scoring` was a **module**
+> (`src/scoring.py`) from before Phase 1 until P11 made it a package, and a fence walking
+> `SRC / "scoring"` as a **directory** scans **nothing** against the pre-P11 tree — no error, no
+> output, a clean pass over an empty set. That is P5's F3 in a new disguise, so the existence guard
+> asserts the **package form** specifically, and a third test
+> (`test_the_legacy_lead_scorer_is_still_importable`) holds the backward-compatible re-export the
+> four call sites of `from src.scoring import LeadScorer` depend on.
 | 12 | **Migration round-trip** | `upgrade head` → `downgrade -1` → `upgrade head` on a **copy** of `leads.db` | Succeeds; `alembic heads` = 1 |
 | 13 | **Legacy regression** | 459 leads · `intent_score` SHA-256 unchanged · `GET /` byte-identical · 13 CSV columns · 17 endpoints identical | All |
 | 14 | Secret scan | grep logs, DB, templates, repo, API responses for credential shapes | 0 matches |
@@ -327,7 +343,7 @@ Beyond the universal gate. Only the additions are listed.
 | **P8** | Migration ordering; 459 rows get correct defaults | Confirm the four new columns and their values on a legacy lead |
 | **P9** | Grep fence 2; 11 reasons counted; property test | Feed a hiring post through; see it rejected with reason `structural_noise` |
 | **P10** | **2,000 items < 2 s CPU** — measured on a corpus matching real leads on length *and* distinct-5-gram density (revised 2026-08-15; the literal *"128 perms"* reading fails it, [freeze §11.1](ARCHITECTURE_FREEZE.md)); identical lead set with tier 3 off; ~~N distinct pre-scores~~ → **N distinct members, no per-item score mutated** *(the pre-scores are P11's; §11.1)* | `python -m src.dedupe` — two near-identical posts group, both still listed, and `--minhash-enabled false` visibly reduces the collapse |
-| **P11** | **0 AI calls**; comment requests −5%; triage miss rate < 5% | Read the funnel counts on the run page; they sum correctly |
+| **P11** | **0 AI calls** (asserted as `COUNT(*) FROM ai_calls WHERE run_id=?`, not inferred from the fence); comment requests −5% as a **within-run counterfactual** — nothing called `get_post_comments` before this phase, so there is no live baseline to A/B against; triage miss rate < 5%; grep fence 2 over `src/scoring/`; ~~N distinct pre-scores~~ → **N independently computed scores, distinct whenever a scored input differs** *(measured: two of 23 real groups are reposts minutes apart; [freeze §11.1](ARCHITECTURE_FREEZE.md))* | `python -m src.scoring` — the six components, their weights and the total, on a fixed corpus. Then read the funnel counts on the run page; **they sum correctly** |
 | **P12** | **Migration completes with `sqlite-vec` absent**; 4 FKs; payload-NULL rule | `/health` shows `semantic_layer` state |
 | **P13** | Direct egress asserted; L1 hit = 0 fetches; `file://` → 422 | Paste a URL; see the snapshot; paste it again; **no second fetch** |
 | **P14** | **Exactly 1 `ai_calls` row**; < $0.05; section isolation | See 23 sections render; cost chip shows one call |

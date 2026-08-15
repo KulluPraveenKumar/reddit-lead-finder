@@ -149,6 +149,26 @@ def prescore(item, project) -> PreScore:
 Every component is stored. The pre-score is a **recall instrument, not a precision one** — it is
 tuned to cast wide and drop only items that are obviously not leads. Precision is the AI's job.
 
+> ⚠️ **Shipped in P11, 2026-08-15: six of these nine components, and `W` is not written down
+> anywhere.** Two findings, both recorded at [freeze §11.1](ARCHITECTURE_FREEZE.md).
+>
+> **Three components have no data source at revision `0006`.** `pain_phrase`, `competitor` and
+> `subreddit_fit` all read `project.*`, and `projects`, `pain_points` and `bkb_entities` arrive in
+> `0007` with **P12 — which depends on P11**. `src/scoring/prescore.py` therefore ships **six**, and
+> declares the other three absent by name in `ABSENT_COMPONENTS`, each with the phase that supplies
+> it. They are **not** shipped scoring `0.0`: that is [DI24](DEFERRED-IMPROVEMENTS.md)'s exact
+> failure mode — a component nobody noticed was always zero — inside the phase that fixes DI24. The
+> absences are persisted alongside the values in `prescores.components_json`, so a P12 reader can
+> tell *"did not exist yet"* from *"scored 0.0"* once the components do exist.
+>
+> **`W` is supplied by no frozen document.** Grepped across `docs/` on 2026-08-15. P11 cites
+> [04 §9.1](04-system-design.md)'s four **non-AI** weights rather than inventing six — `keyword 0.10`
+> split evenly across the two keyword components, `recency 0.07` and `engagement 0.05` transferred
+> directly, and `subreddit 0.03`'s *magnitude* reused for `question_form` and `length`, which 04 has
+> no analogue for. The raw cited values are stored and **normalised by their own sum at call time**,
+> which is what keeps the total inside 0–100 exactly and lets P12's three components slot in without
+> re-tuning the six. Same discipline as P9's `min_chars: 80` and P10's `shingle_k`. **D1, D2.**
+
 ### 3.2 `PreAIGate`
 
 ```python
@@ -293,6 +313,22 @@ The representative is enriched; **the analysis is linked to every member of the 
 > with it; what P10 proves is that grouping preserves N distinct members and mutates no per-item
 > score. [freeze §11.1](ARCHITECTURE_FREEZE.md), 2026-08-14.
 
+> ✅ **Filled in by P11, 2026-08-15.** `rank` now carries the pre-score at the cascade's only call
+> site (`src/orchestration/handlers/prescore.py`), so the ordering this section specifies is what
+> runs — **no signature changed**, exactly as P10 designed for.
+>
+> ⚠️ **And the *"N distinct pre-scores"* criterion is not literally satisfiable.** Measured on the
+> live 492 leads: of **23** groups, **two** yield fewer distinct totals than members. Leads 108/109
+> are a repost pair created **one minute apart** with identical text, both at 0 upvotes and 0
+> comments; every component agrees to four decimals and both total **32.28**. A 60-second age
+> difference moves `recency` by ~0.003%, below the second decimal the total is rounded to.
+>
+> **That is §4.4 working, not failing.** What §4.4 requires is *score individually* — each member
+> gets its **own** score from its **own** metadata — and two posts identical in every scored
+> dimension scoring identically is the correct answer. Adding decimal places until sub-minute ages
+> separate them would game a criterion rather than measure a lead. Selection stays deterministic
+> under the tie via the trailing `row_id`. [freeze §11.1](ARCHITECTURE_FREEZE.md), 2026-08-15.
+
 ### 4.4 The correctness rule: group for analysis, score individually
 
 This is the subtle part and getting it wrong would be a silent quality regression.
@@ -405,6 +441,36 @@ capable of performing.
 **Exclusions from sampling:** `already_analyzed`, `duplicate_exact`, `duplicate_near`, and
 `budget_exhausted` are never sampled — those rejections are provably correct, and auditing them
 would waste calls proving arithmetic works.
+
+> ✅ **Built in P11, 2026-08-15 — the stage-3 half of R11, and it costs nothing.**
+> `src/scoring/holdout.py`, sampled in `src/orchestration/handlers/discover.py`.
+>
+> **No body is fetched, and none needs to be.** [34 §P11](34-implementation-plan.md) task 6 says
+> *"2% of metadata-triage rejects get bodies fetched and full-scored"* on the premise that a triage
+> reject has no body — but P5 measured that the feed carries the body for ~97% of posts **in the
+> request stage 1 already makes** ([freeze §11.1](ARCHITECTURE_FREEZE.md), 2026-08-08), which is why
+> stage 4 was reduced to body *accounting*. The bodies are already in hand, so the audit costs **no
+> extra request** rather than the ~$0.001 estimated above. The ~3% with no body anywhere are link and
+> media posts, scored on their titles.
+>
+> **No AI is involved, and that is not a compromise.** [34 §P11](34-implementation-plan.md) requires
+> `SELECT COUNT(*) FROM ai_calls WHERE run_id=?` to be **0**, so *"would have qualified"* cannot mean
+> *"the model marked `is_lead`"* at this stage. It means **the full-stage deterministic gate admits
+> what the metadata gate rejected** — which is exactly the disagreement worth measuring at a stage
+> whose whole premise is deciding without a body. The AI-judged variant needs `gate_audits`
+> (revision `0009`) and is P19/P20's.
+>
+> **`no_title` joins the exclusion list**, as P11's own addition: a post with no title has nothing
+> for the full-stage gate to score, so sampling it enters a guaranteed non-miss into the denominator
+> and biases the published rate **downwards** — flattering the gate, the one direction an audit must
+> never be wrong in.
+>
+> **The first thing it caught was [DI25](DEFERRED-IMPROVEMENTS.md).** `triage.py`'s bare
+> `\bhiring\b` had been discarding *"Our hiring process is broken and I need a tool to fix it"* live
+> since P6. The full-stage gate scores that post **66.88 and admits it**. The audit was built
+> **before** the regex was fixed, deliberately — fixing it first would have deleted the evidence that
+> justified the fix — and `test_the_audit_catches_di25s_own_example_as_a_miss` reproduces the
+> detection against the pre-fix pattern.
 
 ---
 

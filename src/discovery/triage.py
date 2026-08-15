@@ -51,7 +51,37 @@ BOT_AUTHORS = frozenset(
 #: cheap, high-volume rejections the redesign exists to make before paying for a
 #: body: hiring threads, giveaways and the weekly megathreads.
 STRUCTURAL_PATTERNS: tuple[tuple[str, str], ...] = (
-    (r"^\[hiring\]|^\[for hire\]|\bhiring\b|\bwe'?re hiring\b", "hiring"),
+    # ⚠️ [DI25](../../docs/DEFERRED-IMPROVEMENTS.md), FIXED IN P11.
+    #
+    # This pattern used to read::
+    #
+    #     r"^\[hiring\]|^\[for hire\]|\bhiring\b|\bwe'?re hiring\b"
+    #
+    # and the bare ``\bhiring\b`` alternative rejected **"Our hiring process is
+    # broken and I need a tool to fix it"** -- a textbook lead for this product,
+    # discarded live, on real data, since P6. The loss was invisible by
+    # construction: no page, log line or counter in this system reports the posts
+    # that were never collected, which is exactly the condition AD-10b exists to
+    # forbid.
+    #
+    # **The fix waited for the measurement rather than the other way round.**
+    # P9 and P10 both declined to fix it in passing, and the register named P11
+    # as the owner "which owns the 2% metadata-triage holdout -- the first
+    # mechanism capable of MEASURING the false-positive rate rather than arguing
+    # about it". Fixing the regex before building the holdout would have deleted
+    # the evidence that justifies the fix, so the audit was built first and this
+    # post is what it caught: the full-stage gate scores it **66.88 and admits**,
+    # while triage rejected it as `hiring`.
+    #
+    # The replacement is P9's pattern from `src/rules/structural.py`, adopted
+    # verbatim -- tag form plus explicit phrases -- which also closes half of
+    # [DI23](../../docs/DEFERRED-IMPROVEMENTS.md)'s divergence: the two modules
+    # deliberately disagreed on this one pattern and now agree.
+    (
+        r"^\s*\[\s*(?:hiring|for\s+hire)\s*\]|\bwe(?:'|’)?re hiring\b|\bnow hiring\b"
+        r"|\bjob (?:opening|posting)\b",
+        "hiring",
+    ),
     (r"\bgiveaway\b|\bfree (?:copy|license|licence)s?\b", "giveaway"),
     (r"\bmegathread\b|\bweekly (?:thread|discussion)\b|\bmonthly thread\b", "megathread"),
     (r"^\[?ama\]?\b|\bask me anything\b", "ama"),

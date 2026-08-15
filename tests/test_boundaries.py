@@ -440,6 +440,90 @@ def test_the_dedupe_package_exists():
     assert package.exists(), "R3 and docs/34 §P10 both name src/dedupe/ by path"
 
 
+def test_the_scoring_package_is_inside_the_ai_fence():
+    """Grep fence 2 (R3), over ``src/scoring/`` — the **third** of the six paths.
+
+    [PHASE-10-HANDOVER §3.3](../docs/PHASE-10-HANDOVER.md) hands this one to P11:
+    *"Extend fence 2 to ``src/scoring/``, with an existence guard beside it. Copy
+    the pairing exactly."* This is that copy. Fence 2 now covers **4 of 6**;
+    ``src/knowledge/`` is P15's and ``src/feedback/`` is P19's.
+
+    ⚠ **This path carries a temptation the other two do not, and it is the one
+    R3 exists for.** ``src/scoring/`` holds both the pre-score *and*
+    ``ConfidenceScorer`` when P21 arrives — the component that turns the AI's
+    categoricals into a number. Every instinct will say that a module consuming
+    an AI judgement should import the AI layer. **It must not.**
+    [freeze R6](../docs/ARCHITECTURE_FREEZE.md) is *"categoricals in, arithmetic
+    out"*: the analysis arrives as a stored row, not as a call. A model call from
+    inside this package would put the thing that scores in the same process as
+    the thing that pays, which is the entire argument of
+    [06c §2](../docs/06c-local-first-pipeline.md).
+
+    The second temptation is P9's and P10's, unchanged: ``src/ai/gate.py``'s
+    ``RejectionReason`` already contains ``below_prescore`` and ``out_of_window``
+    — both of P11's reasons — so importing them rather than spelling them would
+    breach R3 while looking like tidiness.
+    """
+    scoring = SRC / "scoring"
+    assert scoring.exists(), "src/scoring/ is P11's package; its absence is a failure, not a skip"
+
+    scanned = 0
+    offenders = []
+    for path in _python_files(scoring):
+        scanned += 1
+        hits = _imports_any(path, {"src.ai", "hermes"})
+        if hits:
+            offenders.append(f"{path.relative_to(PROJECT_ROOT)}: {hits}")
+
+    assert scanned > 0, "fence 2 scanned no files under src/scoring/"
+    assert offenders == [], (
+        "R3: src/scoring/ imports neither the AI layer nor an agent runtime. The "
+        "pre-score is the instrument that decides what is worth paying a model "
+        "for; it must not be able to call one. R6 keeps the AI out of the final "
+        "score entirely — categoricals in, arithmetic out — and the adapter to "
+        "GateDecision is P19's. Offenders: " + str(offenders)
+    )
+
+
+def test_the_scoring_package_exists():
+    """The fence above walks whatever is there, so absence must fail loudly.
+
+    P5's F3, **sixth** occurrence — *a guard that cannot fail is documentation.*
+
+    This one has a second job the other two do not. ``src/scoring`` was a
+    **module** (``src/scoring.py``) from before Phase 1 until P11 made it a
+    package. A fence walking ``SRC / "scoring"`` as a directory silently scans
+    **nothing** against the pre-P11 tree — no error, no output, a clean pass over
+    an empty set. So this asserts the package form specifically, and
+    :func:`test_the_legacy_lead_scorer_is_still_importable` asserts the move did
+    not break the four call sites that depend on the old import path.
+    """
+    package = SRC / "scoring" / "__init__.py"
+    assert package.exists(), "R3, docs/34 §P11 and docs/35 §2.1 all name src/scoring/ by path"
+
+
+def test_the_legacy_lead_scorer_is_still_importable():
+    """``from src.scoring import LeadScorer`` survives the module-to-package move.
+
+    P11 moved ``src/scoring.py`` to ``src/scoring/legacy.py`` byte-for-byte under
+    ``git mv``, because its Files row names ``src/scoring/{prescore,features}.py``
+    and a module cannot contain a module. Four call sites depend on the old path
+    — ``src/scrapers/subreddit_scraper.py``, ``src/scrapers/keyword_scraper.py``
+    and two in ``tests/test_net.py`` — and this is what keeps the re-export from
+    being quietly dropped in a later tidy-up.
+
+    ``LeadScorer`` computes ``leads.intent_score``, which
+    [freeze R20](../docs/ARCHITECTURE_FREEZE.md) pins by SHA-256 over the 459
+    original leads. The legacy contract check would catch a change to the
+    *arithmetic*; this catches a change to the *import*, which would fail the
+    scrape at runtime rather than at a fingerprint.
+    """
+    from src.scoring import LeadScorer
+    from src.scoring.legacy import LeadScorer as Direct
+
+    assert LeadScorer is Direct, "src.scoring.LeadScorer must be the legacy class, not a wrapper"
+
+
 def test_the_dedup_cascade_is_keyed_on_content_not_on_url():
     """DI14 does not bite P10, and this is what keeps that true.
 

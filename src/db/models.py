@@ -46,8 +46,32 @@ class Lead(Base):
     body = Column(Text, default="")
     url = Column(Text, nullable=False)
     post_type = Column(String(20), default="post")
-    score = Column(Integer, default=0)
-    num_comments = Column(Integer, default=0)
+    # ⚠️ NO `default=0` on these two, removed in P11 -- this is DI13's substance
+    # one layer below where the register found it.
+    #
+    # The schema has always said `nullable=True` with NO server default
+    # (`0001_baseline.py`), and `src/scoring/legacy.py` states the intent
+    # plainly: "the Lead row still stores NULL, because 'unknown' and 'zero
+    # upvotes' are different facts and conflating them would make the number a
+    # quiet lie." A Python-side `default=0` is exactly that conflation --
+    # SQLAlchemy applies it whenever the value is None at INSERT -- so the
+    # honest unknown `_extract_search_post` produces was overwritten with a
+    # confident 0 before it ever reached the database.
+    #
+    # Measured 2026-08-15 on the live database: **0 of 492 rows carry NULL** in
+    # either column, on a corpus where 27 leads came from the search path that
+    # cannot know a score. The intent was documented, tested nowhere, and never
+    # held.
+    #
+    # P11 is where it stops being cosmetic: docs/34 §P11 task 4 is "score
+    # back-fill for search-sourced leads", and there is nothing to back-fill
+    # while the default has already answered the question wrongly.
+    #
+    # No migration and no schema change: these are Python-side defaults only, so
+    # the column definition is untouched and the 459 original rows keep the
+    # values they have. New rows record what is actually known.
+    score = Column(Integer)
+    num_comments = Column(Integer)
     intent_score = Column(Float, default=0.0)
     matched_keywords = Column(Text, default="")
     status = Column(String(20), default="new", index=True)

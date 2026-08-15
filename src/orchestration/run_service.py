@@ -35,7 +35,7 @@ from typing import Any
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
-from src.db.models import Run
+from src.db.models import Run, RunEvent
 from src.db.repositories.runs import JobRepository, RunRepository
 from src.obs.events import emit_event
 from src.obs.logging import redact
@@ -47,6 +47,7 @@ from src.orchestration.states import (
     RunState,
     assert_transition,
 )
+from src.scoring.funnel import FUNNEL_EVENT
 
 log = logging.getLogger(__name__)
 
@@ -192,6 +193,10 @@ class RunProgress:
     last_error: str | None
     cancel_requested: bool = False
     job_counts: dict[str, int] = field(default_factory=dict)
+    #: P11's funnel, or None before the pre-score stage has run. Additive: the
+    #: API-contract check permits new fields and forbids changed ones, so every
+    #: pre-P11 consumer of this payload is unaffected.
+    funnel: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -208,6 +213,7 @@ class RunProgress:
             "last_error": self.last_error,
             "cancel_requested": self.cancel_requested,
             "job_counts": self.job_counts,
+            "funnel": self.funnel,
             "terminal": self.state in {s.value for s in TERMINAL_STATES},
         }
 
@@ -455,7 +461,34 @@ class RunService:
             last_error=run.error,
             cancel_requested=bool(stats.get("cancel_requested")),
             job_counts=counts,
+            funnel=self.funnel(run_id),
         )
+
+    def funnel(self, run_id: int) -> dict[str, Any] | None:
+        """P11's funnel for this run, or ``None`` before the stage has run.
+
+        Read from the newest ``pipeline.funnel`` row on the timeline rather than
+        recomputed. The stage runs **once**, in the finaliser, and it already
+        counted every item it scored — recounting here would mean a second pass
+        over ``prescores`` on every three-second poll, against
+        [04 §1.3](../../docs/04-system-design.md)'s 50 ms budget for this payload.
+
+        ``None`` and not an empty funnel, deliberately. ``run_progress.html`` has
+        rendered absent sources as **blank rather than zero** since P3 — *"a zero
+        is a measurement; a blank is an honest 'not yet'"* — and a run mid-scrape
+        has genuinely not measured a funnel. Zeroes here would read as *"nothing
+        was collected and nothing was filtered"*, which is a different and wrong
+        statement.
+        """
+        row = (
+            self.session.query(RunEvent.data_json)
+            .filter(RunEvent.run_id == run_id, RunEvent.event == FUNNEL_EVENT)
+            .order_by(RunEvent.id.desc())
+            .first()
+        )
+        if row is None or not row[0]:
+            return None
+        return _load_json(row[0])
 
     @staticmethod
     def _stage_label(run: Run, stats: dict[str, Any]) -> str:
