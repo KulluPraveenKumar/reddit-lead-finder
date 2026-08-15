@@ -194,6 +194,8 @@ considered and declined with its reasoning recorded, which is what its trigger a
 | Migration duration | **0.120 s** upgrade · **0.165 s** downgrade, against a 5 s budget |
 | AI calls | **0** |
 | Rollback | **Executed** — up/down/up on a copy of the live database, fingerprint `9327a13dd9ef4185` identical at all four stages |
+| Commit · CI | `51eecba` · CI run `31879457795` **green** |
+| ⚠️ Live database | **At `0007`.** `create_app()` migrates on startup by design and was invoked while capturing `/health` output for the guide. M7's backup was taken automatically: `data/backups/leads-20260815T101958Z.db`. Verified 76/76, 492 leads, fingerprint intact |
 
 ---
 
@@ -202,7 +204,7 @@ considered and declined with its reasoning recorded, which is what its trigger a
 | ID | Blocker | Blocks P13? |
 |---|---|---|
 | **D1/O3** | **P00–P07, P09, P10, P11 manual sign-off tables unsigned.** P8's was signed 2026-08-14 | **No, but no tag.** P12's guide is unsigned until the operator runs it |
-| **⚠️ live DB** | **`data/leads.db` is still at `0006`.** P12 did **not** upgrade it — that is the operator's action, and it is step T3 of the manual guide, with the M7 backup | **No.** The suite runs on copies; `--skip-p12` verifies the live file meanwhile |
+| **⚠️ live DB** | **`data/leads.db` is at `0007`.** The upgrade was not planned for this session — `create_app()` → `init_db()` → `ensure_current()` migrates on startup by design, and capturing `/health` for the guide triggered it. The M7 backup was taken automatically and is on disk | **No.** Verified 76/76, 492 leads, `max 164.28`, `avg 42.29`. `projects` and `bkb` are empty. Rollback re-verified on a copy afterwards |
 | **T3 (§4)** | The `vec0` branch has never executed | **No.** P13 does not touch the semantic layer |
 | **O2** | `mypy` not in the gate | **No.** Deferred by D6 in P8 |
 | **L4 (P7)** | Notification retry undelivered | **No**, still an open P7 obligation |
@@ -222,8 +224,8 @@ considered and declined with its reasoning recorded, which is what its trigger a
 - [ ] `phase-manager` skill loaded before the first edit under `src/`
 - [ ] The full suite recorded green before the first change — **1903 passed, 2 skipped**
 - [ ] `git status` clean · `alembic heads` = one `0007`
-- [ ] ⚠️ **`check_schema.py` now expects `0007`.** Against the live database, which is still at
-      `0006`, use `--skip-p12` — or run the guide's upgrade first
+- [ ] ⚠️ **`check_schema.py` now expects `0007`**, and the live database is already there — so the
+      bare command works. `--skip-p12` is for a database deliberately left at `0006`
 - [ ] `gh run list` checked: P12 green on `origin/main`
 - [ ] ⚠️ **`config.yaml` checked for uncommitted local values** — it carried a real chat id at the
       start of both P8 and P9. **P12 added no config key**; the file should be untouched since P11

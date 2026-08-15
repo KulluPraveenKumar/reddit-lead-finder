@@ -153,9 +153,11 @@ Every figure below is **measured**, on the final code, in the runs recorded here
 | 8 | **Schema validation** | ✅ **74/74** fresh `0007` · **51/51** live `0006` with `--skip-p12` · **76/76** upgraded live copy |
 | 9 | **Alembic** | ✅ One head, `0007_projects_and_knowledge_base` · linear chain of **seven** · live DB at `0006` |
 | 10 | **Rollback** | ✅ **Executed** — up/down/up on a copy of the live database |
-| 11 | **CI** | 🟡 Green through P11 on `origin/main`; P12's run follows the push |
+| 11 | **CI** | ✅ **Green** — run `31879457795` on `origin/main`, `conclusion: success`, commit `51eecba` |
 | — | Performance | ✅ Migration **0.120 s** upgrade, **0.165 s** downgrade, against a 5 s budget |
 | — | Cost | ✅ **0 AI calls** — `test_p12_makes_no_ai_call` |
+| — | Documentation links | ✅ **100 internal links, 0 broken** across P12's five documents. Repository-wide, 686 checked and **6 broken — all six `02-research-findings.md`**, the pre-existing [DI5](DEFERRED-IMPROVEMENTS.md), none introduced here |
+| — | Repository hygiene | ✅ H1–H8 against the staged diff. H1's only hits are `prefix_tokens` matching on *"token"*; H3 found **one real machine path** in the manual guide (`cd C:\Users\…`), corrected to `C:\path\to\reddit-scraper`; `.env`, `data/*.db` and `data/backups/` proven ignored |
 
 ### 4.1 The rollback, executed
 

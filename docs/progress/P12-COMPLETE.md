@@ -23,6 +23,8 @@
 | Migration duration | **0.120 s** up · **0.165 s** down |
 | Rollback | **Executed** on a copy — 51/51 down, 76/76 back up, fingerprint identical |
 | AI calls | **0** |
+| Commit · push | `51eecba` on `main`, pushed |
+| CI | ✅ **green** — run `31879457795`, `conclusion: success` |
 | Sign-off | ❌ **Unsigned** — `docs/testing/P12-testing.md` awaits the operator |
 | Tag | ❌ **Not tagged**, and must not be while the sign-off is blank ([lock §6.2](../EXECUTION_MODE_LOCK.md)) |
 
