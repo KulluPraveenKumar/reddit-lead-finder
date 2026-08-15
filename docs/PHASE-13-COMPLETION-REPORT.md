@@ -261,10 +261,13 @@ unchanged and its warning was honoured: the suite was run **locally**, not read 
 
 | Commit | Message |
 |---|---|
-| **`a1ea5c2`** | `feat(P13): the website fetcher, six local signals, and zero AI` |
+| **`a1ea5c2`** | `feat(P13): the website fetcher, six local signals, and zero AI` — 22 files, **+4,140 / −21** |
+| **`c9da926`** | `docs(P13): record the commit and the green CI run` |
+| **`8c1503e`** | `docs(P13): DI34 — six pre-existing broken doc links, found by gate check 18` |
+| **`26ba0a6`** | `fix(P13): ExtractedSite.url changed shape depending on the cache` — the review fix in §4.2, and the coverage correction |
 
-One commit, 22 files, **+4,140 / −21**. Pushed to `origin/main` (`d0ef28c..a1ea5c2`); `git status -sb`
-reports `## main...origin/main` with no ahead count.
+Four commits, `d0ef28c..26ba0a6`, all pushed. `git status -sb` reports `## main...origin/main` with
+no ahead count.
 
 **Repository hygiene ([lock §5](EXECUTION_MODE_LOCK.md) H1–H8), against the staged diff:**
 
@@ -281,11 +284,13 @@ reports `## main...origin/main` with no ahead count.
 
 ## 8. CI status
 
-✅ **Green** — run [`31890330477`](https://github.com/KulluPraveenKumar/reddit-lead-finder/actions/runs/31890330477),
-`conclusion: success`, gate in 4m22s. `ruff check` clean; `pytest` **2023 passed, 12 skipped** in
-238.27 s.
+✅ **Green on the final commit** — run
+[`31893183382`](https://github.com/KulluPraveenKumar/reddit-lead-finder/actions/runs/31893183382)
+(`26ba0a6`), `conclusion: success`. `ruff check` clean; `pytest` **2025 passed, 12 skipped** in
+231.10 s. The first commit's run [`31890330477`](https://github.com/KulluPraveenKumar/reddit-lead-finder/actions/runs/31890330477)
+was also green (**2023 passed, 12 skipped**).
 
-⚠️ **That is ten fewer passes and ten more skips than the local run**, and the difference is
+⚠️ **That is ten fewer passes and ten more skips than the local 2035 / 2**, and the difference is
 [DI30](DEFERRED-IMPROVEMENTS.md), not a regression: `data/leads.db` is gitignored, so a fresh checkout
 skips the ten live-database tests — **including the migration round-trip
 [35 §2.3](35-testing-strategy.md) calls non-negotiable**. P12's run showed the same signature

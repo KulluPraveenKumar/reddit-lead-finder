@@ -24,8 +24,8 @@
 | New dependency | `trafilatura 2.2.0` + 13 transitive packages — **required, not optional** |
 | AI calls | **0**, asserted as `COUNT(*) FROM ai_calls` |
 | Live verification | `https://example.com` — 1 request, 285 chars, thin, hash `01d96b8d…` |
-| Commit · push | `a1ea5c2` on `main`, pushed (`d0ef28c..a1ea5c2`) |
-| CI | ✅ **green** — run `31890330477`, `conclusion: success`. **2023 passed, 12 skipped** — ten fewer than local, which is [DI30](../DEFERRED-IMPROVEMENTS.md), not a regression |
+| Commit · push | four commits `d0ef28c..26ba0a6` on `main`, pushed — `a1ea5c2` (the phase), `c9da926`, `8c1503e` (DI34), `26ba0a6` (the review fix) |
+| CI | ✅ **green on the final commit** — run `31893183382`, `conclusion: success`. **2025 passed, 12 skipped** — ten fewer than local, which is [DI30](../DEFERRED-IMPROVEMENTS.md), not a regression |
 | Sign-off | ❌ **Unsigned** — `docs/testing/P13-testing.md` awaits the operator |
 | Tag | ❌ **Not tagged**, and must not be while the sign-off is blank ([lock §6.2](../EXECUTION_MODE_LOCK.md)) |
 
