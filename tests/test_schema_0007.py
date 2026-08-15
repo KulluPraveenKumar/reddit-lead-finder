@@ -563,7 +563,14 @@ def test_up_down_up_on_a_copy_of_the_live_database(tmp_path):
         finally:
             conn.close()
 
-    runner.upgrade(PREVIOUS)
+    # ⚠️ `_move_to`, not `upgrade`. `upgrade` only moves forward, so once
+    # `data/leads.db` reached 0007 this took its `before` snapshot at 0007 and
+    # compared the revision with itself. Same root cause as the regression the
+    # operator's T9 caught in `test_a1_...`; see `_move_to`'s docstring.
+    from tests.test_migrations import _move_to
+
+    _move_to(runner, PREVIOUS)
+    assert runner.current_revision() == PREVIOUS
     before = snapshot()
 
     runner.upgrade(REVISION)

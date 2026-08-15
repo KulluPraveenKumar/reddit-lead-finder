@@ -269,14 +269,32 @@ The long one. Roughly 6–7 minutes.
 **Expected — the last line:**
 
 ```
-1903 passed, 2 skipped in 388.07s (0:06:28)
+1905 passed, 2 skipped in 573.83s (0:09:33)
 ```
 
-**PASS if:** `1903 passed` and `2 skipped`, with no failures. The duration will differ.
-**FAIL if:** anything failed, or the passed count is **lower** than 1903.
+**PASS if:** `1905 passed` and `2 skipped`, with no failures. The duration will differ.
+**FAIL if:** anything failed, or the passed count is **lower** than 1905.
 
 > The **2 skipped** are expected and unchanged since P11: both are proxy tests that need a proxy pool
 > this machine does not have (`PROXY_FILE is not set`, `no proxy pool configured on this machine`).
+
+> ⚠️ **If a single test fails and it is `test_a5_minhash_indexes_and_queries_2000_items_under_two_seconds`,
+> check what else your machine was doing.** That test asserts a CPU-time budget, and heavy background
+> load inflates it — it has failed at 5.77 s against a 2.0 s budget in a run that took 849 s, then
+> passed three times out of three when run on its own. Re-run just that file:
+>
+> ```powershell
+> .\.venv\Scripts\python.exe -m pytest tests/test_dedupe_performance.py
+> ```
+>
+> If it passes alone, that is [DI18](../DEFERRED-IMPROVEMENTS.md) and not a defect in the code. If it
+> fails alone too, that **is** a finding — record it.
+
+> ⚠️ **This step found a real regression once, and it is why it exists.** An earlier version of P12
+> reported this suite green while
+> `test_migrations.py::test_a1_up_down_up_on_a_copy_of_the_live_database` was broken — and **the CI
+> badge was green too**, because CI has no `data/leads.db` and skips that test entirely. **Running
+> this locally is not redundant with CI.** See [DI30](../DEFERRED-IMPROVEMENTS.md).
 
 ---
 

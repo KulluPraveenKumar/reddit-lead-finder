@@ -16,7 +16,7 @@
 | `alembic heads` | `0007_projects_and_knowledge_base` — **one head**, seven revisions of ten |
 | `data/leads.db` | **at `0007`** · 492 leads (459 baseline + 33) · `projects` and `bkb` empty |
 | Backup before the upgrade | `data/backups/leads-20260815T101958Z.db` · 14,319,616 bytes |
-| Full suite | **1903 passed, 2 skipped** in 388.07 s |
+| Full suite | **1905 passed, 2 skipped** in 573.83 s |
 | Coverage | **89.20%** whole tree · **90%** on `src/{ai,net,scoring}` |
 | `check_schema.py` | **76/76** on the live database |
 | Mutation testing | **18 designed · 17 detected · 1 survived (the control) · 0 not applied** |
@@ -82,6 +82,8 @@ Each was **measured before code was written**, and each is a
 
 | Item | Owner |
 |---|---|
+| [DI30](../DEFERRED-IMPROVEMENTS.md) — 🔴 **new**: CI runs none of the ten live-database tests, so the non-negotiable migration round-trip is unverified there. **Trigger already fired** | Operator |
+| [DI18](../DEFERRED-IMPROVEMENTS.md) — **third occurrence**: `test_a5_...` fails under CPU contention despite measuring CPU time | Trigger met |
 | **The `vec0` DDL has never executed** — `sqlite_vec` absent on every host measured | **P15** |
 | [DI29](../DEFERRED-IMPROVEMENTS.md) — **new**: the literal grep form of fences 2 and 3 returns 6 and 2 prose matches | Operator, when a reader acts on it |
 | [DI28](../DEFERRED-IMPROVEMENTS.md) — `leads.run_id` | **P17** (`0008`) |
@@ -116,5 +118,9 @@ The next session does **one** of these, in this order of precedence:
    * **Zero AI calls** in P13.
 
 **Before any of it:** `git status` clean · `alembic heads` = one `0007` · full suite green at
-**1903 passed, 2 skipped** · `check_schema.py --db data\leads.db` = **76/76** · `config.yaml` checked
+**1905 passed, 2 skipped** · `check_schema.py --db data\leads.db` = **76/76** · `config.yaml` checked
 for uncommitted local values.
+
+⚠️ **Run the suite locally. A green CI badge is not a substitute** — CI has no `data/leads.db` and
+skips ten tests including the migration round-trip ([DI30](../DEFERRED-IMPROVEMENTS.md)). That is
+how P12's regression reached `main` green and was caught by an operator instead.

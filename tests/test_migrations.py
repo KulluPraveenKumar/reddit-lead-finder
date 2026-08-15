@@ -399,6 +399,10 @@ def _raw_copy(tmp_path: Path) -> Path:
 
     ``live_db_copy`` runs ``init_db``, which upgrades to head — correct for most
     tests and useless for the two that need to observe the *transition*.
+
+    ⚠️ **The copy arrives at whatever revision the developer's `data/leads.db`
+    happens to be at**, which is environment state, not something this suite
+    controls. Never assume it. Use :func:`_move_to`.
     """
     source = PROJECT_ROOT / "data" / "leads.db"
     if not source.exists():  # pragma: no cover
@@ -406,6 +410,49 @@ def _raw_copy(tmp_path: Path) -> Path:
     target = tmp_path / "raw.db"
     shutil.copy(source, target)
     return target
+
+
+def _move_to(runner, revision: str) -> None:
+    """Put a database **at** ``revision``, going up or down as needed.
+
+    ⚠️ **`upgrade(rev)` only ever moves forward.** Alembic treats a target below
+    the current revision as "nothing to do" and returns success, silently —
+    ``command.upgrade`` never downgrades. So a test that copies the live
+    database and calls ``upgrade("0006")`` gets `0006` only while the live file
+    is at `0006` **or earlier**, and gets whatever it started at otherwise.
+
+    That is exactly the regression P12 shipped and the operator's T9 caught.
+    ``data/leads.db`` reached `0007` — the dashboard migrates on startup, so it
+    was always going to — and from then on:
+
+    * ``test_a1_...`` failed loudly, asserting `0006` and getting `0007`;
+    * ``test_a3_...`` **passed vacuously**, comparing `leads.rootpage` before and
+      after an operation that did nothing, which is the worse outcome.
+
+    Before P12 the bug was latent rather than absent: the live database was
+    never *ahead* of any test's target, because `0006` was head. It was one
+    revision away from biting the whole time.
+
+    Determinism is the fix — the tests must not care where the copy started.
+    """
+    chain = _revisions_oldest_first()
+    current = runner.current_revision()
+
+    if current is None:  # a database with no alembic_version at all
+        runner.upgrade(revision)
+        return
+    if current not in chain:  # pragma: no cover - a revision we do not ship
+        raise AssertionError(f"database is at an unknown revision: {current}")
+
+    here, there = chain.index(current), chain.index(revision)
+    if here > there:
+        runner.downgrade(revision)
+    elif here < there:
+        runner.upgrade(revision)
+
+    assert runner.current_revision() == revision, (
+        f"failed to move the copy to {revision}; it is at {runner.current_revision()}"
+    )
 
 
 def test_a7_a8_a_lead_and_a_comment_can_be_inserted_at_0006(tmp_path):
@@ -441,6 +488,61 @@ def test_a7_a8_a_lead_and_a_comment_can_be_inserted_at_0006(tmp_path):
         assert conn.execute("SELECT COUNT(*) FROM comments").fetchone()[0] == 1
     finally:
         conn.close()
+
+
+def test_move_to_goes_both_ways(tmp_path):
+    """The regression P12 shipped, pinned as a property.
+
+    ``upgrade(rev)`` only moves **forward** — alembic treats a target below the
+    current revision as "nothing to do" and returns success. Three tests copied
+    ``data/leads.db`` and called ``upgrade`` to reach a revision *behind* head;
+    that worked only while the live file sat at or below their target, and broke
+    the day it reached ``0007``. One failed loudly, one **passed vacuously**.
+
+    So the property that matters is *"land on the requested revision from either
+    side"*, and it is asserted here directly rather than being a thing three
+    other tests happen to rely on.
+    """
+    from src.db.migrate import MigrationRunner
+
+    db_path = tmp_path / "both-ways.db"
+    runner = MigrationRunner(db_path)
+
+    # Upward, from nothing.
+    _move_to(runner, "0005_discovery")
+    assert runner.current_revision() == "0005_discovery"
+
+    # Upward, from a revision.
+    _move_to(runner, "0007_projects_and_knowledge_base")
+    assert runner.current_revision() == "0007_projects_and_knowledge_base"
+
+    # ⚠️ Downward — the direction `upgrade` silently refuses.
+    _move_to(runner, "0006_content_and_dedup")
+    assert runner.current_revision() == "0006_content_and_dedup"
+
+    # And a no-op stays put rather than erroring.
+    _move_to(runner, "0006_content_and_dedup")
+    assert runner.current_revision() == "0006_content_and_dedup"
+
+
+def test_upgrade_alone_cannot_move_backwards(tmp_path):
+    """The mechanism behind the regression, asserted so it is not re-learned.
+
+    If a future alembic makes ``upgrade`` downgrade, this fails and ``_move_to``
+    can be simplified. Until then it documents *why* ``_move_to`` exists —
+    measured, not assumed.
+    """
+    from src.db.migrate import MigrationRunner
+
+    db_path = tmp_path / "forward-only.db"
+    runner = MigrationRunner(db_path)
+    runner.upgrade("0007_projects_and_knowledge_base")
+
+    runner.upgrade("0006_content_and_dedup")  # a target BELOW current
+
+    assert runner.current_revision() == "0007_projects_and_knowledge_base", (
+        "alembic's upgrade now moves backwards; _move_to's downgrade branch can go"
+    )
 
 
 def test_the_dangling_fk_guard_actually_covers_0006():
@@ -532,20 +634,32 @@ def test_a3_the_alter_did_not_rewrite_a_single_row(tmp_path):
     has already failed three times for machine load rather than for slowness.
     A timing test here would measure the CI runner, not the migration.
 
-    ⚠️ **Pinned to ``0006``, not ``head``, from P12 on.** This asserts a property
-    of *this* revision -- that its four ``ADD COLUMN``s are metadata-only. ``0007``
-    legitimately **does** rebuild ``leads``, because closing the deferred
-    ``project_id`` foreign key needs a create-copy-drop-rename and SQLite has no
-    ``ADD CONSTRAINT``. Left as ``head`` this test would have read that correct
-    rebuild as a P8 defect. The assertion below is unchanged; only the revision
-    it is made at is pinned to the one the docstring is about. ``0007``'s
-    equivalent guarantee -- that the rebuild preserved every row, score and index
-    -- is asserted by ``tests/test_schema_0007.py::
+    ⚠️ **Scoped to the ``0005 -> 0006`` step, from P12 on.** This asserts a
+    property of *this* revision -- that its four ``ADD COLUMN``s are
+    metadata-only. ``0007`` legitimately **does** rebuild ``leads``, because
+    closing the deferred ``project_id`` foreign key needs a
+    create-copy-drop-rename and SQLite has no ``ADD CONSTRAINT``. Left as
+    ``head`` this test would have read that correct rebuild as a P8 defect.
+    ``0007``'s equivalent guarantee -- that the rebuild preserved every row,
+    score and index -- is asserted by ``tests/test_schema_0007.py::
     test_up_down_up_on_a_copy_of_the_live_database``.
+
+    ⚠️ **It must take ``before`` at ``0005``, and that is what P12 got wrong.**
+    Pinning the target to ``0006`` was not enough: ``upgrade`` only moves
+    forward, so once ``data/leads.db`` reached ``0007`` the call did **nothing**
+    and this test compared ``rootpage`` with itself -- **passing while proving
+    nothing**, which is worse than the loud failure its sibling gave. The copy
+    is now moved to ``0005`` first, in whichever direction that needs, so the
+    ``ALTER`` this test is about actually executes between the two reads.
     """
     from src.db.migrate import MigrationRunner
 
     db_path = _raw_copy(tmp_path)
+    runner = MigrationRunner(db_path)
+
+    # The step under test is 0005 -> 0006. Stand at 0005 before measuring, or
+    # the ALTER never runs between the two reads.
+    _move_to(runner, "0005_discovery")
 
     conn = sqlite3.connect(db_path)
     try:
@@ -556,7 +670,10 @@ def test_a3_the_alter_did_not_rewrite_a_single_row(tmp_path):
     finally:
         conn.close()
 
-    MigrationRunner(db_path).upgrade("0006_content_and_dedup")
+    runner.upgrade("0006_content_and_dedup")
+    assert runner.current_revision() == "0006_content_and_dedup", (
+        "the ALTER under test did not run; this assertion would otherwise be vacuous"
+    )
 
     conn = sqlite3.connect(db_path)
     try:
@@ -687,11 +804,12 @@ def test_a1_up_down_up_on_a_copy_of_the_live_database(tmp_path):
         finally:
             conn.close()
 
-    # ⚠️ `0006`, not `head`. This test is P8's 0006 round-trip and its three
-    # revision assertions say so; once P12 made `head` mean `0007` the literal
-    # `head` would have silently retargeted it to a different rollback. Pinned
-    # rather than loosened -- the assertions below are unchanged.
-    runner.upgrade("0006_content_and_dedup")
+    # ⚠️ `_move_to`, not `upgrade`. This test is P8's 0006 round-trip and its
+    # three revision assertions say so; `head` would have retargeted it when
+    # P12 landed, and `upgrade("0006")` only works while the copy starts at or
+    # below `0006` -- which stopped being true the moment `data/leads.db`
+    # reached `0007`. See `_move_to`. The assertions below are unchanged.
+    _move_to(runner, "0006_content_and_dedup")
     up_count, up_rev = leads_and_head()
     assert up_rev == "0006_content_and_dedup"
 
@@ -745,7 +863,7 @@ def test_a1_up_down_up_on_a_copy_of_the_live_database(tmp_path):
     assert not fk_violations, f"downgrade left FK violations: {fk_violations}"
     assert integrity == "ok", f"downgrade corrupted the database: {integrity}"
 
-    runner.upgrade("0006_content_and_dedup")
+    _move_to(runner, "0006_content_and_dedup")
     re_count, re_rev = leads_and_head()
     assert re_rev == "0006_content_and_dedup"
 

@@ -143,7 +143,7 @@ Every figure below is **measured**, on the final code, in the runs recorded here
 
 | # | Check | Result |
 |---:|---|---|
-| 1 | **Full pytest** | ✅ **1903 passed, 2 skipped** in 388.07 s · exit 0 · single uninterrupted run |
+| 1 | **Full pytest** | ✅ **1905 passed, 2 skipped** in 573.83 s · exit 0 · single uninterrupted run, **after** the §4.5 fix. *(The `1903` this report first carried was measured before `data/leads.db` reached `0007` and stopped being reproducible — §4.5.)* |
 | 2 | `ruff check .` | ✅ All checks passed |
 | 3 | `ruff format --check .` | ✅ 175 files already formatted |
 | 4 | **Coverage** | ✅ **89.20%** whole tree (P11: 87%) · `src/{ai,net,scoring}` **90%** against the ≥85% floor · `--cov-fail-under=70` met |
@@ -227,18 +227,99 @@ is metadata-only. `0007` **legitimately does** rebuild `leads` — closing a for
 so as written the test read a correct rebuild as a P8 defect. Pinned to `0006`, with the assertion
 untouched.
 
-### 4.4 One unreproduced failure, stated rather than explained away
+### 4.4 A timing flake, now reproduced and attributed
 
-An intermediate full run reported **1 failed, 1902 passed** in **971 s**. The name was lost to a
-shell filter, and the clean run that followed — **388 s**, less than half the wall clock — was
-green at 1903 passed. The slow run was competing with the mutation harness for CPU, which is the
-documented profile of this repository's three known timing flakes
-([DI18](DEFERRED-IMPROVEMENTS.md), [DI20](DEFERRED-IMPROVEMENTS.md),
-[DI27](DEFERRED-IMPROVEMENTS.md)). **It is recorded here rather than attributed**, because the
-identity was not captured and guessing at one is what [DI27](DEFERRED-IMPROVEMENTS.md) exists to
-warn against. The gate's requirement — one clean uninterrupted run — is met by the 388 s run.
+An intermediate full run reported **1 failed, 1902 passed** in **971 s**; the name was lost to a
+shell filter and it was originally recorded here as *unattributed*.
 
-### 4.5 The skip count moved from 2 to 9, and it is the flag, not the phase
+**It has since reproduced with its identity captured.** A later full run — **849 s**, against the
+same suite's clean **388 s** — failed
+`tests/test_dedupe_performance.py::test_a5_minhash_indexes_and_queries_2000_items_under_two_seconds`
+at **5.77 s CPU against a 2.0 s budget**. It then passed **3/3 in isolation** (module in 7.43 s,
+6.68 s, 6.17 s), and P12 changed nothing under `src/dedupe/`.
+
+That is [DI18](DEFERRED-IMPROVEMENTS.md)'s species — a budget assertion measured on a loaded machine
+— and the register now records it as that entry's **third occurrence**, meeting its stated trigger.
+It is worse news than DI18's original: P10 had **already** hardened A5 to measure
+`time.process_time` rather than wall clock, specifically so machine load could not reach it, and
+contention still inflated it roughly sixfold. **A CPU-time budget is not the fix for this class.**
+
+The earlier 971 s failure has the same profile and is *most likely* the same test — but its identity
+was never captured, so that is inference and is labelled as such rather than asserted.
+
+### 4.5 🔴 A regression this report originally missed, found by the operator's manual T9
+
+**Corrected 2026-08-15, after this report first claimed `1903 passed, 2 skipped`.** That number was
+true when measured and **not reproducible afterwards**, which is the defect.
+
+**What failed:** `tests/test_migrations.py::test_a1_up_down_up_on_a_copy_of_the_live_database`,
+expecting `0006_content_and_dedup` and getting `0007_projects_and_knowledge_base`.
+
+**Root cause — `upgrade()` only ever moves forward.** Alembic's `command.upgrade` treats a target
+*below* the current revision as "nothing to do" and returns **success, silently**; it never
+downgrades. Measured:
+
+```
+copy starts at        : 0007_projects_and_knowledge_base
+after upgrade('0006') : 0007_projects_and_knowledge_base
+```
+
+`_raw_copy()` copies `data/leads.db` **at whatever revision it happens to be** — environment state
+this suite never controlled. Three tests then called `upgrade(target)` to reach a revision behind
+head, which worked only while the live file sat at or below their target.
+
+**P12 is what made it reachable, twice over.** Pinning those tests from `head` to `0006` (§2) was
+correct and insufficient — it fixed the target and not the *starting point*. Then `0007` arrived and
+the live database reached it (§5.1), and from that moment:
+
+| Test | Outcome |
+|---|---|
+| `test_a1_up_down_up_on_a_copy_of_the_live_database` | ❌ **Failed loudly** — the one the operator caught |
+| `test_a3_the_alter_did_not_rewrite_a_single_row` | ⚠️ **Passed vacuously** — comparing `leads.rootpage` before and after an operation that did nothing. **The worse outcome**, and invisible |
+| `test_schema_0007.py::test_up_down_up_on_a_copy_of_the_live_database` | ⚠️ Took its `before` snapshot at `0007` instead of `0006` |
+
+Before P12 the bug was **latent, not absent**: the live database was never *ahead* of any test's
+target because `0006` was head. It was one revision away from biting the whole time.
+
+**The fix** is `_move_to(runner, revision)` in `tests/test_migrations.py` — it compares positions in
+the chain and moves **up or down** as needed, asserting it landed. All three call sites use it;
+`test_a3` additionally now stands at `0005` first, so the `ALTER` it is about actually executes
+between its two reads. Two new tests pin the property directly:
+`test_move_to_goes_both_ways` and `test_upgrade_alone_cannot_move_backwards`.
+
+**Verified in both directions, which is the point:** the whole of `test_migrations.py` and
+`test_schema_0007.py` — **56 passed** — with the live database at `0007`, and again at `0006`
+(downgraded and restored through `main.py migrate`, each step taking its own M7 backup). The full
+suite then ran **1905 passed, 2 skipped** in 573.83 s, exit 0.
+
+**Two tests were added, so the count moves 1903 → 1905.** That is the fix, not a coincidence.
+
+### 4.6 🔴 Why CI was green, and what that says about CI
+
+**CI never ran the failing test.** Measured on P12's own run `31879457795`:
+
+| | Passed | Skipped |
+|---|---:|---:|
+| CI | **1893** | **12** |
+| Local | **1903** | **2** |
+
+Exactly **ten** tests differ. `data/leads.db` is gitignored (`.gitignore:11:data/*.db`) — correctly,
+because it holds real Reddit usernames and permalinks that [lock §5](EXECUTION_MODE_LOCK.md) H2
+forbids committing. On a fresh checkout `_raw_copy()` and the `live_db_copy` fixture both hit
+`pytest.skip("no live database present")`.
+
+So CI reported green on a genuinely broken test, and it would have reported green on the vacuous one
+too. **[35 §2.3](35-testing-strategy.md) lists the migration round-trip on a copy of `leads.db`
+among the four checks it calls non-negotiable, "because it guards the live database — K14,
+Critical" — and in CI it has never guarded anything.** Registered as
+[DI30](DEFERRED-IMPROVEMENTS.md); its trigger has already fired, and the fix needs an operator
+decision because an anonymised fixture no longer has the property these tests exist for.
+
+**The honest reading of this phase's gate:** the automated suite passed, and the thing that caught
+the defect was **a human executing the manual guide** — which is precisely what
+[35 §1](35-testing-strategy.md) says the manual guide is for.
+
+### 4.7 The skip count moved from 2 to 9 under `--cov`, and it is the flag, not the phase
 
 Plain `pytest` reports **2 skipped**, the same two as P11 (`PROXY_FILE is not set`; `no proxy pool
 configured on this machine`). Under `--cov` it reports **9**, and the seven extra are P10's

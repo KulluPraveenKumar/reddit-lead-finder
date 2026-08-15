@@ -131,10 +131,28 @@ assertion**, because a reflection that drops the `reddit_id` UNIQUE leaves a dat
 run the manual guide. `python scripts/check_schema.py --db data/leads.db` now expects `0007`; add
 `--skip-p12` for a database that has not been upgraded. `--skip-p8` implies `--skip-p12`.
 
-**T8 — `test_a1_...` and `test_a3_...` in `test_migrations.py` are pinned to `0006`, not `head`.**
-Both are P8's tests about P8's revision, and `head` silently retargeted them when `0007` landed —
-`test_a3` then failed, correctly reporting `0007`'s legitimate `leads` rebuild as a P8 defect. **Any
-phase adding a revision must check for `upgrade("head")` in tests that mean a specific revision.**
+**T8 — 🔴 `upgrade()` only moves FORWARD, and three tests copy a database whose revision you do not
+control.** This is the regression P12 shipped and the operator caught running T9 by hand.
+
+`_raw_copy()` copies `data/leads.db` **at whatever revision the developer's file happens to be**.
+Alembic's `command.upgrade` treats a target below the current revision as *"nothing to do"* and
+returns **success, silently** — it never downgrades. So `upgrade("0006")` on a copy that starts at
+`0007` leaves it at `0007`. Measured. One test failed loudly; `test_a3_the_alter_did_not_rewrite_a_
+single_row` **passed vacuously**, comparing `leads.rootpage` before and after an operation that did
+nothing — the worse outcome, and invisible.
+
+**Use `_move_to(runner, revision)`**, which compares chain positions and moves either way, asserting
+it landed. `test_move_to_goes_both_ways` and `test_upgrade_alone_cannot_move_backwards` pin the
+property. **Any phase adding a revision must check every `upgrade(...)` in a test that means a
+specific revision, and must ask what happens when the live database is *ahead* of it** — because
+`0008` will make `0007` a revision the live file is ahead of, exactly as `0007` did to `0006`.
+
+**T9 — 🔴 CI does not run the ten live-database tests, and cannot.** `data/leads.db` is gitignored
+(it holds real usernames and permalinks — H2), so a fresh checkout skips them. Measured on P12's run
+`31879457795`: **1893 passed / 12 skipped** in CI against **1903 / 2** locally. **A green CI run is
+not evidence that the migration round-trip works** — [35 §2.3](35-testing-strategy.md) calls that
+check non-negotiable and CI has never executed it. [DI30](DEFERRED-IMPROVEMENTS.md); run the suite
+locally before believing a schema phase is green.
 
 ---
 
@@ -152,13 +170,16 @@ phase adding a revision must check for `upgrade("head")` in tests that mean a sp
 | **DI15** | An eighth job type shipped unreconciled. **P12 added none** | Unchanged |
 | **DI16 / T1 (P8)** | `leads.confidence_score` exists, not populated | **P21** |
 | **DI17** | Nothing enqueues `maintenance` | **P17** |
+| **DI30** | 🔴 **New.** CI cannot run the ten live-database tests, so [35 §2.3](35-testing-strategy.md)'s non-negotiable migration round-trip has never been verified there. **Its trigger already fired** — P12's regression reached `main` green | Operator — the fix needs a design decision |
+| **DI18** | **Third occurrence, and a second test.** `test_a5_...` failed at 5.77 s CPU against a 2.0 s budget in an 849 s run, passing 3/3 in isolation. A CPU-time budget did **not** immunise it | Trigger now met |
 | **DI29** | **New.** The literal `grep` form of fences 2 and 3 in [35 §2.1](35-testing-strategy.md) returns 6 and 2 matches — **all docstrings and comments, no import statements**. The AST-based `tests/test_boundaries.py` is the shipped enforcement and passes | *Someone runs the documented command and reads its output as a fence breach* |
 | **DI20 · DI22 · DI27** | Triggers not satisfied across this phase | *A further occurrence* |
 | **L4 (P7)** | Notification retry — **still nobody's** | Open since P7 |
 | **O2** | `mypy`, deferred by D6 in P8. P12's new code ships clean under it | Its own scoped task |
 
-**No Deferred Improvement was closed. One was opened — [DI29](DEFERRED-IMPROVEMENTS.md).** DI28 was
-considered and declined with its reasoning recorded, which is what its trigger asked for.
+**No Deferred Improvement was closed. Two were opened — [DI29](DEFERRED-IMPROVEMENTS.md) and
+[DI30](DEFERRED-IMPROVEMENTS.md) — and [DI18](DEFERRED-IMPROVEMENTS.md) reached its trigger.** DI28
+was considered and declined with its reasoning recorded, which is what its trigger asked for.
 
 ---
 
@@ -179,8 +200,8 @@ considered and declined with its reasoning recorded, which is what its trigger a
 
 | | |
 |---|---|
-| Full suite | **1903 passed, 2 skipped** in 388.07 s (P11: 1871 / 2) |
-| New tests | **+32** |
+| Full suite | **1905 passed, 2 skipped** in 573.83 s (P11: 1871 / 2) |
+| New tests | **+34** |
 | Coverage, whole tree | **89.20%** (P11: 87%) · `src/{ai,net,scoring}` **90%**, against the ≥85% floor |
 | `ruff check` / `format --check` | Clean · 175 files |
 | `alembic heads` | `0007_projects_and_knowledge_base` — one head; seven revisions of ten |
@@ -222,7 +243,8 @@ considered and declined with its reasoning recorded, which is what its trigger a
 - [ ] [34 §P13](34-implementation-plan.md) read — all thirteen fields, including **direct egress**
       (`request_class="website"`, AD-25) and the **`file://` → 422** validation
 - [ ] `phase-manager` skill loaded before the first edit under `src/`
-- [ ] The full suite recorded green before the first change — **1903 passed, 2 skipped**
+- [ ] The full suite recorded green before the first change — **1905 passed, 2 skipped**. ⚠️ **Run
+      it locally, not from a CI badge** — see §4 T9
 - [ ] `git status` clean · `alembic heads` = one `0007`
 - [ ] ⚠️ **`check_schema.py` now expects `0007`**, and the live database is already there — so the
       bare command works. `--skip-p12` is for a database deliberately left at `0006`
