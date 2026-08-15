@@ -233,15 +233,39 @@ unchanged and its warning was honoured: the suite was run **locally**, not read 
 
 ## 7. Commits
 
-To be recorded on commit; see §10.
+| Commit | Message |
+|---|---|
+| **`a1ea5c2`** | `feat(P13): the website fetcher, six local signals, and zero AI` |
+
+One commit, 22 files, **+4,140 / −21**. Pushed to `origin/main` (`d0ef28c..a1ea5c2`); `git status -sb`
+reports `## main...origin/main` with no ahead count.
+
+**Repository hygiene ([lock §5](EXECUTION_MODE_LOCK.md) H1–H8), against the staged diff:**
+
+- Every one of the 22 files justified in §2 and §3. No `.db`, no `.log`, no scratch file.
+- Secret scan: every match of `token` is prose or code **about parsing tokens** — `_NAME` splitting,
+  a comment about CSRF tokens. **No credential shape.**
+- Absolute-path scan: **one** match, `"file://C:/Users/someone/.env"` — a **synthetic** test input in
+  the `file://` rejection parametrisation, deliberately Windows-shaped. It names no real user and
+  leaks nothing; it is kept because a Windows file URL is a case worth refusing explicitly.
+- `git check-ignore -v` confirms `.gitignore:2` ignores `.env` and `.gitignore:11` ignores
+  `data/leads.db`.
 
 ---
 
 ## 8. CI status
 
-To be recorded after the push; see §10. ⚠️ **A green CI run is not evidence this phase is sound** —
-[DI30](DEFERRED-IMPROVEMENTS.md): CI skips the ten live-database tests because `data/leads.db` is
-gitignored. The local run in §4.1 is the one that counts.
+✅ **Green** — run [`31890330477`](https://github.com/KulluPraveenKumar/reddit-lead-finder/actions/runs/31890330477),
+`conclusion: success`, gate in 4m22s. `ruff check` clean; `pytest` **2023 passed, 12 skipped** in
+238.27 s.
+
+⚠️ **That is ten fewer passes and ten more skips than the local run**, and the difference is
+[DI30](DEFERRED-IMPROVEMENTS.md), not a regression: `data/leads.db` is gitignored, so a fresh checkout
+skips the ten live-database tests — **including the migration round-trip
+[35 §2.3](35-testing-strategy.md) calls non-negotiable**. P12's run showed the same signature
+(1893/12 in CI against 1903/2 locally). **A green CI run is not evidence this phase is sound.** The
+local **2033 passed / 2 skipped** in §4.1 is the one that counts, and it is why the manual guide's T9
+tells the operator to run the suite themselves.
 
 ---
 
