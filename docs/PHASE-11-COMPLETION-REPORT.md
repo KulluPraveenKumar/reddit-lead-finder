@@ -64,7 +64,7 @@ set. **Nothing here is silent.**
 | File | | Why |
 |---|---|---|
 | `src/scoring/__init__.py` | + | **Forced.** The Files row names a *directory*; a module cannot contain a module |
-| `src/scoring/legacy.py` | + | `git mv` of `src/scoring.py`, byte-for-byte. R20's `intent_score` must not move a digit |
+| `src/scoring/legacy.py` | + | `git mv` of `src/scoring.py`, **byte-for-byte — proved, not assumed**. `git rev-parse HEAD~1:src/scoring.py` and `HEAD:src/scoring/legacy.py` both return blob **`8eaf3ccb960d45713e8286d5abeeb4e3cee6edf9`**, and the commit records `rename … (100%)`. R20's `intent_score` must not move a digit, and `ruff format --check` no longer inspects the file, so the blob hash is the evidence |
 | `src/scoring/holdout.py` | + | Task 6's sampler. Pure, so it is testable from literals |
 | `src/scoring/funnel.py` | + | Task 2's counters, and DI23's mapping |
 | `src/scoring/__main__.py` | + | [35 §1](35-testing-strategy.md) needs a guide a non-developer can execute |
@@ -90,7 +90,7 @@ construction rather than by care.
 | [34 §P11](34-implementation-plan.md) | Evidence |
 |---|---|
 | Every collected item has a `prescores` row, admitted or not | `test_every_collected_item_gets_a_prescores_row_admitted_or_not`. The `CHECK` wall P6 filed is discharged by **D3** without a schema change |
-| **A2 measured** — against the assumed 73% *(bold)* | **Measured: 75.4% archive · 20.9% in-window.** Both published; the gap is structural and explained at [P11-DECISION-ANALYSIS §A2](P11-DECISION-ANALYSIS.md). Mutations **M1, M28** |
+| **A2 measured** — against the assumed 73% *(bold)* | **Measured: 75.4% archive · 20.9% in-window.** ⚠️ **The criterion is *"measured and recorded"*, and it is met.** [27 §10](27-architecture-review.md) lists A2 as an **unvalidated assumption** — *"❓ Sprint 3, on real data"* — so P11 **is** the validation, and its result is that **the assumption is not yet checkable against this corpus**: 06c §8 reaches 73% by counting `already_analyzed` (26% of its example, needing P19/P20's response cache) and `negative_term` (its largest single filter, and `discovery.negative_terms` ships **empty**). A reader seeing 20.9% should read *"the measurement was done and says the target is not measurable here yet"*, not *"a target was missed"*. **No filter was tuned toward 73%** — P10's precedent for the collapse metric. Full reasoning at [P11-DECISION-ANALYSIS §A2](P11-DECISION-ANALYSIS.md). Mutations **M1, M28** |
 | Comment candidates ordered by pre-score; collected comments fall ≥5% with **no** reduction in admitted items | `test_candidates_are_requested_in_descending_prescore_order`, `test_the_saving_beats_the_five_percent_target_on_a_realistic_run`. A **within-run counterfactual** — nothing called `get_post_comments` before this phase, so there is no live baseline. Admitted items are unaffected: ordering changes *which* posts get a request, never whether an item is admitted. Mutations **M40, M43** |
 | Re-running comment extraction creates **zero** duplicates | `test_re_running_comment_extraction_creates_zero_duplicates`, against the real `ux_comments_hash` index. Mutations **M37, M38, M39** |
 | Search-sourced `score` back-filled | `test_a_search_sourced_score_is_back_filled_during_the_comment_fetch`. Required DI13 first — see §5. Mutation **M42** |
@@ -171,6 +171,14 @@ Both defaults removed. **No migration** — they are Python-side only, the colum
 untouched, and the 459 original rows keep their values. Rendering was fixed at the two read sites: a
 NULL exports as an **empty CSV cell** (`csv.writer` renders `None` as empty, pinned by a test) and
 displays as an **em dash**, never the string `None`.
+
+> ⚠️ **What keeps DI13 closed is one test, and it is worth naming.** `check_schema.py` passed
+> **51/51 both before and after** — it inspects the *schema*, and a Python-side default is not in the
+> schema. So nothing in the standing gate would notice a future phase re-adding `default=0`.
+> **`tests/test_unknown_metrics.py::test_an_unknown_score_persists_as_null` is the guarantee**
+> (handover **G8**), alongside `test_a_known_zero_persists_as_zero` for the other direction. Mutation
+> **M44** confirms it detects the reintroduction. A reader deleting that file re-opens a closed
+> register entry silently.
 
 ---
 
