@@ -276,6 +276,15 @@ extracts; BeautifulSoup with `script/style/nav/footer/header` stripped is the fa
 > names, and it said only *"goes through `ProxiedHTTPClient`"* — true, and silent on the half that
 > matters. Editing `network.direct.classes` cannot switch it off.
 >
+> ⚠️ **The fallback strips exactly the five tags named above, and P13 shipped a sixth by mistake.**
+> `noscript` was added to the list and the operator's manual run caught it: on a JavaScript-only
+> shell the `<noscript>` block is frequently the only human-readable sentence on the page, so
+> stripping it took the SPA fixture from *"This application requires JavaScript."* down to the bare
+> title. Corrected; `src.ai.website_fetcher.FALLBACK_STRIPPED_TAGS` is now the five and a test pins
+> the count. **The reason it survived the automated gate is worth more than the fix**: the test that
+> named the fallback ran with `trafilatura` installed, so trafilatura answered and the fallback branch
+> never executed.
+>
 > **As shipped, `ExtractedSite` carries three fields beyond the five above** — `from_cache`,
 > `requests_made` and `html_pages` — additively. `requests_made` is what the zero-fetch acceptance
 > criterion is asserted against; `html_pages` is what `site_signals.extract` reads, and it is **empty

@@ -94,6 +94,13 @@ THIN_CONTENT_CHARS = 500
 #: via a malicious project URL).
 ALLOWED_SCHEMES: frozenset[str] = frozenset({"http", "https"})
 
+#: What the BeautifulSoup fallback removes before reading the text.
+#:
+#: **Exactly the five [14 §9.1](../../docs/14-phase-04.md) names, and a sixth is
+#: not a free improvement.** P13 shipped with ``noscript`` added and it discarded
+#: the only sentence on a JavaScript-only page — see :func:`extract_text`.
+FALLBACK_STRIPPED_TAGS: tuple[str, ...] = ("script", "style", "nav", "footer", "header")
+
 
 # ------------------------------------------------------------------ errors
 
@@ -349,6 +356,32 @@ def priority_links(html: str, base_url: str, limit: int) -> list[str]:
 # --------------------------------------------------------------- extraction
 
 
+#: Set once the missing-dependency warning has been emitted. A module-level flag
+#: rather than ``logging``'s own dedup because the message must appear once per
+#: *process*, not once per logger configuration.
+_trafilatura_warned = False
+
+TRAFILATURA_MISSING_MESSAGE = (
+    "trafilatura is not installed, so every page is being read by the "
+    "BeautifulSoup fallback and the extracted text will be worse. It is a "
+    "required dependency (requirements.txt, ARCHITECTURE_FREEZE §5). Fix with: "
+    "python -m pip install -r requirements.txt"
+)
+
+
+def _warn_trafilatura_missing() -> None:
+    global _trafilatura_warned
+    if not _trafilatura_warned:
+        _trafilatura_warned = True
+        log.warning(TRAFILATURA_MISSING_MESSAGE)
+
+
+def reset_trafilatura_warning() -> None:
+    """Test hook: re-arm the once-per-process warning."""
+    global _trafilatura_warned
+    _trafilatura_warned = False
+
+
 def extract_text(html: str, url: str = "") -> str:
     """Readable text from one page: ``trafilatura``, then BeautifulSoup.
 
@@ -360,13 +393,30 @@ def extract_text(html: str, url: str = "") -> str:
     a nav-heavy page entirely would silently shrink the text the whole knowledge
     base is built from.
 
-    ``script``/``style``/``nav``/``footer``/``header`` are stripped in the
-    fallback per [14 §9.1](../../docs/14-phase-04.md); the whole point is to stop
-    the same menu appearing seven times in a 40 KB budget.
+    :data:`FALLBACK_STRIPPED_TAGS` are removed in the fallback, and the list is
+    exactly the five [14 §9.1](../../docs/14-phase-04.md) names; the whole point
+    is to stop the same menu appearing seven times in a 40 KB budget.
+
+    ⚠️ **``noscript`` is deliberately NOT one of them, and P13 originally shipped
+    it as a sixth.** On a JavaScript-only shell — the case
+    [06 §2.3](../../docs/06-ai-pipeline.md) sends down the ``thin_content`` path —
+    the ``<noscript>`` block is frequently the *only* human-readable sentence on
+    the page. Stripping it took `spa_shell.html` from
+    *"This application requires JavaScript."* down to the bare title ``Nimbus``.
+    Measured, and caught by the operator running the manual guide.
+
+    **Two failure modes reach the fallback and they are not the same thing**, so
+    they are logged differently. A per-page parse failure is routine and is
+    logged at INFO. **trafilatura being absent is a broken installation**, is
+    logged once at WARNING with the command that fixes it, and would otherwise be
+    invisible: every page would quietly extract worse text and nothing would say
+    why. That is the *"silent, plausible, completely wrong answer"* this codebase
+    treats as worse than an error (``src/net/blocks.py``).
     """
     if not html or not html.strip():
         return ""
 
+    extracted = None
     try:
         import trafilatura
 
@@ -376,12 +426,17 @@ def extract_text(html: str, url: str = "") -> str:
             include_comments=False,
             include_tables=True,
         )
+    except ImportError:
+        # NOT the same as the branch below. The dependency is declared in
+        # requirements.txt and named in freeze §5; if it is missing, every page
+        # in every run extracts worse text, and an INFO line per page reads as
+        # routine. Warned once per process so it is visible without being noise.
+        _warn_trafilatura_missing()
     except Exception as exc:  # noqa: BLE001 - one page's extractor is not the run
         # A parser that raises on one malformed page must not lose the other
         # six. The fallback below reads the same markup with a more forgiving
         # parser, which is exactly what it is for.
         log.info("trafilatura could not read %s (%s); falling back to BeautifulSoup", url, exc)
-        extracted = None
 
     if extracted and extracted.strip():
         return extracted.strip()
@@ -389,7 +444,7 @@ def extract_text(html: str, url: str = "") -> str:
     from bs4 import BeautifulSoup
 
     soup = BeautifulSoup(html, "lxml")
-    for tag in soup(["script", "style", "nav", "footer", "header", "noscript"]):
+    for tag in soup(list(FALLBACK_STRIPPED_TAGS)):
         tag.decompose()
     return soup.get_text(separator="\n", strip=True)
 
@@ -774,8 +829,10 @@ if __name__ == "__main__":  # pragma: no cover - exercised through main()
 
 __all__ = [
     "ALLOWED_SCHEMES",
+    "FALLBACK_STRIPPED_TAGS",
     "PRIORITY_PATHS",
     "THIN_CONTENT_CHARS",
+    "TRAFILATURA_MISSING_MESSAGE",
     "ExtractedSite",
     "InvalidWebsiteURL",
     "WebsiteFetchError",
@@ -788,6 +845,7 @@ __all__ = [
     "normalise_url",
     "priority_links",
     "render_report",
+    "reset_trafilatura_warning",
     "save_snapshot",
     "validate_url",
 ]

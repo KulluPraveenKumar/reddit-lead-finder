@@ -56,6 +56,34 @@ can continue.
 **Possible failure:** `No module named pip` → you are using the system Python rather than the
 project's. The `.\.venv\Scripts\python.exe` prefix is not optional.
 
+**Now confirm it actually landed, before running anything else.** ⚠️ **Added after the first P13
+manual run**, where `ModuleNotFoundError: trafilatura` surfaced eight steps later and looked like a
+code failure rather than a setup one:
+
+```powershell
+.\.venv\Scripts\python.exe -c "import trafilatura; print('trafilatura', trafilatura.__version__)"
+```
+
+**Expected:**
+
+```
+trafilatura 2.2.0
+```
+
+**PASS if:** a version prints.
+**FAIL if:** `ModuleNotFoundError: No module named 'trafilatura'` → the install above did not reach
+the interpreter you are testing with. The commonest cause is two Pythons: `pip` from one, `pytest`
+from another. Re-run the install command exactly as written, with the `.\.venv\Scripts\python.exe -m`
+prefix, and do not continue until this prints a version.
+
+> **What happens if you skip this.** The product **still works** — `WebsiteFetcher` falls back to
+> BeautifulSoup and every step below still passes. But the extracted text is worse, and the run logs
+> one warning saying so:
+> *"trafilatura is not installed, so every page is being read by the BeautifulSoup fallback… Fix
+> with: python -m pip install -r requirements.txt"*. Two tests will `SKIP` rather than fail. Before
+> the first manual run the code said nothing about it, which is what made this worth a step of its
+> own.
+
 **2. Kill any stale dashboard.** Not needed for these steps, but a server left running from an
 earlier session serves the old code and that looks exactly like a broken change.
 
@@ -119,8 +147,8 @@ above character for character.
 
 | Field | Value |
 |---|---|
-| Possible failure | `ModuleNotFoundError: No module named 'trafilatura'` |
-| Troubleshooting | You skipped **Before you start** step 1 |
+| Possible failure | A `trafilatura is not installed` **warning** before the report |
+| Troubleshooting | You skipped **Before you start** step 1. The command still succeeds — the numbers above are trafilatura's, so a fallback run may report a different character count and hash |
 | Logs to verify | the `thin content` warning line, which is the log, printed first |
 | Database values | none — this command writes nothing to the database, by design |
 | API response | none — P13 has no API. That is **P16** |
@@ -300,7 +328,7 @@ the last person we want to alarm.
 **Expected — the last line:**
 
 ```
-6 passed, 73 deselected in 1.96s
+6 passed, 84 deselected in 1.77s
 ```
 
 **PASS if:** `6 passed` and **0 failed**.
@@ -332,10 +360,10 @@ database rather than assumed.
 **Expected — the last line:**
 
 ```
-10 passed, 69 deselected in 9.87s
+12 passed, 78 deselected in 8.76s
 ```
 
-**PASS if:** `10 passed` and **0 failed**.
+**PASS if:** `12 passed` and **0 failed**.
 **FAIL if:** `test_a_second_analysis_inside_the_window_makes_zero_fetches` fails — that is the
 zero-request guarantee, and it counts requests rather than timing them.
 
@@ -353,6 +381,37 @@ zero-request guarantee, and it counts requests rather than timing them.
 | Database values | the test itself asserts `SELECT COUNT(*) FROM ai_calls` is `0` |
 | API response | none |
 | Acceptance | *"unchanged fingerprint within 7 days makes **zero** fetches"* · *"**zero AI calls in this phase**"* |
+
+---
+
+## T7b — The text extractor and its backup both work
+
+⚠️ **Added after the first manual run**, which found that the backup extractor was discarding almost
+an entire page — and that the test covering it had never actually run the backup, because the main
+extractor was installed and answered first.
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests\test_website_fetcher.py -k "Extraction or MissingDependency"
+```
+
+**Expected — the last line:**
+
+```
+14 passed, 76 deselected in 1.91s
+```
+
+**PASS if:** `14 passed` and **0 failed**.
+**FAIL if:** `test_a_page_with_no_article_still_yields_its_text` fails — that is the original bug
+returning. It now forces the backup extractor to run, so it can no longer pass by accident.
+
+| Field | Value |
+|---|---|
+| Possible failure | `test_noscript_is_not_stripped_by_the_fallback` fails |
+| Troubleshooting | Someone re-added `noscript` to the strip list. On a JavaScript-only page that is the only sentence there is |
+| Logs to verify | none |
+| Database values | none |
+| API response | none |
+| Acceptance | *"`trafilatura` extraction, BeautifulSoup fallback"* · *"SPA shell sets `thin` and the run still completes"* |
 
 ---
 
@@ -469,7 +528,7 @@ OK — all 76 checks passed.
 
 ## T9 — The full suite is green
 
-The long one. Roughly 20 minutes; leave it running.
+The long one. Roughly 7–20 minutes depending on the machine; leave it running.
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest
@@ -478,10 +537,10 @@ The long one. Roughly 20 minutes; leave it running.
 **Expected — the last line:**
 
 ```
-2035 passed, 2 skipped in 1205.35s (0:20:05)
+2044 passed, 2 skipped in 436.50s (0:07:16)
 ```
 
-**PASS if:** `2035 passed` and `2 skipped`, with **0 failed**.
+**PASS if:** `2044 passed` and `2 skipped`, with **0 failed**.
 **FAIL if:** any failure. Record the test name; it is more useful than the count.
 
 > ⚠️ **Run this locally, not from the CI badge.** Ten tests use your real database, which is not in
@@ -511,6 +570,7 @@ The long one. Roughly 20 minutes; leave it running.
 | `file://` rejected at validation | **T2** |
 | **Zero AI calls in this phase** | **T7** |
 | Bounded crawl: landing + ≤6 priority paths, ≤40 KB | **T4** |
+| `trafilatura` extraction, **BeautifulSoup fallback** | **T7b** |
 | Local signals: competitors, pricing, tech, schema.org, social, nav | **T1**, **T5** |
 | `thin_content` when < 500 chars | **T1** |
 | ≤7 requests per project version | **T4** |
@@ -533,6 +593,7 @@ The long one. Roughly 20 minutes; leave it running.
 | T5 | The pricing and competitor readings match a page you can see | ☐ PASS ☐ FAIL | | |
 | T6 | **The customer's site is read from your own address, never the proxy pool** | ☐ PASS ☐ FAIL | | |
 | T7 | **A second read costs zero requests, and zero AI calls were made** | ☐ PASS ☐ FAIL | | |
+| T7b | **The backup text extractor works, and no longer discards the page** | ☐ PASS ☐ FAIL | | |
 | T8 | The database did not move, and the 459 leads are intact | ☐ PASS ☐ FAIL | | |
 | R1 | Deleting the config block changes nothing | ☐ PASS ☐ FAIL | | |
 | R2 | **The rollback works, down and back up, on real data** | ☐ PASS ☐ FAIL | | |

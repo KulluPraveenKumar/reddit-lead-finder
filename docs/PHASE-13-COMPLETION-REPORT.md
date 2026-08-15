@@ -55,13 +55,90 @@ absence a reader has to notice.
 
 ---
 
+## 1a. ⚠️ Operator manual-test findings, 2026-08-15 — two failures, one root cause
+
+**The first manual run of `docs/testing/P13-testing.md` failed twice, and both failures came from the
+same fact: `trafilatura` was not importable in the environment being tested.** Reproduced exactly
+before anything was changed, by blocking the import rather than uninstalling the package.
+
+### Failure 2 first, because it is the real defect
+
+> `test_a_page_with_no_article_still_yields_its_text` — expected `"JavaScript"`, got `"Nimbus"`.
+
+**Cause: BeautifulSoup fallback logic.** Not a code regression, not a fixture change, not a
+dependency-version issue. Measured on `spa_shell.html`:
+
+| Path | Returns |
+|---|---|
+| `trafilatura.extract` | `'This application requires JavaScript.'` |
+| BeautifulSoup fallback | `'Nimbus'` — the bare `<title>` |
+
+P13 shipped `noscript` in the fallback's strip list. [14 §9.1](14-phase-04.md) names **five** tags —
+`script`, `style`, `nav`, `footer`, `header` — and I added a sixth on my own initiative. On a
+JavaScript-only shell the `<noscript>` block is frequently the **only human-readable sentence on the
+page**, and that is precisely the case [06 §2.3](06-ai-pipeline.md) routes down the `thin_content`
+path. Stripping it discarded the whole page.
+
+**Why the automated gate did not catch it, which matters more than the fix.** The test's own docstring
+said *"The BeautifulSoup fallback"* — and it **never ran the fallback**. `trafilatura` was installed,
+it read the fixture perfectly well, and the assertion passed on *its* output. The branch the test was
+named for had never executed on this host. That is [35 §2.4](35-testing-strategy.md)'s *"a test that
+has never been seen to fail is not evidence"* in its exact form, and it is the same shape as P5's F3
+and P12's forced-`sqlite_vec`-failure — **with the polarity reversed**: P12 had to force a dependency
+to be *absent* because it always was; here the dependency is always *present*, so the absent-path was
+the one nobody exercised.
+
+### Failure 1
+
+> `ModuleNotFoundError: trafilatura`
+
+**Partly environment, partly incomplete on our side — and the incomplete part is ours to own.**
+
+* `requirements.txt` does list `trafilatura>=2.0`, and `pyproject.toml` declares **no dependencies at
+  all**, so `pip install -r requirements.txt` is the only install path and it is the one the guide
+  gives. In that narrow sense the instruction was correct.
+* **But three things made the failure worse than it needed to be**, and all three are fixed:
+  1. `test_the_fallback_runs_when_trafilatura_raises` did a bare `import trafilatura` in the test
+     body, so a host without it got a **`ModuleNotFoundError` instead of a readable skip** — the
+     *suite* required a dependency the *module* is written to survive without. Now
+     `pytest.importorskip`.
+  2. `extract_text` caught `ImportError` in the same `except Exception` as a per-page parse failure
+     and logged it at **INFO, once per page**, worded *"trafilatura could not read \<url\>"*. A
+     broken installation therefore read exactly like a stubborn page: every page in every run would
+     extract worse text and nothing would say why. **That is the quieter and worse outcome** — the
+     operator's hard failure was the *good* one. `ImportError` is now a separate branch, logged
+     **once per process at WARNING**, naming the command that fixes it.
+  3. The guide asked the operator to install and then went straight to T1; a mis-targeted install
+     surfaced eight steps later looking like a code failure. **Before you start** now has an explicit
+     `import trafilatura; print(version)` verification step with its own PASS/FAIL.
+
+### What changed
+
+| Change | File |
+|---|---|
+| `noscript` removed from the strip list; the five tags are now the named constant `FALLBACK_STRIPPED_TAGS` | `src/ai/website_fetcher.py` |
+| `ImportError` split from the per-page failure branch; `TRAFILATURA_MISSING_MESSAGE` warned once per process | `src/ai/website_fetcher.py` |
+| `without_trafilatura` fixture — forces the fallback branch so it cannot pass vacuously again | `tests/test_website_fetcher.py` |
+| 9 new tests: 4 on the fallback, 5 on missing-dependency behaviour | `tests/test_website_fetcher.py` |
+| A dependency-verification step with its own PASS/FAIL | `docs/testing/P13-testing.md` |
+
+**The product was never broken by this** — `WebsiteFetcher` degrades to the fallback and completes.
+What was broken was the *quality* of the degradation and the *silence* about it.
+
+**Verified in both environments.** With `trafilatura`: **2044 passed, 2 skipped**. With the import
+blocked — the operator's exact state — **2042 passed, 4 skipped, 0 failed**, the two skips being the
+tests that legitimately need the real module to monkeypatch. `example.com`'s T1 content hash is
+**unchanged** (`01d96b8d…`, 285 characters), so the guide's recorded output still holds.
+
+---
+
 ## 2. Files added
 
 | File | Purpose |
 |---|---|
 | `src/ai/website_fetcher.py` | `WebsiteFetcher`, `ExtractedSite`, `WebsiteSettings`, URL validation, the L1 cache, `save_snapshot`, and the operator CLI |
 | `src/ai/site_signals.py` | The six local signals, `SiteSignals`, `PricingSignal` |
-| `tests/test_website_fetcher.py` | 81 tests |
+| `tests/test_website_fetcher.py` | 90 tests |
 | `tests/test_site_signals.py` | 49 tests |
 | `tests/fixtures/sites/landing.html` | A realistic SaaS landing page: nav, footer, priority links, three known script hosts and one unknown, a `@graph` with `Organization`/`Product`/`Offer`/`BreadcrumbList`, four social links, one off-site link, and three competitor phrasings |
 | `tests/fixtures/sites/pricing.html` | Three tiers, two currencies, both intervals, `contact sales`, `custom pricing`, `free trial` |
@@ -101,12 +178,13 @@ absence a reader has to notice.
 |---|---|
 | `ruff check .` | **Clean** |
 | `ruff format --check .` | **Clean** · 179 files |
-| Full suite | **2035 passed, 2 skipped** in 1205.35 s (P12: 1905 / 2) |
-| Full suite **under coverage** | **2028 passed, 9 skipped** in 1600.12 s — the extra 7 are the performance tests, which **self-skip under a tracer** by design (`docs/35` §2.1 checks 4–5); pre-existing behaviour, not a P13 effect |
-| New tests | **+130** — 81 fetcher, 49 signals |
-| Coverage, whole tree | **89.54%**, against the ≥70% gate (P12: 89.20%) |
-| Coverage, `src/{ai,net,scoring}` | **90.29%**, against the ≥85% floor (P12: 90%) |
-| Coverage, the two new modules | **97.27%** combined — `website_fetcher.py` **98.20%** · `site_signals.py` **96.13%** |
+| Full suite | **2044 passed, 2 skipped** in 436.50 s (P12: 1905 / 2) |
+| Full suite, **`trafilatura` import blocked** | **2042 passed, 4 skipped, 0 failed** — the operator's exact environment, reproduced. The 2 extra skips are the tests that need the real module to monkeypatch |
+| Full suite **under coverage** | **2037 passed, 9 skipped** in 624.18 s — the extra 7 are the performance tests, which **self-skip under a tracer** by design (`docs/35` §2.1 checks 4–5); pre-existing behaviour, not a P13 effect |
+| New tests | **+139** — 90 fetcher, 49 signals |
+| Coverage, whole tree | **89.55%**, against the ≥70% gate (P12: 89.20%) |
+| Coverage, `src/{ai,net,scoring}` | **90.31%**, against the ≥85% floor (P12: 90%) |
+| Coverage, the two new modules | **97.34%** combined — `website_fetcher.py` **98.28%** · `site_signals.py` **96.13%** |
 | `alembic heads` | `0007_projects_and_knowledge_base` — one head, **unchanged**; seven revisions of ten |
 | `check_schema.py` | **76/76** on the live database |
 | Boundary / fence tests | **81 passed** (AST-based) |
@@ -137,7 +215,7 @@ absence a reader has to notice.
 ### 4.2 Mutation discipline
 
 Every **bold** criterion in [34 §P13](34-implementation-plan.md) plus the surrounding guarantees.
-**17 designed · 16 detected · 1 control held · 0 survived.**
+**20 designed · 19 detected · 1 control held · 0 survived.**
 
 | # | Guarantee broken | Verdict |
 |---|---|---|
@@ -157,7 +235,10 @@ Every **bold** criterion in [34 §P13](34-implementation-plan.md) plus the surro
 | M14 | The 40 KB character budget is not enforced | **DETECTED** |
 | M15 | An L1 hit is not flagged as markup-free | **DETECTED** |
 | M16 | **Control** — a comment changes; nothing should fail | **Control held** |
-| M17 | The cache path reports the stored (normalised) URL again — the fourth real defect, below | **DETECTED** |
+| M17 | The cache path reports the stored (normalised) URL again — the fourth real defect | **DETECTED** |
+| M18 | `noscript` goes back into the strip list — **the operator's bug** | **DETECTED** |
+| M19 | A missing dependency is absorbed as a per-page failure again | **DETECTED** |
+| M20 | The missing-dependency warning fires on every page instead of once | **DETECTED** |
 
 **M8, M9, M10 and M17 are not hypothetical — they are the four defects this phase actually shipped
 and fixed.** The first three were found by the fixture rather than by inspection:
@@ -242,10 +323,13 @@ sentence and no traceback; `https://example.com/definitely-not-a-real-page` fail
 
 ## 6. Deferred improvements opened and closed
 
-**Four opened. None closed.** All four are things the phase chose not to build or fix.
+**Five opened. None closed.** DI31–DI33 are things the phase chose not to build; **DI34 and DI35 are
+pre-existing defects P13 found but does not own**, recorded rather than chased because
+[lock §8](EXECUTION_MODE_LOCK.md) requires an improvement to relate to the phase.
 
 | | Entry | Owner |
 |---|---|---|
+| **DI35** | `test_the_worker_claimable_job_is_the_only_side_effect_of_failing` failed **once in three full-suite runs** during this re-validation and has not reproduced — **8/8 in isolation**, **4/4** after the concurrency soak that was the obvious suspect. P13's diff is `src/ai/website_fetcher.py` and its tests; this is `RunService`/`JobQueue` code the phase never touched. The fourth flaky test recorded here, after DI18, DI20 and DI27 | *A second occurrence.* DI27's precedent is exact: P9 tried to fix its equivalent and could not, because one data point is not a bug report |
 | **DI34** | Six internal links point at `02-research-findings.md`, which has never existed. Found by gate check 18; pre-existing since `87ba926` and absent from P13's diff | Whoever next edits one of the four documents — it needs a person to decide which document each of the four claims lives in |
 | **DI31** | `tests/integration/` does not exist while [35 §2.1](35-testing-strategy.md) row 5 runs `pytest tests/integration -q` as a gate check. Measured: exit code **4**, `ERROR: file or directory not found`. **Row 4 has the same defect** — `tests/unit/` holds exactly one file, so `pytest tests/unit -q` runs one file and reports success. What every phase has actually run is bare `pytest`, so **no test goes unrun**; the defect is in what the table claims. Same family as [DI29](DEFERRED-IMPROVEMENTS.md) and P5's F3 | Operator — it is a documentation decision (does row 5 name a directory or a marker?), which is why P13 did not make it unilaterally |
 | **DI32** | `website.max_depth` ships, is validated, and is read by nothing | A phase needing a page two hops from the landing page. **None is planned** |
@@ -290,12 +374,12 @@ no ahead count.
 231.10 s. The first commit's run [`31890330477`](https://github.com/KulluPraveenKumar/reddit-lead-finder/actions/runs/31890330477)
 was also green (**2023 passed, 12 skipped**).
 
-⚠️ **That is ten fewer passes and ten more skips than the local 2035 / 2**, and the difference is
+⚠️ **That is ten fewer passes and ten more skips than the local 2044 / 2**, and the difference is
 [DI30](DEFERRED-IMPROVEMENTS.md), not a regression: `data/leads.db` is gitignored, so a fresh checkout
 skips the ten live-database tests — **including the migration round-trip
 [35 §2.3](35-testing-strategy.md) calls non-negotiable**. P12's run showed the same signature
 (1893/12 in CI against 1903/2 locally). **A green CI run is not evidence this phase is sound.** The
-local **2035 passed / 2 skipped** in §4.1 is the one that counts, and it is why the manual guide's T9
+local **2044 passed / 2 skipped** in §4.1 is the one that counts, and it is why the manual guide's T9
 tells the operator to run the suite themselves.
 
 ---

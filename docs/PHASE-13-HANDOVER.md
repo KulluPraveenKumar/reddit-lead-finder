@@ -67,6 +67,8 @@ from src.ai.site_signals import SiteSignals, PricingSignal, extract
 | **G13** | **`SiteSignals.markup_seen` is `False` on a cache hit** | `test_a_cache_hit_reports_that_it_saw_no_markup` (both files) |
 | **G14** | One head, still `0007` — P13 added no revision | `test_single_head`, `test_the_head_is_0007_and_there_is_still_one_of_them` |
 | **G15** | **`ExtractedSite.url` has the same shape whether or not the cache hit**, while the stored row stays keyed on the normalised form | `test_a_cache_hit_returns_the_same_url_shape_as_a_fresh_fetch`, `test_the_row_is_still_keyed_on_the_normalised_url` |
+| **G16** | **The fallback strips exactly the five tags [14 §9.1](14-phase-04.md) names — `noscript` is not one of them** | `test_the_fallback_strips_exactly_the_five_documented_tags`, `test_noscript_is_not_stripped_by_the_fallback`, `test_the_fallback_still_removes_the_menu` |
+| **G17** | **The whole fetch works with `trafilatura` absent, and says so once at WARNING** — a broken install is not logged like a stubborn page | `test_the_whole_fetch_still_works_without_trafilatura`, `test_the_absence_is_warned_with_the_command_that_fixes_it`, `test_it_warns_once_per_process_not_once_per_page`, `test_a_per_page_failure_is_not_reported_as_a_broken_install` |
 
 ---
 
@@ -152,6 +154,20 @@ be tested without one, and the CLI tests substitute a fetcher over a fake client
 `main()` reach the network would breach the offline guarantee** ([35 §2.3](35-testing-strategy.md)
 check 6) rather than verify anything.
 
+**T9 — 🔴 a test that names the fallback and runs with trafilatura installed does not test the
+fallback.** This is the defect the operator's manual run found, and it is the one most likely to
+recur. `test_a_page_with_no_article_still_yields_its_text` asserted on `extract_text`'s output,
+trafilatura answered, and the BeautifulSoup branch **never ran** — so a bug in it (`noscript` in the
+strip list, discarding a JS-only page's only sentence) sat behind a green suite. **The
+`without_trafilatura` fixture is how you force it**, and any new test whose docstring says
+*"fallback"* must use it. It is P12's forced-`sqlite_vec`-failure idiom with the polarity reversed:
+there the dependency was always absent, here it is always present.
+
+**T10 — `pytest.importorskip`, never a bare `import trafilatura`, in a test.** A bare import made the
+*suite* require a dependency the *module* is written to survive without, so a host without it got a
+collection-time `ModuleNotFoundError` instead of a readable skip. Two tests legitimately need the
+real module to monkeypatch; both now skip cleanly.
+
 **T8 — trafilatura's `no_fallback` is deprecated and was removed during this phase.** The call passes
 `include_comments=False, include_tables=True` and nothing else. If you re-add a speed flag, note that
 `fast=` does not exist before trafilatura 2.1 and `requirements.txt` floors at 2.0.
@@ -204,17 +220,18 @@ check 6) rather than verify anything.
 
 | | |
 |---|---|
-| Full suite | **2035 passed, 2 skipped** in 1205.35 s (P12: 1905 / 2) |
-| Under coverage | **2028 passed, 9 skipped** — the extra 7 are performance tests that **self-skip under a tracer** by design, not a P13 effect |
-| New tests | **+130** |
-| Coverage, whole tree | **89.54%** (P12: 89.20%) · without the two new modules the same run reports **89.19%**, so P13 **raised** it by 0.35 pp |
-| Coverage, `src/{ai,net,scoring}` | **90.29%**, against the ≥85% floor · new modules **98.20%** and **96.13%** |
+| Full suite | **2044 passed, 2 skipped** in 436.50 s (P12: 1905 / 2) |
+| Full suite, `trafilatura` blocked | **2042 passed, 4 skipped, 0 failed** — the fallback path is now exercised, not assumed |
+| Under coverage | **2037 passed, 9 skipped** — the extra 7 are performance tests that **self-skip under a tracer** by design, not a P13 effect |
+| New tests | **+139** |
+| Coverage, whole tree | **89.55%** (P12: 89.20%) |
+| Coverage, `src/{ai,net,scoring}` | **90.31%**, against the ≥85% floor · new modules **98.28%** and **96.13%** |
 | `ruff check` / `format --check` | Clean · 179 files |
 | `alembic heads` | `0007_projects_and_knowledge_base` — one head, **unchanged**; seven revisions of ten |
 | `check_schema.py` | **76/76** on the live database |
 | Boundary / fence tests | **81 passed** (AST-based) |
 | Legacy contract | 459 baseline leads · `max 164.28` · `avg 42.29` · 13 CSV columns · `GET /` 200 |
-| Mutation testing | **17 designed · 16 detected · 1 control · 0 survived.** **Four real defects found** — three in P13's own competitor regex, caught by the fixture; the fourth an `ExtractedSite.url` that changed shape on a cache hit, caught in review after the first commit |
+| Mutation testing | **20 designed · 19 detected · 1 control · 0 survived.** **Five real defects found** — three in the competitor regex; an `ExtractedSite.url` that changed shape on a cache hit; and `noscript` in the fallback strip list, **found by the operator's manual run** |
 | Migration | **None added.** The chain is unchanged |
 | AI calls | **0** |
 | Rollback | **Executed, both paths** — config-block deletion gives identical settings; `0006` round-trip gives 51/51 down and 76/76 up |
@@ -248,7 +265,7 @@ check 6) rather than verify anything.
 - [ ] [34 §P14](34-implementation-plan.md) read — all thirteen fields, including **exactly one `ai_calls` row**, **< $0.05**, and **per-section failure isolation**
 - [ ] `phase-manager` skill loaded before the first edit under `src/`
 - [ ] `trafilatura` installed — `pip install -r requirements.txt`. **P13 added it and it is required**, not optional
-- [ ] The full suite recorded green before the first change — **2035 passed, 2 skipped**. ⚠️ **Run it locally, not from a CI badge** — [DI30](DEFERRED-IMPROVEMENTS.md)
+- [ ] The full suite recorded green before the first change — **2044 passed, 2 skipped**. ⚠️ **Run it locally, not from a CI badge** — [DI30](DEFERRED-IMPROVEMENTS.md)
 - [ ] `git status` clean · `alembic heads` = one `0007` · `check_schema.py` **76/76**
 - [ ] ⚠️ **`config.yaml` checked for uncommitted local values** — it carried a real chat id at the start of both P8 and P9. **P13 added the `website:` block**; nothing else in the file should have moved
 - [ ] ⚠️ **P14 opens no revision.** `0008` is **P17's**. P14 writes rows into tables `0007` already created

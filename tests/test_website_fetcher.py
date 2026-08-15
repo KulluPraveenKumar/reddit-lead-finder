@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import datetime
 import logging
+import sys
 from pathlib import Path
 
 import pytest
@@ -25,8 +26,10 @@ from sqlalchemy.orm import Session
 
 from src.ai.website_fetcher import (
     ALLOWED_SCHEMES,
+    FALLBACK_STRIPPED_TAGS,
     PRIORITY_PATHS,
     THIN_CONTENT_CHARS,
+    TRAFILATURA_MISSING_MESSAGE,
     ExtractedSite,
     InvalidWebsiteURL,
     WebsiteFetcher,
@@ -47,6 +50,35 @@ BASE = "https://ledgerloop.example/"
 
 def fixture(name: str) -> str:
     return (SITES / name).read_text(encoding="utf-8")
+
+
+@pytest.fixture
+def without_trafilatura(monkeypatch):
+    """Force `import trafilatura` to fail, without uninstalling anything.
+
+    The P12 idiom for a branch that would otherwise never run: that phase
+    injected a `sqlite_vec` whose `load()` raises, *"because the extension is
+    genuinely absent on every host measured and the branch would otherwise pass
+    vacuously"* (docs/35 §6). Here the polarity is reversed — trafilatura is
+    genuinely **present** on this host, so the fallback branch is the one that
+    never ran, and the operator found the bug that hid in it.
+    """
+    import builtins
+
+    from src.ai.website_fetcher import reset_trafilatura_warning
+
+    real_import = builtins.__import__
+
+    def blocked(name, *args, **kwargs):
+        if name == "trafilatura" or name.startswith("trafilatura."):
+            raise ModuleNotFoundError(f"No module named '{name}'", name=name)
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", blocked)
+    monkeypatch.delitem(sys.modules, "trafilatura", raising=False)
+    reset_trafilatura_warning()
+    yield
+    reset_trafilatura_warning()
 
 
 @pytest.fixture
@@ -357,24 +389,114 @@ class TestExtraction:
         text = extract_text(fixture("landing.html"), BASE)
         assert text.count("Log in") <= 1
 
-    def test_a_page_with_no_article_still_yields_its_text(self):
-        """The BeautifulSoup fallback. Losing a nav-heavy page entirely would
-        silently shrink the text the whole knowledge base is built from."""
+    def test_a_page_with_no_article_still_yields_its_text(self, without_trafilatura):
+        """🔴 **The regression the operator found, and the reason it survived.**
+
+        This test named the BeautifulSoup fallback and **never exercised it**:
+        trafilatura was installed, it read `spa_shell.html` perfectly well, and
+        the assertion passed on its output. With trafilatura absent the fallback
+        actually ran — and returned the bare title `Nimbus`, because `noscript`
+        had been added to the strip list and the `<noscript>` block is the only
+        sentence a JavaScript-only page has.
+
+        It now forces the fallback, so it cannot pass for the wrong reason again.
+        """
         text = extract_text(fixture("spa_shell.html"), BASE)
         assert "JavaScript" in text
+
+    def test_the_fallback_and_trafilatura_agree_that_the_shell_has_a_sentence(self):
+        """Both paths must find the same sentence. Asserting only the installed
+        path is what let the two diverge silently in the first place."""
+        assert "JavaScript" in extract_text(fixture("spa_shell.html"), BASE)
+
+    def test_noscript_is_not_stripped_by_the_fallback(self, without_trafilatura):
+        """On a JS-only shell it is frequently the only human-readable text."""
+        html = "<html><body><div id='root'></div><noscript>Enable JS.</noscript></body></html>"
+        assert "Enable JS." in extract_text(html, BASE)
+
+    def test_the_fallback_strips_exactly_the_five_documented_tags(self):
+        """14 §9.1 names five. A sixth is not a free improvement — the sixth this
+        phase shipped discarded a whole page's content."""
+        assert FALLBACK_STRIPPED_TAGS == ("script", "style", "nav", "footer", "header")
+
+    def test_the_fallback_still_removes_the_menu(self, without_trafilatura):
+        """The fix must not have turned the strip list off altogether."""
+        text = extract_text(fixture("landing.html"), BASE)
+        assert "Close the books without the spreadsheet" in text
+        assert text.count("Log in") == 0
 
     def test_empty_markup_yields_empty_text(self):
         assert extract_text("") == ""
         assert extract_text("   ") == ""
 
     def test_the_fallback_runs_when_trafilatura_raises(self, monkeypatch):
-        """One page's extractor failing must not lose the other six."""
-        import trafilatura
+        """One page's extractor failing must not lose the other six.
+
+        `pytest.importorskip` rather than a bare `import`: this test needs the
+        real module to patch, and a bare import made the **suite** require a
+        dependency the **module** is written to survive without — which is how
+        the operator's run produced a collection-time `ModuleNotFoundError`
+        rather than a readable skip.
+        """
+        trafilatura = pytest.importorskip("trafilatura")
 
         monkeypatch.setattr(
             trafilatura, "extract", lambda *a, **k: (_ for _ in ()).throw(ValueError("bad"))
         )
         assert "Close the books" in extract_text(fixture("landing.html"), BASE)
+
+
+class TestMissingDependency:
+    """trafilatura is **required**. Its absence must be loud, not absorbed.
+
+    The operator's `ModuleNotFoundError` was the *good* outcome — a test said so
+    plainly. What the shipped module did on that same host was quieter and worse:
+    every page fell back, the text got worse, and one INFO line per page said
+    `trafilatura could not read <url>`, which reads exactly like a routine
+    per-page parse failure. A broken install and a stubborn page are different
+    problems and now log differently.
+    """
+
+    def test_the_whole_fetch_still_works_without_trafilatura(self, without_trafilatura):
+        """It degrades rather than crashing — the fallback is a real fallback."""
+        site = WebsiteFetcher(FakeClient(a_site())).fetch(BASE)
+        assert site.requests_made == 7
+        assert "Close the books without the spreadsheet" in site.text
+        assert site.thin is False
+
+    def test_the_absence_is_warned_with_the_command_that_fixes_it(
+        self, without_trafilatura, caplog
+    ):
+        with caplog.at_level(logging.WARNING):
+            extract_text(fixture("landing.html"), BASE)
+        assert TRAFILATURA_MISSING_MESSAGE in caplog.text
+        assert "pip install -r requirements.txt" in caplog.text
+
+    def test_it_is_a_warning_not_an_info_line(self, without_trafilatura, caplog):
+        """A per-page INFO is what hid it. A broken installation is not routine."""
+        with caplog.at_level(logging.INFO):
+            extract_text(fixture("landing.html"), BASE)
+        levels = {r.levelname for r in caplog.records if "trafilatura" in r.getMessage()}
+        assert "WARNING" in levels
+
+    def test_it_warns_once_per_process_not_once_per_page(self, without_trafilatura, caplog):
+        """Seven pages a run would make it noise, and noise gets filtered out."""
+        with caplog.at_level(logging.WARNING):
+            for _ in range(7):
+                extract_text(fixture("landing.html"), BASE)
+        matching = [r for r in caplog.records if TRAFILATURA_MISSING_MESSAGE in r.getMessage()]
+        assert len(matching) == 1
+
+    def test_a_per_page_failure_is_not_reported_as_a_broken_install(self, monkeypatch, caplog):
+        """The other half of the distinction: a page trafilatura chokes on must
+        NOT tell the operator to reinstall anything."""
+        trafilatura = pytest.importorskip("trafilatura")
+        monkeypatch.setattr(
+            trafilatura, "extract", lambda *a, **k: (_ for _ in ()).throw(ValueError("bad"))
+        )
+        with caplog.at_level(logging.INFO):
+            extract_text(fixture("landing.html"), BASE)
+        assert "pip install" not in caplog.text
 
 
 class TestContentHash:
