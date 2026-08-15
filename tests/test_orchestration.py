@@ -380,16 +380,31 @@ class TestOrchestrationSchema:
         finally:
             conn.close()
 
-    def test_runs_project_id_is_bare_until_0007(self, temp_db):
-        """`projects` does not exist yet; a REFERENCES clause here would be a lie."""
+    def test_runs_project_id_references_projects_and_stays_nullable(self, temp_db):
+        """⚠️ **This assertion inverted in P12, and the nullability one did not.**
+
+        It was `test_runs_project_id_is_bare_until_0007`, and *"until 0007"* was
+        the whole premise: `projects` did not exist, so a REFERENCES clause would
+        have been a lie — and worse, a silent one, breaking every INSERT into
+        `runs` while every structural check reported green. `0007` creates
+        `projects` and closes the key (M8), so the bare column that was correct
+        then would now mean a foreign key deferred to nowhere.
+
+        **The nullability half is unchanged and is the more important one.**
+        [34 §P12] asked for `NOT NULL` here; it is not buildable (11 of 11 live
+        runs are NULL, and backfilling them is the row rewrite **M5** forbids)
+        and it contradicts **AD-5**, *"project scoping is additive and nullable"*.
+        Recorded at [freeze §11.1]. `temp_db` is at head, so this is the shipped
+        schema, not a fixture's opinion of it.
+        """
         conn = sqlite3.connect(temp_db)
         try:
-            fks = [r[2] for r in conn.execute("PRAGMA foreign_key_list(runs)")]
+            fks = [(r[2], r[3], r[6]) for r in conn.execute("PRAGMA foreign_key_list(runs)")]
             cols = {r[1]: r for r in conn.execute("PRAGMA table_info(runs)")}
         finally:
             conn.close()
-        assert fks == []
-        assert cols["project_id"][3] == 0, "project_id must stay nullable until 0007"
+        assert fks == [("projects", "project_id", "CASCADE")]
+        assert cols["project_id"][3] == 0, "project_id must stay nullable — AD-5, and M5"
 
     def test_cascade_actually_deletes(self, temp_db):
         """PRAGMA foreign_keys is per-connection and OFF by default in SQLite.
@@ -551,15 +566,23 @@ class TestSchemaCheckScript:
         new indexes, the absence of an index on ``source``, the uniqueness of
         ``ux_comments_hash``, both partial ``dedup_members`` indexes, and the
         two named CHECK constraints.
+
+        **49 -> 74 in P12**, and the head is ``0007``. Twenty-five new checks:
+        the six closed ``project_id`` foreign keys with their ON DELETE actions,
+        the three nullabilities decided against a document, the payload rule and
+        its three facets, ``bkb_evidence.quote``, the three typed tables'
+        ``bkb_id``, and the eight unique indexes. **No assertion is weakened** —
+        the revision and the count are both still exact, so a check that
+        silently stops running still fails this test.
         """
         from scripts.check_schema import main
 
-        code = main(["--db", str(temp_db), "--revision", "0006", "--no-leads-check"])
+        code = main(["--db", str(temp_db), "--revision", "0007", "--no-leads-check"])
         out = capsys.readouterr().out
 
         assert code == 0, out
         assert "FAIL" not in out
-        assert "all 49 checks passed" in out
+        assert "all 74 checks passed" in out
 
     def test_detects_a_wrong_claim_index_column_order(self, temp_db, capsys):
         """The defect the guide exists to catch, injected deliberately.

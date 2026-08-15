@@ -134,11 +134,69 @@ def test_health_survives_a_queue_it_cannot_read(client, monkeypatch):
 
 
 def test_health_keeps_its_existing_keys(client):
-    """Additive only: /health gained `queue` and changed nothing else."""
+    """Additive only: /health gained `queue` and `semantic_layer`, and changed
+    nothing else."""
     body = client.get("/api/health").get_json()
 
     for key in ("status", "database", "schema", "proxies", "ai"):
         assert key in body, f"/api/health lost {key}"
+
+
+# ------------------------------------------------- semantic layer (P12 / 0007)
+
+
+def test_health_reports_the_semantic_layer_as_disabled(client):
+    """[34 §P12]: *"with `sqlite-vec` unavailable the migration completes and
+    /health reports semantic_layer: disabled"*.
+
+    Disabled is the **normal** case, not an error: P0 measured neither
+    `sqlite-vec` nor `model2vec` as installed, `0007` skips both vector tables
+    where the extension does not load, and the whole semantic tier is optional
+    by design — embeddings never *reject* anything, so their absence costs
+    recall rather than correctness (06e §5.3).
+
+    What this guards is that the degradation is **visible**. A migration that
+    quietly creates ten tables instead of twelve, on a page that says nothing
+    about it, is the failure 05 §7.1a asked for a startup check to prevent.
+    """
+    body = client.get("/api/health").get_json()
+
+    assert "semantic_layer" in body, "/api/health does not report the semantic layer at all"
+    layer = body["semantic_layer"]
+    assert layer["status"] == "disabled"
+    assert layer["enabled"] is False
+    assert layer["tables"] == []
+    assert layer["available_from"] == "0007_projects_and_knowledge_base"
+
+
+def test_health_reads_the_schema_rather_than_importing_sqlite_vec(client, monkeypatch):
+    """The probe must answer *"did the migration create the tables?"*.
+
+    Those are different questions, and the difference bites in exactly one
+    direction: install the extension on a database migrated without it and an
+    import probe reports `enabled` for two tables that do not exist. So a
+    perfectly importable `sqlite_vec` must not flip this to enabled.
+    """
+    import importlib.machinery
+    import sys
+    import types
+
+    fake = types.ModuleType("sqlite_vec")
+    fake.load = lambda _conn: None
+    # ⚠️ A real `__spec__`, added because mutation M14 survived without one.
+    # `importlib.util.find_spec` raises ValueError on a module whose `__spec__`
+    # is None, so an import-probing implementation would have hit the broad
+    # `except` and reported `enabled: False` **by accident** — passing this test
+    # while doing exactly what it forbids. With a valid spec the probe succeeds,
+    # and only a schema-reading implementation still answers correctly.
+    fake.__spec__ = importlib.machinery.ModuleSpec("sqlite_vec", None)
+    monkeypatch.setitem(sys.modules, "sqlite_vec", fake)
+
+    layer = client.get("/api/health").get_json()["semantic_layer"]
+    assert layer["enabled"] is False, (
+        "an importable sqlite_vec flipped the report to enabled, but the "
+        "migration on this database created no vector tables"
+    )
 
 
 # ------------------------------------------------------------ queue_depth API

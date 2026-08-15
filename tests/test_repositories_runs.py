@@ -31,6 +31,13 @@ def session(engine):
 
 
 def _run(session, state="scraping", project_id=None) -> Run:
+    # From 0007 (P12) `runs.project_id` is a real foreign key, so a run that
+    # names a project needs that project to exist. `project_id=None` stays the
+    # common case and is what the application still passes (AD-5).
+    if project_id is not None:
+        from tests.conftest import ensure_project
+
+        ensure_project(session, project_id)
     run = Run(state=state, project_id=project_id)
     session.add(run)
     session.commit()

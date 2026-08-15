@@ -57,12 +57,24 @@ def test_it_prints_every_component_with_its_weight_and_contribution(capsys):
 
 def test_it_names_the_three_absent_components_and_their_phases(capsys):
     """Operator decision D1, made visible to the person running the command
-    rather than buried in a docstring."""
+    rather than buried in a docstring.
+
+    ⚠️ **The phase names changed in P12 and the assertion follows them.** They
+    read `P12`/`P15`/`P12` while `0007` was unwritten, on the reading that the
+    phase creating a table is the phase that can score from it. `0007` shipped
+    and creates all three tables **empty** — `pain_points.phrases_json` is
+    written by P14, the first `projects` row by P16 — so a component reading
+    them now would score `0.0` for every item, which is [DI24] verbatim and the
+    thing this list exists to prevent. Each entry names the phase that supplies
+    the **data**. `P12` is asserted absent so the correction cannot silently
+    revert.
+    """
     out = run_cli(capsys=capsys)
     assert "pain_phrase" in out
     assert "competitor" in out
     assert "subreddit_fit" in out
-    assert "P12" in out and "P15" in out
+    assert "P14" in out and "P15" in out and "P16" in out
+    assert "P12" not in out, "0007 creates those tables empty; P12 supplies no data"
 
 
 def test_it_states_that_no_ai_call_was_made(capsys):

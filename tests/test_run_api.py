@@ -47,6 +47,12 @@ def stub_scraper(monkeypatch):
 
 
 def _make_run(session, subreddits=("saas", "startups"), project_id=None):
+    # `runs.project_id` became a real foreign key in 0007 (P12); a run that
+    # names a project needs that project to exist.
+    if project_id is not None:
+        from tests.conftest import ensure_project
+
+        ensure_project(session, project_id)
     run = RunService(session, JobQueue(database.ENGINE)).create(
         project_id, RunOptions(subreddits=tuple(subreddits))
     )

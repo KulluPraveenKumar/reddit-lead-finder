@@ -89,6 +89,73 @@ EXPECTED_TABLES_AT_0006 = (
     "minhash_bands",
 )
 
+#: What 0007 adds. Twelve, and the same separation for the same reason: a
+#: database still at 0006 is a legitimate state to verify (`--skip-p12`), and the
+#: live database stays there until an operator runs the upgrade themselves.
+EXPECTED_TABLES_AT_0007 = (
+    "projects",
+    "website_snapshots",
+    "bkb",
+    "bkb_sections",
+    "personas",
+    "pain_points",
+    "intent_signals",
+    "bkb_entities",
+    "bkb_entity_aliases",
+    "bkb_links",
+    "bkb_evidence",
+    "bkb_suggestions",
+)
+
+#: The conditional pair, plus whatever shadow tables ``vec0`` creates beside a
+#: virtual table. **Optional, never required**: they exist only where the
+#: ``sqlite-vec`` extension loads, which is no host measured so far. Matched by
+#: prefix rather than by name because the shadow-table names are the extension's
+#: private business, and a verifier that hard-coded them would report a working
+#: database as broken the day the extension changed them.
+OPTIONAL_TABLE_PREFIX = "bkb_embedding"
+
+#: The six deferred ``project_id`` foreign keys 0007 closes, with the ON DELETE
+#: action each ships. The actions are deliberately not uniform:
+#:
+#: * ``leads`` and ``comments`` are **SET NULL** because [freeze §8] makes
+#:   "expiring leads" a permanent non-goal -- *a lead is a historical fact* --
+#:   so deleting a project must not delete the corpus collected for it.
+#: * ``dedup_groups`` and ``minhash_bands`` are **CASCADE** because both are
+#:   derived per-run artefacts that are rebuilt from scratch.
+#: * ``ai_calls`` (SET NULL) and ``runs`` (CASCADE) are given literally in
+#:   [05 §7.1].
+#:
+#: If these ever become uniform, one of them is wrong.
+EXPECTED_PROJECT_FOREIGN_KEYS = {
+    "ai_calls": "SET NULL",
+    "runs": "CASCADE",
+    "leads": "SET NULL",
+    "comments": "SET NULL",
+    "dedup_groups": "CASCADE",
+    "minhash_bands": "CASCADE",
+}
+
+#: The three BKB sections whose content lives in a typed table, so their
+#: ``bkb_sections.payload_json`` is NULL and the other twenty are not.
+#: ``ideal_customer_profiles`` is **not** one of them -- it has no typed table,
+#: so its payload is the only copy of an ICP that exists ([05 §5.1b]).
+TYPED_SECTION_KEYS = ("buyer_personas", "pain_points", "buying_signals")
+
+#: Unique indexes 0007 creates. Uniqueness is the point of every one of them:
+#: each is the natural key some later phase upserts on, and a non-unique index
+#: there would let a regeneration silently double every row it rewrote.
+EXPECTED_UNIQUE_INDEXES_AT_0007 = (
+    "ux_projects_normalized_url",
+    "ux_bkb_sections",
+    "ux_personas_project_slug",
+    "ux_pain_points_project_slug",
+    "ux_intent_signals_project_slug",
+    "ux_bkb_entities",
+    "ux_bkb_alias_norm",
+    "ux_bkb_links",
+)
+
 #: Index name -> the column order the query planner needs.
 #:
 #: Order matters and presence does not. ``ix_jobs_claim`` backs
@@ -263,7 +330,12 @@ def check_revision(conn: sqlite3.Connection, report: Report, expected: str | Non
 
 
 def check_tables(
-    conn: sqlite3.Connection, report: Report, *, with_p6: bool = True, with_p8: bool = True
+    conn: sqlite3.Connection,
+    report: Report,
+    *,
+    with_p6: bool = True,
+    with_p8: bool = True,
+    with_p12: bool = True,
 ) -> None:
     report.section("Tables")
 
@@ -274,9 +346,15 @@ def check_tables(
         expected |= set(EXPECTED_TABLES_AT_0005)
     if with_p8:
         expected |= set(EXPECTED_TABLES_AT_0006)
+    if with_p12:
+        expected |= set(EXPECTED_TABLES_AT_0007)
 
     missing = sorted(expected - actual)
-    extra = sorted(actual - expected)
+    # The vector tables are expected-if-present and never expected-if-absent, so
+    # they are excluded from `extra` rather than added to `expected`. Listing
+    # them as expected would turn "this host has no sqlite-vec" -- the normal
+    # case -- into a missing-table failure.
+    extra = sorted(t for t in actual - expected if not t.startswith(OPTIONAL_TABLE_PREFIX))
 
     report.check(not missing, f"all {len(expected)} expected tables present", f"missing: {missing}")
     report.check(not extra, "no unexpected tables", f"unexpected: {extra}")
@@ -342,7 +420,9 @@ def check_discovery_shape(
     )
 
 
-def check_content_and_dedup_shape(conn: sqlite3.Connection, report: Report) -> None:
+def check_content_and_dedup_shape(
+    conn: sqlite3.Connection, report: Report, *, with_p12: bool = True
+) -> None:
     """The 0006 constraints that are easy to get wrong and silent when wrong.
 
     Every check here is one a passing migration could still fail. The four
@@ -351,6 +431,13 @@ def check_content_and_dedup_shape(conn: sqlite3.Connection, report: Report) -> N
     ``foreign_key_check`` returns ``[]`` -- while every INSERT into that table
     fails. That is P8 review F1, and it is asserted here as well as in the test
     suite because this script is what a human runs from the manual guide.
+
+    ⚠️ **That assertion inverts at 0007**, which is why it takes a flag rather
+    than being a constant. Before 0007 the four columns must be bare or every
+    INSERT is broken; after 0007 they must reference ``projects`` or M8 deferred
+    a foreign key to nowhere. Both are real failures and they are exact
+    opposites, so a verifier that checked only one of them would pass a database
+    in precisely the state the other check exists to catch.
     """
     report.section("Content and dedup (0006)")
 
@@ -375,15 +462,24 @@ def check_content_and_dedup_shape(conn: sqlite3.Connection, report: Report) -> N
         f"got: {lead_defaults.get('source')!r}",
     )
 
-    # ⚠️ F1. Four columns must reference `projects`, which arrives in 0007.
+    # ⚠️ F1. Four columns must reference `projects`, which arrives in 0007 —
+    #    and must NOT reference it before then. See the docstring.
     for table in ("leads", "comments", "dedup_groups", "minhash_bands"):
         parents = {r[2].lower() for r in conn.execute(f"PRAGMA foreign_key_list({table})")}
-        report.check(
-            "projects" not in parents,
-            f"{table}.project_id is BARE — the FK is deferred to 0007 (M8)",
-            f"got a REFERENCES projects: {sorted(parents)}. Every INSERT into "
-            f"{table} is already broken",
-        )
+        if with_p12:
+            report.check(
+                "projects" in parents,
+                f"{table}.project_id references projects — the FK 0006 deferred is closed (M8)",
+                f"still bare: {sorted(parents)}. M8 deferred this constraint to 0007 "
+                f"and 0007 did not add it",
+            )
+        else:
+            report.check(
+                "projects" not in parents,
+                f"{table}.project_id is BARE — the FK is deferred to 0007 (M8)",
+                f"got a REFERENCES projects: {sorted(parents)}. Every INSERT into "
+                f"{table} is already broken",
+            )
 
     # 4 columns, 4 indexes. `source` deliberately has none (D3).
     lead_indexes = {r[1] for r in conn.execute("PRAGMA index_list(leads)")}
@@ -441,6 +537,121 @@ def check_content_and_dedup_shape(conn: sqlite3.Connection, report: Report) -> N
         )
 
 
+def check_knowledge_base_shape(conn: sqlite3.Connection, report: Report) -> None:
+    """The 0007 constraints that a passing migration could still get wrong.
+
+    Presence of the twelve tables is `check_tables`' job. This is the shape:
+    the six ON DELETE actions, the payload rule, and the three nullabilities
+    that were decided against a document rather than inherited from one.
+    """
+    report.section("Projects and knowledge base (0007)")
+
+    # The six closed keys, each with its action. `foreign_key_list` gives
+    # (id, seq, table, from, to, on_update, on_delete, match).
+    for table, action in EXPECTED_PROJECT_FOREIGN_KEYS.items():
+        actual = [
+            (r[3], r[6])
+            for r in conn.execute(f"PRAGMA foreign_key_list({table})")
+            if r[2] == "projects"
+        ]
+        report.check(
+            ("project_id", action) in actual,
+            f"{table}.project_id -> projects ON DELETE {action}",
+            f"got: {actual or 'no foreign key to projects at all'}",
+        )
+
+    # ⚠️ runs.project_id stays NULLABLE. [34 §P12] asks for NOT NULL; all 11
+    #    live rows are NULL, M5 forbids rewriting them to satisfy it, and AD-5
+    #    freezes project scoping as "additive and nullable". Asserted positively
+    #    so that a later phase re-reading the plan cannot quietly tighten it.
+    runs_columns = {r[1]: r[3] for r in conn.execute("PRAGMA table_info(runs)")}
+    report.check(
+        runs_columns.get("project_id") == 0,
+        "runs.project_id is still NULLABLE — AD-5, and 11 of 11 live rows are NULL",
+        f"notnull flag: {runs_columns.get('project_id')}",
+    )
+
+    # The same decision for the two P8 left open, and for the same kind of
+    # reason: P10's cascade and P11's stage write both as None on every run.
+    for table in ("dedup_groups", "minhash_bands"):
+        columns = {r[1]: r[3] for r in conn.execute(f"PRAGMA table_info({table})")}
+        report.check(
+            columns.get("project_id") == 0,
+            f"{table}.project_id is still NULLABLE — the dedup cascade writes None",
+            f"notnull flag: {columns.get('project_id')}",
+        )
+
+    # The payload rule, as a CHECK rather than as a convention.
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='bkb_sections'"
+    ).fetchone()
+    sections_sql = (row[0] if row else "") or ""
+    report.check(
+        "ck_bkb_sections_payload_null_rule" in sections_sql,
+        "ck_bkb_sections_payload_null_rule is present on bkb_sections",
+        "the named CHECK is missing — the payload rule is a convention again",
+    )
+    report.check(
+        all(key in sections_sql for key in TYPED_SECTION_KEYS),
+        f"the CHECK names exactly the three typed sections {list(TYPED_SECTION_KEYS)}",
+        f"got: {sections_sql[:300]}",
+    )
+    report.check(
+        "ideal_customer_profiles" not in sections_sql,
+        "ideal_customer_profiles is NOT exempt — it has no typed table (05 §5.1b)",
+        "the CHECK exempts a section whose payload is the only copy of an ICP",
+    )
+
+    section_columns = {r[1]: r[3] for r in conn.execute("PRAGMA table_info(bkb_sections)")}
+    report.check(
+        section_columns.get("payload_json") == 0,
+        "bkb_sections.payload_json is NULLABLE — 05 §5.1b overrides §5.1's NOT NULL",
+        f"notnull flag: {section_columns.get('payload_json')}. The three typed "
+        f"sections cannot be stored",
+    )
+
+    # A source_type='ai_inference' row has nothing to quote, and a quote there
+    # would be a fabrication (05 §5.1c).
+    evidence_columns = {r[1]: r[3] for r in conn.execute("PRAGMA table_info(bkb_evidence)")}
+    report.check(
+        evidence_columns.get("quote") == 0,
+        "bkb_evidence.quote is NULLABLE — an ai_inference row has nothing to quote",
+        f"notnull flag: {evidence_columns.get('quote')}",
+    )
+
+    # The three typed tables carry bkb_id as well as project_id, without which
+    # deleting a superseded BKB drops the evidence and leaves the claim behind,
+    # unevidenced but still displayed (05 §5.1b).
+    for table in ("personas", "pain_points", "intent_signals"):
+        columns = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
+        report.check(
+            "bkb_id" in columns and "project_id" in columns,
+            f"{table} carries both bkb_id and project_id — evidence cascades correctly",
+            f"got: {sorted(columns)}",
+        )
+
+    # Uniqueness is the point of each of these; a plain index would let a
+    # regeneration double every row it rewrote.
+    for name in EXPECTED_UNIQUE_INDEXES_AT_0007:
+        row = conn.execute(
+            "SELECT tbl_name FROM sqlite_master WHERE type='index' AND name=?", (name,)
+        ).fetchone()
+        if row is None:
+            report.check(False, f"{name} exists and is UNIQUE", "the index is missing entirely")
+            continue
+        unique = {r[1]: r[2] for r in conn.execute(f"PRAGMA index_list({row[0]})")}
+        report.check(unique.get(name) == 1, f"{name} exists and is UNIQUE", f"got: {unique}")
+
+    # Reported, never asserted. Absent is the normal case and is not a failure;
+    # what would be a failure is not knowing which state the host is in.
+    vector = conn.execute(
+        "SELECT COUNT(*) FROM sqlite_master WHERE name='bkb_embeddings'"
+    ).fetchone()[0]
+    state = "enabled" if vector else "disabled"
+    presence = "present" if vector else "absent"
+    print(f"  INFO  semantic_layer is {state} (bkb_embeddings {presence}; sqlite-vec is optional)")
+
+
 def check_indexes(conn: sqlite3.Connection, report: Report) -> None:
     report.section("Indexes (column order matters)")
 
@@ -456,7 +667,7 @@ def check_indexes(conn: sqlite3.Connection, report: Report) -> None:
         )
 
 
-def check_foreign_keys(conn: sqlite3.Connection, report: Report) -> None:
+def check_foreign_keys(conn: sqlite3.Connection, report: Report, *, with_p12: bool = True) -> None:
     report.section("Foreign keys (ON DELETE action matters)")
 
     for table, expected in EXPECTED_FOREIGN_KEYS.items():
@@ -468,13 +679,22 @@ def check_foreign_keys(conn: sqlite3.Connection, report: Report) -> None:
         )
 
     # `runs.project_id` stays a bare column until 0007 creates `projects`.
-    # A REFERENCES clause here would name a table that does not exist.
+    # A REFERENCES clause before then would name a table that does not exist;
+    # afterwards its absence would mean M8 deferred a key to nowhere. Same
+    # inversion as the four columns in `check_content_and_dedup_shape`.
     runs_fks = [r[2] for r in conn.execute("PRAGMA foreign_key_list(runs)")]
-    report.check(
-        runs_fks == [],
-        "runs has no foreign keys yet (projects arrives in 0007)",
-        f"got: {runs_fks}",
-    )
+    if with_p12:
+        report.check(
+            runs_fks == ["projects"],
+            "runs -> projects.project_id — the FK 0004 deferred is closed (M8)",
+            f"got: {runs_fks}",
+        )
+    else:
+        report.check(
+            runs_fks == [],
+            "runs has no foreign keys yet (projects arrives in 0007)",
+            f"got: {runs_fks}",
+        )
 
 
 def check_constraints(conn: sqlite3.Connection, report: Report) -> None:
@@ -615,11 +835,17 @@ def run_checks(
     verbose: bool,
     skip_p6: bool = False,
     skip_p8: bool = False,
+    skip_p12: bool = False,
 ) -> int:
     if not db_path.exists():
         print(f"ERROR: no such database: {db_path}")
         print("Create it first — see P01-testing.md T4 Step 1.")
         return 2
+
+    # `--skip-p8` implies `--skip-p12`. A database without `comments` cannot
+    # have had 0007 applied, so requiring 0007's twelve tables there would
+    # report a legitimate revision as a broken one.
+    skip_p12 = skip_p12 or skip_p8
 
     report = Report(verbose=verbose)
     print(f"Checking {db_path}")
@@ -632,9 +858,15 @@ def run_checks(
         if skip_p1:
             print("\n(--skip-p1: the 0004 shape and row-count checks were not run)")
         else:
-            check_tables(conn, report, with_p6=not skip_p6, with_p8=not skip_p8)
+            check_tables(
+                conn,
+                report,
+                with_p6=not skip_p6,
+                with_p8=not skip_p8,
+                with_p12=not skip_p12,
+            )
             check_indexes(conn, report)
-            check_foreign_keys(conn, report)
+            check_foreign_keys(conn, report, with_p12=not skip_p12)
             check_constraints(conn, report)
             check_row_counts(conn, report)
             if skip_p6:
@@ -644,7 +876,14 @@ def run_checks(
             if skip_p8:
                 print("\n(--skip-p8: the 0006 content and dedup checks were not run)")
             else:
-                check_content_and_dedup_shape(conn, report)
+                check_content_and_dedup_shape(conn, report, with_p12=not skip_p12)
+            # `--skip-p8` implies `--skip-p12`: a database without `comments`
+            # cannot have had 0007 applied, and the 0007 section would then fail
+            # on twelve tables that are correctly absent.
+            if skip_p12:
+                print("\n(--skip-p12: the 0007 knowledge-base checks were not run)")
+            else:
+                check_knowledge_base_shape(conn, report)
 
         check_legacy_fingerprint(conn, report, expect_leads)
     finally:
@@ -684,6 +923,11 @@ def main(argv: list[str] | None = None) -> int:
         help="skip the 0006 content/dedup checks — use on a database still at 0005",
     )
     parser.add_argument(
+        "--skip-p12",
+        action="store_true",
+        help="skip the 0007 knowledge-base checks — use on a database still at 0006",
+    )
+    parser.add_argument(
         "--no-leads-check",
         action="store_true",
         help="report the lead count without asserting the 459-lead legacy contract",
@@ -699,6 +943,7 @@ def main(argv: list[str] | None = None) -> int:
         verbose=args.verbose,
         skip_p6=args.skip_p6,
         skip_p8=args.skip_p8,
+        skip_p12=args.skip_p12,
     )
 
 

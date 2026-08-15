@@ -104,6 +104,38 @@ def live_db_copy(tmp_path, monkeypatch):
         database.ENGINE.dispose()
 
 
+def ensure_project(session, project_id: int):
+    """A real ``projects`` row with this id, created once per id.
+
+    ⚠️ **Needed from `0007` (P12) onward.** ``runs.project_id``,
+    ``leads.project_id``, ``comments.project_id``, ``dedup_groups.project_id``
+    and ``minhash_bands.project_id`` were **bare columns** until `0007` closed
+    their foreign keys (M8), so a test could attach a run to project 4 on a
+    database that had no projects table at all. It cannot now, and that is the
+    constraint working: `PRAGMA foreign_keys=ON` is set on every connection, so
+    an id that names no row is rejected.
+
+    The fix is a real parent row, not a relaxed constraint — a test that needs
+    referential integrity switched off is testing a database the application
+    never runs against.
+    """
+    from src.db.models import Project
+
+    existing = session.get(Project, project_id)
+    if existing is not None:
+        return existing
+
+    project = Project(
+        id=project_id,
+        name=f"test-project-{project_id}",
+        website_url=f"https://example{project_id}.com",
+        normalized_url=f"https://example{project_id}.com",
+    )
+    session.add(project)
+    session.flush()
+    return project
+
+
 @pytest.fixture
 def settings(temp_db):
     from src.settings import get_settings, reset_settings

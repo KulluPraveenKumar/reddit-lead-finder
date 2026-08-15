@@ -40,6 +40,12 @@ def service(session):
 
 
 def _create(service, session, subreddits=("saas", "startups"), project_id=None):
+    # `runs.project_id` became a real foreign key in 0007 (P12); a run that
+    # names a project needs that project to exist.
+    if project_id is not None:
+        from tests.conftest import ensure_project
+
+        ensure_project(session, project_id)
     run = service.create(project_id, RunOptions(subreddits=tuple(subreddits)))
     session.commit()
     return run
@@ -193,6 +199,12 @@ def test_every_terminal_state_releases_the_guard(session, temp_db, terminal):
 
 
 def test_a_run_for_another_project_does_not_block_this_one(session, temp_db):
+    from tests.conftest import ensure_project
+
+    # Both projects must exist: 0007 (P12) closed the runs.project_id foreign key.
+    ensure_project(session, 1)
+    ensure_project(session, 2)
+
     service = RunService(session)
     service.create(1, RunOptions(subreddits=("saas",)))
     session.commit()

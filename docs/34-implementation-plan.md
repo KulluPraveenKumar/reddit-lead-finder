@@ -496,15 +496,53 @@ predecessor has not been approved. The `.claude/skills/phase-manager` skill enfo
 | **Objective** | The schema can hold a versioned, evidenced, entity-resolved knowledge base |
 | **Deliverables** | `0007_projects_and_knowledge_base`; 12 tables (+2 conditional); all deferred FKs closed |
 | **Files** | `migrations/versions/0007_projects_and_knowledge_base.py` +; `src/db/models.py` ~ |
-| **DB** | `projects`, `website_snapshots`, `bkb`, `bkb_sections`, `personas`, `pain_points`, `intent_signals`, `bkb_entities`, `bkb_entity_aliases`, `bkb_links`, `bkb_evidence`, `bkb_suggestions`, conditional `bkb_embeddings` + `bkb_embedding_meta`. Closes FKs on `ai_calls.project_id`, `runs.project_id` (+ `NOT NULL`), `dedup_groups.project_id`, `minhash_bands.project_id` |
+| **DB** | `projects`, `website_snapshots`, `bkb`, `bkb_sections`, `personas`, `pain_points`, `intent_signals`, `bkb_entities`, `bkb_entity_aliases`, `bkb_links`, `bkb_evidence`, `bkb_suggestions`, conditional `bkb_embeddings` + `bkb_embedding_meta`. Closes **six** deferred FKs: `ai_calls.project_id`, `runs.project_id` (**nullable — see the reconciliations below**), `leads.project_id`, `comments.project_id`, `dedup_groups.project_id`, `minhash_bands.project_id` |
 | **Config** | None |
 | **Depends on** | P11 |
-| **Tasks** | 1. Create in the [05 §7.1a](05-database-plan.md) order (15 steps)<br>2. **Wrap `sqlite-vec` in try/except** — a missing extension logs a warning and skips both vector tables<br>3. `batch_alter_table` for all four deferred FKs<br>4. `staleness_days` seeded per section group; Group C = `NULL` |
-| **Acceptance** | Upgrade/downgrade/upgrade on a live-DB copy · **with `sqlite-vec` unavailable the migration completes** and `/health` reports `semantic_layer: disabled` · `PRAGMA foreign_key_list` reports all four constraints · one head · `payload_json IS NULL` for exactly `buyer_personas`/`pain_points`/`buying_signals`, **NOT NULL for the other twenty including `ideal_customer_profiles`** |
-| **Metrics** | 459 intact · 4 FKs present · migration < 5 s |
+| **Tasks** | 1. Create in the [05 §7.1a](05-database-plan.md) order (19 steps as shipped — six FK closures, not two)<br>2. **Wrap `sqlite-vec` in try/except** — a missing extension logs a warning and skips both vector tables<br>3. `batch_alter_table` for all six deferred FKs<br>4. `staleness_days` policy shipped as data (`src.db.models.BKB_STALENESS_DAYS`), 23 keys, Group C = `NULL`; **seeded into rows by P14**, which is the phase that creates a BKB |
+| **Acceptance** | Upgrade/downgrade/upgrade on a live-DB copy · **with `sqlite-vec` unavailable the migration completes** and `/health` reports `semantic_layer: disabled` · `PRAGMA foreign_key_list` reports all **six** constraints · one head · `payload_json IS NULL` for exactly `buyer_personas`/`pain_points`/`buying_signals`, **NOT NULL for the other twenty including `ideal_customer_profiles`** |
+| **Metrics** | 459 intact · 6 FKs present · migration < 5 s |
 | **Time / Risk** | **2 days · Medium** — the largest revision |
 | **Rollback** | `alembic downgrade 0006` |
 | **Docs** | [05 §5.1](05-database-plan.md), [05 §7.1a](05-database-plan.md) |
+
+> **Reconciliations, P12, 2026-08-15 — three, each carrying the measurement that forced it.**
+> Recorded in full at [freeze §11.1](ARCHITECTURE_FREEZE.md) and reasoned at
+> [P12-DECISION-ANALYSIS.md](P12-DECISION-ANALYSIS.md). **None is a §11 amendment**: no technology,
+> table, decision or dependency changes in any of them, and the chain stays at ten revisions.
+>
+> 1. **`runs.project_id` is not tightened to `NOT NULL`, and the row above is corrected.** Measured
+>    before `0007` was written: **11 of 11 live runs have it `NULL`**, so the rebuild's
+>    `INSERT … SELECT` fails; the only way to make it pass is a backfill, which is the row rewrite
+>    **M5** forbids. **AD-5** is frozen as *"project scoping is additive and nullable"*, and
+>    `RunService.create(project_id: int | None)` is the shipped signature every run P1–P11 uses. The
+>    **FK is still created** — that half was always buildable. **D1.**
+> 2. **Six foreign keys close, not four.** [05 §7.1](05-database-plan.md)'s table names six, this row
+>    named four, [35 §6](35-testing-strategy.md) said four and [05 §7.1a](05-database-plan.md) said
+>    three — while `check_schema.py` has asserted since P8 that `leads` and `comments` are *"deferred
+>    to 0007"* too. The `leads` rebuild was **measured on a copy of the live database first**: 492
+>    rows, fingerprint `9327a13dd9ef4185`, all nine indexes and the `reddit_id` UNIQUE intact. **D2.**
+> 3. **`bkb_sections.payload_json` ships nullable with a `CHECK`.** [05 §5.1](05-database-plan.md)
+>    declares it `NOT NULL` and [05 §5.1b](05-database-plan.md) requires NULL for exactly three
+>    sections; both cannot hold, and this phase's Acceptance row encodes §5.1b. **D3.**
+>
+> **Two things P12 deliberately did not do**, each recorded rather than silently skipped.
+> **[DI28](DEFERRED-IMPROVEMENTS.md) (`leads.run_id`) was declined** — [PHASE-11-HANDOVER §3](PHASE-11-HANDOVER.md)
+> named `0007` the cheap moment, and DI28's own entry records that the `scraped_at` window is
+> **exact** today, so there is no failed measurement and [lock §8](EXECUTION_MODE_LOCK.md) does not
+> admit it. And **the three absent pre-score components stay absent**: `0007` creates `projects`,
+> `pain_points` and `bkb_entities` **empty**, so a component reading them would score `0.0` for every
+> item — [DI24](DEFERRED-IMPROVEMENTS.md) verbatim — and [PHASE-11-HANDOVER §4](PHASE-11-HANDOVER.md)
+> T2 records that a seventh weight rescales every stored `total`. `ABSENT_COMPONENTS` now names the
+> phase that supplies the **data** (P14, P15, P16) rather than the one that supplies the column.
+>
+> **The Files row is honoured, and four files sit outside it deliberately**, enumerated with a reason
+> each in [PHASE-12-COMPLETION-REPORT §2](PHASE-12-COMPLETION-REPORT.md): `scripts/check_schema.py`
+> (its four *"BARE — deferred to 0007"* assertions **invert** at this revision and would otherwise
+> report a correct schema as broken), `src/dashboard/routes_health.py` (the `semantic_layer`
+> criterion above names no other file), `templates/health_ai.html`, and one line of
+> `src/scoring/__init__.py`. Same basis as P5's `feed` CLI, P6's `triage.py`, P9's
+> `python -m src.rules`, P10's `__main__.py` and P11's wiring.
 
 ## P13 — Website fetch & local signals
 

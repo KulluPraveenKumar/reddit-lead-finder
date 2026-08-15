@@ -171,6 +171,43 @@ def _queue_payload() -> dict:
     }
 
 
+def _semantic_layer_payload() -> dict:
+    """Whether the optional vector tables exist, and therefore whether the
+    semantic layer is available on this host.
+
+    **Derived from the schema, not from importing `sqlite_vec`.** The question an
+    operator is asking is *"did the migration create them?"* — and an extension
+    that imports today does not retroactively create tables a migration skipped
+    six months ago. Probing the import would answer a different question and
+    would answer it wrongly on exactly the host where it matters.
+
+    05 §7.1a requires this to be visible: a migration that silently skips two
+    tables is a degradation nobody can see. `bkb_embeddings` arrives with 0007
+    and only where `sqlite-vec` loads, so `enabled: false` is the normal case
+    and `available_from: 0007` is what distinguishes "this host has no
+    extension" from "this database is not migrated yet".
+    """
+    from sqlalchemy import text as sa_text
+
+    session = get_session()
+    try:
+        present = session.execute(
+            sa_text("SELECT COUNT(*) FROM sqlite_master WHERE name = 'bkb_embeddings'")
+        ).scalar()
+    except Exception as exc:  # noqa: BLE001 - /health must not 500
+        log.warning("health: semantic layer probe failed: %s", exc)
+        return {"enabled": False, "error": str(exc)}
+    finally:
+        session.close()
+
+    return {
+        "enabled": bool(present),
+        "status": "enabled" if present else "disabled",
+        "tables": ["bkb_embeddings", "bkb_embedding_meta"] if present else [],
+        "available_from": "0007_projects_and_knowledge_base",
+    }
+
+
 @bp.route("/health")
 def health_page():
     return render_template("health_ai.html", nav_active="health_ai")
@@ -267,6 +304,9 @@ def health():
             "database": {"leads": lead_count, "path": str(DB_PATH)},
             "schema": schema,
             "queue": _queue_payload(),
+            # Additive. The optional vector tables 0007 creates only where
+            # `sqlite-vec` loads — reported so the degradation is visible.
+            "semantic_layer": _semantic_layer_payload(),
             # Summary only. The full per-proxy table lives at
             # /api/health/proxies; this is what a monitor would alert on.
             "proxies": {

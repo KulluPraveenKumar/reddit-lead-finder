@@ -75,6 +75,11 @@
   <h2>Schema &amp; database</h2>
   <div class="row"><span class="k">Migration</span><span class="v" id="schema">—</span></div>
   <div class="row"><span class="k">Leads</span><span class="v" id="leads">—</span></div>
+  {# Optional by design (AD-16). `disabled` is the normal state, not a fault:
+     the vector tables exist only where the `sqlite-vec` extension loads, and
+     embeddings never reject anything, so their absence costs recall rather
+     than correctness. Shown so the degradation is visible (05 §7.1a). #}
+  <div class="row"><span class="k">Semantic layer</span><span class="v" id="semantic">—</span></div>
 </div>
 {% endblock %}
 
@@ -146,6 +151,11 @@ async function load(){
     document.getElementById('schema').textContent =
       s.error ? s.error : (s.current + (s.up_to_date ? ' (up to date)' : ' → ' + s.head));
     document.getElementById('leads').textContent = (h.database || {}).leads;
+    const sem = h.semantic_layer || {};
+    document.getElementById('semantic').textContent =
+      sem.error ? sem.error
+                : (sem.status || 'unknown') +
+                  (sem.enabled ? '' : ' (sqlite-vec not installed — optional)');
   }catch(e){ /* the AI panel above is still useful without this */ }
 
   await loadProviders();

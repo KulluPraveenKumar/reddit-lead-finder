@@ -170,10 +170,18 @@ WEIGHTS: dict[str, float] = {
 #: was always zero — inside the phase whose job is fixing DI24. This is P6's
 #: ``density_threshold`` precedent and P10's tier-3-off precedent: *a key nothing
 #: reads is a documented capability that does not exist.*
+#: ⚠️ **Corrected in P12.** These named P12 while ``0007`` was unwritten, on the
+#: reading that the phase creating a table is the phase that can score from it.
+#: ``0007`` shipped and creates all three tables **empty** — ``projects`` gets
+#: its first row from P16's ``project add``, ``pain_points`` from P14's
+#: ``analyze_business``, ``bkb_entities`` from P15's registry. A component
+#: reading an empty table scores 0.0 for every item, which is DI24 verbatim and
+#: the thing this constant exists to prevent. Each entry now names the phase
+#: that supplies the **data**, not the phase that supplies the column.
 ABSENT_COMPONENTS: dict[str, str] = {
-    "pain_phrase": "P12 — `pain_points` arrives in revision 0007",
-    "competitor": "P15 — the EntityRegistry over `bkb_entities` (0007)",
-    "subreddit_fit": "P12 — `projects` arrives in revision 0007",
+    "pain_phrase": "P14 — `pain_points.phrases_json` is written by analyze_business",
+    "competitor": "P15 — the EntityRegistry over `bkb_entities` (created empty in 0007)",
+    "subreddit_fit": "P16 — the first `projects` row is written by `project add`",
 }
 
 

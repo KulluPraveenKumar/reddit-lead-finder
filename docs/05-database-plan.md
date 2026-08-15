@@ -154,7 +154,12 @@ CREATE TABLE bkb_sections (
     id              INTEGER PRIMARY KEY,
     bkb_id          INTEGER NOT NULL REFERENCES bkb(id) ON DELETE CASCADE,
     section_key     VARCHAR(40) NOT NULL,   -- company_overview | pain_points | ... (23 values)
-    payload_json    TEXT NOT NULL,          -- validated Pydantic model, json.dumps(sort_keys=True)
+    -- ⚠️ NULLABLE, corrected 2026-08-15 (P12). This said `TEXT NOT NULL`, which
+    --    §5.1b below then contradicts by requiring NULL for exactly three keys.
+    --    §5.1b wins — it is the later and more specific rule, and it carries its
+    --    reasoning. The biconditional ships as ck_bkb_sections_payload_null_rule
+    --    rather than as a convention. See freeze §11.1.
+    payload_json    TEXT NULL,              -- validated Pydantic model, json.dumps(sort_keys=True)
     confidence      REAL NULL,
     version         INTEGER NOT NULL DEFAULT 1,
     in_prefix       BOOLEAN NOT NULL DEFAULT 0,   -- matching surface vs retrieval-only (06e §6)
@@ -1100,7 +1105,7 @@ suffix one (`0005a`) — that produces two heads and breaks `upgrade head`.
 | `0004` | `orchestration` | **P1 ✅ shipped 2026-08-05** | `runs`, `jobs`, `run_events`; `scrape_runs.run_id` (+FK); closes the deferred `ai_calls.run_id` FK |
 | `0005` | `discovery` | **P6 ✅ shipped 2026-08-08** | `discovery_watermarks`, `prescores` (incl. `stage`; `comment_id` FK **deferred to `0006`**) |
 | `0006` | `content_and_dedup` | **P8 ✅ shipped 2026-08-11** | `comments`, `dedup_groups`, `dedup_members`, `minhash_bands`; the **4** `leads` columns (`project_id`, `confidence_score`, `analysis_status`, **`source`**) + 4 indexes; **closes** the `prescores.comment_id` FK |
-| `0007` | `projects_and_knowledge_base` | P12 | `projects`, `website_snapshots`, **`bkb`, `bkb_sections`**, `personas`, `pain_points`, `intent_signals`, **`bkb_entities`, `bkb_entity_aliases`, `bkb_links`, `bkb_evidence`, `bkb_suggestions`, `bkb_embeddings`+`bkb_embedding_meta` (conditional)**; closes **four** deferred `project_id` FKs (§7.1) |
+| `0007` | `projects_and_knowledge_base` | **P12 ✅ shipped 2026-08-15** | `projects`, `website_snapshots`, **`bkb`, `bkb_sections`**, `personas`, `pain_points`, `intent_signals`, **`bkb_entities`, `bkb_entity_aliases`, `bkb_links`, `bkb_evidence`, `bkb_suggestions`, `bkb_embeddings`+`bkb_embedding_meta` (conditional)**; closes **six** deferred `project_id` FKs (§7.1). `runs.project_id` stays **nullable** |
 | `0008` | `targeting` | P17 | `project_subreddits`, `project_keywords` |
 | `0009` | `enrichment` | P19 | `lead_analysis` (incl. **`bkb_id`, `weights_version`, `ruleset_version`, `tier`**), `gate_audits`, **`ai_budgets`** |
 | `0010` | `monitoring_and_quality` | P25 | `projects.monitoring_enabled`, `monitoring_interval_hours`, `last_monitored_at`; **`lead_labels`** (incl. `reason`), **`golden_items`, `golden_runs`, `quality_snapshots`, `calibration_maps`, `patterns`** |
@@ -1167,15 +1172,33 @@ the AI layer lands first and `projects` does not arrive until `0007` (P12), this
 | **`dedup_groups.project_id`** | **`0006`** | `projects` (`0007`) | **`0007`** |
 | **`minhash_bands.project_id`** | **`0006`** | `projects` (`0007`) | **`0007`** |
 
-> **P12 inherits four `batch_alter_table` rebuilds**, one of them over `leads`. Take an M7 backup
+> **P12 inherits six `batch_alter_table` rebuilds**, one of them over `leads`. Take an M7 backup
 > first. A rebuild is a genuine copy-and-move **when it changes constraints**, which is exactly what
 > `0007` does — note that `batch_alter_table` does *not* rebuild when its only operation is
 > `add_column`; alembic emits a plain `ALTER` there (measured: `rootpage` unchanged).
 >
-> **P12 must also decide** whether `dedup_groups.project_id` and `minhash_bands.project_id` become
-> `NOT NULL` when their FKs close. [34 §P12](34-implementation-plan.md) tightens only
-> `runs.project_id` and says nothing about these two, so on the documents as written they are
-> nullable forever. P8 did not pre-empt that choice.
+> ✅ **Answered in P12, 2026-08-15 — all six close, and none of the three columns is tightened.**
+> This table's count of six is the one that shipped; [34 §P12](34-implementation-plan.md)'s four and
+> §7.1a's three are reconciled to it at [freeze §11.1](ARCHITECTURE_FREEZE.md). The `leads` rebuild
+> was measured on a copy of the live database **before** the revision was written: 492 rows, the
+> `intent_score` fingerprint `9327a13dd9ef4185`, all nine indexes including the `reddit_id` UNIQUE,
+> the child FKs on `comments` and `dedup_members`, `foreign_key_check` empty, `integrity_check = ok`.
+>
+> **The three nullability questions are all answered "leave it", each against a document.**
+> `dedup_groups.project_id` and `minhash_bands.project_id` — the choice this note handed to P12 —
+> **stay nullable**, because P10's cascade and P11's stage write `None` into both on every run and
+> there is no project to attribute a run to until P16; tightening them would satisfy §5.4b by
+> breaking shipped code. `runs.project_id` **also stays nullable**, which is the substantive one:
+> all 11 live runs have it `NULL`, so the rebuild's `INSERT … SELECT` fails, the backfill that would
+> fix it is the row rewrite **M5** forbids, and **AD-5** freezes project scoping as *additive and
+> nullable*. Pinned by `tests/test_schema_0007.py`, in both directions.
+>
+> **The ON DELETE actions are deliberately not uniform.** `ai_calls` → `SET NULL` and `runs` →
+> `CASCADE` are given literally in the code block below. `leads` and `comments` → **`SET NULL`**,
+> because [freeze §8](ARCHITECTURE_FREEZE.md) makes expiring leads a permanent non-goal — *a lead is
+> a historical fact* — so deleting a project must not delete the corpus collected for it.
+> `dedup_groups` and `minhash_bands` → **`CASCADE`**, as derived per-run artefacts that are rebuilt
+> from scratch and already cascade from `runs`. If they ever become uniform, one of them is wrong.
 
 **Each of these columns is created with a bare type and no `REFERENCES` clause.** The constraint is
 added later:
@@ -1254,24 +1277,44 @@ at `0005` — a downgrade that silently left them behind would otherwise pass a 
 **`0005_projects_and_knowledge_base` now has the same hazard**, and a longer chain — §5.1 and §5.1a
 list its tables by topic. The required order is:
 
+> ⚠️ **Corrected 2026-08-15 (P12), in three ways.** The block was titled `0005` (it is **`0007`** —
+> [31](31-execution-plan.md)'s reorder, the same staleness §7's opening note corrects); step 3 asked
+> to *"tighten `project_id` NOT NULL"*, which is **not buildable** and is reconciled away at
+> [freeze §11.1](ARCHITECTURE_FREEZE.md); and steps 2–3 closed **two** foreign keys where §7.1's
+> table names **six**, omitting the four `project_id` columns `0006` creates. The shipped order is
+> below. Its cross-references were also off by one throughout, because the list had fewer steps than
+> the tables it ordered.
+
 ```
-0005_projects_and_knowledge_base:
+0007_projects_and_knowledge_base:
   1.  CREATE projects                ← referenced by everything below
-  2.  ALTER  ai_calls  ADD FK -> projects      (batch_alter_table)
-  3.  ALTER  runs      ADD FK -> projects, tighten project_id NOT NULL
-  4.  CREATE website_snapshots       ← referenced by 10
-  5.  CREATE bkb                     ← referenced by 6, 10
-  6.  CREATE bkb_sections
-  7.  CREATE personas                ← referenced by 8
-  8.  CREATE pain_points             ← references personas
-  9.  CREATE intent_signals
-  10. CREATE bkb_entities            ← referenced by 11
-  11. CREATE bkb_entity_aliases
-  12. CREATE bkb_links               ← polymorphic endpoints; no FK ordering requirement
-  13. CREATE bkb_evidence            ← references bkb, website_snapshots
-  14. CREATE bkb_suggestions
-  15. TRY    CREATE bkb_embeddings (vec0) + bkb_embedding_meta   ← conditional, see below
+  2.  ALTER  ai_calls       ADD FK -> projects  ON DELETE SET NULL   (batch_alter_table)
+  3.  ALTER  runs           ADD FK -> projects  ON DELETE CASCADE    — project_id stays NULLABLE
+  4.  ALTER  leads          ADD FK -> projects  ON DELETE SET NULL   ← the legacy table; M7 backup
+  5.  ALTER  comments       ADD FK -> projects  ON DELETE SET NULL
+  6.  ALTER  dedup_groups   ADD FK -> projects  ON DELETE CASCADE    — stays NULLABLE
+  7.  ALTER  minhash_bands  ADD FK -> projects  ON DELETE CASCADE    — stays NULLABLE
+  8.  CREATE website_snapshots       ← referenced by 17
+  9.  CREATE bkb                     ← referenced by 10, 11, 12, 13, 17
+  10. CREATE bkb_sections            ← + ck_bkb_sections_payload_null_rule
+  11. CREATE personas                ← referenced by 12
+  12. CREATE pain_points             ← references personas
+  13. CREATE intent_signals
+  14. CREATE bkb_entities            ← referenced by 15; self-reference on merged_into_id
+  15. CREATE bkb_entity_aliases
+  16. CREATE bkb_links               ← polymorphic endpoints; no FK ordering requirement
+  17. CREATE bkb_evidence            ← references bkb, website_snapshots, leads, comments
+  18. CREATE bkb_suggestions
+  19. TRY    CREATE bkb_embeddings (vec0) + bkb_embedding_meta   ← conditional, see below
 ```
+
+`downgrade()` reverses it exactly, and **the six batch constraints are dropped before `projects`** —
+for the reason `0006`'s downgrade drops the `prescores` constraint first: a table cannot be dropped
+while a foreign key points at it, and a reference left behind is invisible to `foreign_key_check`
+while breaking every `INSERT` into the child. Step 19's pair is dropped **first and conditionally**
+(`DROP TABLE IF EXISTS`), because on a host without the extension it was never created and a
+downgrade that raised there would make the rollback unavailable exactly where the upgrade had
+already degraded.
 
 Step 15 is wrapped:
 
@@ -1291,12 +1334,17 @@ the entire schema un-installable in exchange for a recall improvement. A startup
 `semantic_layer: disabled` on `/health` so the degradation is visible rather than silent.
 
 SQLite cannot `ADD CONSTRAINT`; Alembic's `batch_alter_table` performs the
-create-copy-drop-rename rebuild. **`runs.project_id` stays nullable until `0005`** and is tightened
-to `NOT NULL` in the same rebuild — a run created before Phase 4 has no project to belong to.
+create-copy-drop-rename rebuild. **`runs.project_id` is nullable and stays nullable** — a run created
+before a project exists has no project to belong to, which is the reason this paragraph gave for
+deferring the constraint and is equally the reason not to tighten the column. *(Corrected
+2026-08-15: this sentence previously said "and is tightened to `NOT NULL` in the same rebuild",
+contradicting its own first clause and **AD-5**. Measured: 11 of 11 live runs have it `NULL`, so the
+rebuild fails; the backfill that would fix it is the row rewrite **M5** forbids.
+[freeze §11.1](ARCHITECTURE_FREEZE.md).)*
 
 The alternative — reordering revisions so `projects` precedes everything — would push the AI layer
 behind the schema work and defeat the phase ordering. A test asserts that after `alembic upgrade
-head`, `PRAGMA foreign_key_list` reports all three constraints.
+head`, `PRAGMA foreign_key_list` reports all **six** constraints.
 
 ### 7.1 Baseline stamping procedure
 

@@ -531,6 +531,17 @@ def test_a3_the_alter_did_not_rewrite_a_single_row(tmp_path):
     ``test_parse_speed_stays_inside_the_budget`` are the same species, and DI18
     has already failed three times for machine load rather than for slowness.
     A timing test here would measure the CI runner, not the migration.
+
+    ⚠️ **Pinned to ``0006``, not ``head``, from P12 on.** This asserts a property
+    of *this* revision -- that its four ``ADD COLUMN``s are metadata-only. ``0007``
+    legitimately **does** rebuild ``leads``, because closing the deferred
+    ``project_id`` foreign key needs a create-copy-drop-rename and SQLite has no
+    ``ADD CONSTRAINT``. Left as ``head`` this test would have read that correct
+    rebuild as a P8 defect. The assertion below is unchanged; only the revision
+    it is made at is pinned to the one the docstring is about. ``0007``'s
+    equivalent guarantee -- that the rebuild preserved every row, score and index
+    -- is asserted by ``tests/test_schema_0007.py::
+    test_up_down_up_on_a_copy_of_the_live_database``.
     """
     from src.db.migrate import MigrationRunner
 
@@ -545,7 +556,7 @@ def test_a3_the_alter_did_not_rewrite_a_single_row(tmp_path):
     finally:
         conn.close()
 
-    MigrationRunner(db_path).upgrade("head")
+    MigrationRunner(db_path).upgrade("0006_content_and_dedup")
 
     conn = sqlite3.connect(db_path)
     try:
@@ -676,7 +687,11 @@ def test_a1_up_down_up_on_a_copy_of_the_live_database(tmp_path):
         finally:
             conn.close()
 
-    runner.upgrade("head")
+    # ⚠️ `0006`, not `head`. This test is P8's 0006 round-trip and its three
+    # revision assertions say so; once P12 made `head` mean `0007` the literal
+    # `head` would have silently retargeted it to a different rollback. Pinned
+    # rather than loosened -- the assertions below are unchanged.
+    runner.upgrade("0006_content_and_dedup")
     up_count, up_rev = leads_and_head()
     assert up_rev == "0006_content_and_dedup"
 
@@ -730,7 +745,7 @@ def test_a1_up_down_up_on_a_copy_of_the_live_database(tmp_path):
     assert not fk_violations, f"downgrade left FK violations: {fk_violations}"
     assert integrity == "ok", f"downgrade corrupted the database: {integrity}"
 
-    runner.upgrade("head")
+    runner.upgrade("0006_content_and_dedup")
     re_count, re_rev = leads_and_head()
     assert re_rev == "0006_content_and_dedup"
 
