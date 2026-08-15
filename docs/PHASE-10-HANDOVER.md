@@ -119,11 +119,27 @@ avoid, and the classic 128-permutation implementation measured *less* accurate a
 consequence is bounded: a borderline pair is grouped, one is enriched, and **both keep their own
 score**.
 
-**T3 — a timing assertion under `--cov` measures the tracer.** Coverage costs **3.0×** here, and A5's
-strict 2 s budget goes red on a phase that meets it in 0.87 s. `tests/test_dedupe_performance.py`
-solves it with `assert_within()`, which **skips and says so** under a tracer rather than inflating the
-budget. **Copy that helper if you add a performance assertion**; [35 §2.1](35-testing-strategy.md)
-check 7 runs the whole suite under coverage.
+**T3 — 🔴 a performance test can measure the wrong quantity on the wrong data, and look fine for a
+whole phase.** A5's assertion failed P10 acceptance testing at 2.206 s where the same commit measured
+0.92 s on the **same machine**. No regression — two defects in the test, both fixed 2026-08-15:
+
+- **It timed wall clock where the spec says CPU.** Use `cpu_seconds()` (`time.process_time`). Note the
+  honest limit, measured: contention inflates wall clock 2.08× and CPU **1.97×**, so this fixes
+  *what* is measured, not immunity to a busy machine.
+- **Its corpus was lighter than production — twice over.** Fixed-length 870-character documents
+  against a real median of 1,060; and, after that was fixed, still only **391 distinct 5-grams per
+  document against a real 1,053**, because a 19-word vocabulary saturates at **65** distinct 5-grams
+  regardless of document length. **`shingles()` returns a set, so cost tracks distinct 5-grams, not
+  characters** — match your corpus on *that*, or you will measure a workload you do not have.
+
+`test_the_benchmark_corpus_matches_real_data` now asserts the corpus's own mean, median, tail and
+5-gram density. **If you add a performance test in P11, copy all three habits**: `assert_within()`
+(which skips under a tracer — [35 §2.1](35-testing-strategy.md) check 7 runs the suite under
+coverage), CPU time, and a corpus that asserts its own representativeness.
+
+**Residual risk you inherit:** A5's margin is **1.86×** on representative data (0.95–1.08 s CPU
+quiet, 0/15 over budget), and under a 3×-oversubscribed machine it still exceeded once in 8. No
+absolute threshold can be immune to that.
 
 **T4 — a mutation driver without a timeout hangs forever, and the hang will not be a mutation.**
 P10's first run had none and was killed after 30 minutes having reported nothing; the cause was the

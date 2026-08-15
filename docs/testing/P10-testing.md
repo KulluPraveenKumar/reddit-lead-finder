@@ -336,6 +336,25 @@ hides the summary line you are about to read — leaving a green-looking run wit
 The time will differ on your machine; the counts should not. **2 skipped is normal and unchanged
 since P8** — they are tests needing a real API key.
 
+> ⚠️ **If you ran this guide before 2026-08-15 you may have seen one failure here**, in
+> `test_a5_minhash_indexes_and_queries_2000_items_under_two_seconds`, reporting something like
+> *"2.21s, budget 2.0s"*. That was a **defect in the test, not in the product**, and it is fixed.
+>
+> Two things were wrong with it. It timed the **wall clock** where the specification says
+> **CPU time** — so any second the machine spent on your browser or the dashboard from T10 was being
+> charged to the dedup cascade. And its test data was **lighter than real posts**: documents of a
+> fixed 870 characters producing 372 distinct text fragments, where real leads average 1,333
+> characters and 1,053 fragments.
+>
+> The corrected benchmark measures **about 1.5× more work** than the one that failed you, and passes
+> with room to spare. **Nothing was relaxed to achieve that** — no budget was raised, no assertion
+> weakened, and no application code changed. Full detail:
+> [PHASE-10-COMPLETION-REPORT §3](../PHASE-10-COMPLETION-REPORT.md).
+>
+> **It can still fail on a heavily loaded machine.** If it does, close what is competing for the CPU
+> and re-run before recording a failure — and if it fails on an idle machine, that is a genuine
+> result worth reporting.
+
 - [ ] **Passed:** ______ *(expected `1640`)*
 - [ ] **Skipped:** ______ *(expected `2`)*
 - [ ] **Failed:** ______ *(expected `0`)*

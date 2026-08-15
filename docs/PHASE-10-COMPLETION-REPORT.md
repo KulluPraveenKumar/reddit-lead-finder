@@ -71,6 +71,54 @@ reads, writes or derives a per-item score, and `test_grouping_mutates_no_per_ite
 | Offline guarantee | Held — tier 3's *installed* arm is tested by injecting a stub into `sys.modules`, never by downloading a model |
 | Rollback | **Executed** — by flag, by config file, and by block deletion |
 
+### ⚠️ Revision 2026-08-15 — the A5 benchmark was corrected during acceptance testing
+
+**P10 acceptance testing failed on `test_a5_...[870-char-bodies]` at 2.206 s.** Investigation found
+**no regression** — the implementation is deterministic (50 calls on one input produce one signature)
+and unchanged — but **two defects in the benchmark itself**. Both are now fixed, **test-side only**;
+`src/` is untouched and no budget or assertion was relaxed.
+
+**Defect 1 — it measured the wrong clock.** [34 §P10](34-implementation-plan.md) says *"< 2 s
+**CPU**"*; the test asserted `time.perf_counter()`, wall clock. That is why the same commit measured
+**0.92 s for me and 2.206 s for the operator on the same machine** — the difference was time the
+process spent descheduled behind a browser and the dashboard that
+[testing/P10-testing.md](testing/P10-testing.md) T10 itself tells the operator to start.
+
+**Defect 2 — the corpus was lighter than production, in two independent ways.**
+
+| | Old benchmark | Real leads | Corrected |
+|---|---:|---:|---:|
+| mean chars | 931 | **1,333** | 1,336 |
+| median chars | 931 | **1,060** | 1,064 |
+| p90 chars | 931 | **2,913** | 2,843 |
+| **mean distinct 5-grams** | **372** | **1,053** | **1,036** |
+| distinct 5-grams per char | 0.40 | **0.84** | 0.78 |
+
+The second row of that table is the one that matters. `shingles()` returns a **set**, so the cascade
+pays per *distinct* 5-gram — and the first corrected corpus **matched every length percentile while
+still producing 391 distinct 5-grams against a real 1,053**, because a 19-word vocabulary saturates:
+measured, a document built from it yields **65** distinct 5-grams whether it is 259 or 7,799
+characters long. Length was being matched while the work was not. The vocabulary is now sized by
+measurement (19 words → 0.32 per char, 100 → 0.67, 500 → 0.91, real → 0.84, shipped → 400 words).
+
+**The corrected benchmark measures ~1.5× more work than the old one and still passes**, and
+`test_the_benchmark_corpus_matches_real_data` now asserts the corpus's own mean, median, tail and
+5-gram density so it cannot silently drift back to being easy.
+
+| Corrected A5, CPU seconds | |
+|---|---|
+| Quiet, 15 runs | min **0.95** · max **1.08** · avg **0.99** · spread **1.13×** · **0/15 over budget** |
+| Margin vs 2.0 s | **1.86×** worst case |
+| 10 harness runs of the file | **10 green, 0 red** |
+| Under 24 competing processes, 8 CPUs | 1.03–2.02 s · **1/8 over budget** |
+
+**Residual risk, stated rather than hidden.** CPU time is *not* immune to contention — measured, heavy
+load inflates wall clock 2.08× and CPU time 1.97×, so only ~5% of the slowdown was descheduling. On a
+3×-oversubscribed machine the assertion can still exceed 2 s. The margin is now 1.86× with a 1.13×
+natural spread, against the old 2.2× margin with a 1.44× spread on a corpus measuring 40% less work.
+**A5 is met on representative data; it is not immune to a saturated machine, and no absolute
+threshold could be.**
+
 ### A gate finding worth recording
 
 **The A5 assertion fails under `--cov`, and that is the instrument, not the code.** Coverage's tracer

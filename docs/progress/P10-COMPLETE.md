@@ -120,6 +120,8 @@ docs/README.md                     + the P10 execution row
 | Symptom | Where to look |
 |---|---|
 | A5 assertion red under `--cov` | Expected — coverage costs 3.0×. `assert_within()` skips and says so. [Completion report §3](../PHASE-10-COMPLETION-REPORT.md) |
+| A5 assertion red on a **busy** machine | Possible, and known. It measures **CPU time** on a representative corpus with a **1.86× margin**; contention inflates CPU ~1.97×. Close what is competing and re-run. Red on an **idle** machine is a genuine result |
+| The benchmark corpus looks synthetic | It is. Only the **length distribution and 5-gram density** come from real leads; no Reddit content is in the repository (H2). `test_the_benchmark_corpus_matches_real_data` holds both |
 | Collapse rate below 8% | Expected and diagnosed. [Completion report §5](../PHASE-10-COMPLETION-REPORT.md) |
 | A borderline pair grouped that exact Jaccard would not | Expected — a 128-slot sketch is ±0.05. [Handover §4 T2](../PHASE-10-HANDOVER.md) |
 | Two `normalise` functions | Different functions, opposite requirements, on purpose. [Handover §4 T9](../PHASE-10-HANDOVER.md) |
