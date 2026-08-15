@@ -579,6 +579,36 @@ class TestL1Cache:
         assert second.from_cache is True
         assert second.content_hash == first.content_hash
 
+    def test_a_cache_hit_returns_the_same_url_shape_as_a_fresh_fetch(self, db_session):
+        """`ExtractedSite.url` must not change shape depending on whether the
+        cache hit.
+
+        The row is stored under the **normalised** key (`https://x.example`,
+        scheme+host, no trailing slash) while a fresh fetch reports the
+        **validated** target (`https://x.example/`, path kept). Returning
+        `row.url` on the cached path made the two differ — and P14 reads this
+        attribute, so it would have surfaced as a duplicate row three phases
+        later rather than as an error here.
+        """
+        project = _project(db_session)
+        fetcher = WebsiteFetcher(FakeClient(a_site()))
+        first = fetcher.fetch(BASE, session=db_session, project_id=project.id)
+        second = fetcher.fetch(BASE, session=db_session, project_id=project.id)
+
+        assert second.from_cache is True
+        assert second.url == first.url
+
+    def test_the_row_is_still_keyed_on_the_normalised_url(self, db_session):
+        """The fix above must not have moved the *storage* key — that is what
+        makes `https://Example.com/` and `example.com` one cache entry."""
+        from src.db.models import WebsiteSnapshot
+
+        project = _project(db_session)
+        WebsiteFetcher(FakeClient(a_site())).fetch(BASE, session=db_session, project_id=project.id)
+        row = db_session.query(WebsiteSnapshot).one()
+        assert row.url == "https://ledgerloop.example"
+        assert row.url != BASE
+
     def test_a_snapshot_older_than_the_window_is_not_reused(self, db_session):
         from src.db.models import WebsiteSnapshot
 

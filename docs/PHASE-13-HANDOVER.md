@@ -66,6 +66,7 @@ from src.ai.site_signals import SiteSignals, PricingSignal, extract
 | **G12** | **The CLI writes nothing** — no `projects` row, no `website_snapshots` row | `test_it_writes_nothing_to_the_database` |
 | **G13** | **`SiteSignals.markup_seen` is `False` on a cache hit** | `test_a_cache_hit_reports_that_it_saw_no_markup` (both files) |
 | **G14** | One head, still `0007` — P13 added no revision | `test_single_head`, `test_the_head_is_0007_and_there_is_still_one_of_them` |
+| **G15** | **`ExtractedSite.url` has the same shape whether or not the cache hit**, while the stored row stays keyed on the normalised form | `test_a_cache_hit_returns_the_same_url_shape_as_a_fresh_fetch`, `test_the_row_is_still_keyed_on_the_normalised_url` |
 
 ---
 
@@ -83,10 +84,23 @@ from src.ai.site_signals import SiteSignals, PricingSignal, extract
    a parser. `competitors(text, known=[...])` takes a per-project dictionary — that is the parameter
    the BKB fills once you have one.
 
-4. **`projects` still has no writer, and P16 is still the one.** P13 did not become a second one, and
+4. **`ExtractedSite.url` and `website_snapshots.url` are deliberately different strings, and you
+   will read both.** `ExtractedSite.url` is the **validated target** — it keeps its path and its
+   trailing slash, and it is now identical on the fresh and the cached path (**G15**; it was not,
+   and the fix is P13's own, found in review). `website_snapshots.url` is the **normalised**
+   scheme+host, because that is the L1 cache key and it is what makes `https://Example.com/` and
+   `example.com` one entry.
+
+   ⚠️ **A consequence worth knowing before you meet it:** a project entered as
+   `https://example.com/en/` caches under `https://example.com`. Within one project that is
+   harmless — [05 §5.1](05-database-plan.md) makes `normalized_url` the project identity, so one
+   project is one site — but if P16 ever allows two projects to differ only by path, the L1 key
+   stops distinguishing them.
+
+5. **`projects` still has no writer, and P16 is still the one.** P13 did not become a second one, and
    its own tests create the row in a fixture. If P14's handler needs a project, it does the same.
 
-5. **`test_p12_wrote_no_row` is still yours to narrow, not to delete** —
+6. **`test_p12_wrote_no_row` is still yours to narrow, not to delete** —
    [PHASE-12-HANDOVER §6](PHASE-12-HANDOVER.md), unchanged. P13 wrote no row to any of the twelve
    either; `website_snapshots` is written only by a caller that passes a session, and no shipped
    caller does yet.
@@ -190,17 +204,17 @@ check 6) rather than verify anything.
 
 | | |
 |---|---|
-| Full suite | **2033 passed, 2 skipped** in 523.33 s (P12: 1905 / 2) |
-| Under coverage | **2026 passed, 9 skipped** — the extra 7 are performance tests that **self-skip under a tracer** by design, not a P13 effect |
-| New tests | **+128** |
-| Coverage, whole tree | **88.89%** · without the two new modules the same run reports **88.52%**, so P13 **raised** it by 0.37 pp. ⚠️ P12's recorded 89.20% is not reproducible on this tree today |
-| Coverage, `src/{ai,net,scoring}` | **90.22%**, against the ≥85% floor · new modules **98%** and **96%** |
+| Full suite | **2035 passed, 2 skipped** in 1205.35 s (P12: 1905 / 2) |
+| Under coverage | **2028 passed, 9 skipped** — the extra 7 are performance tests that **self-skip under a tracer** by design, not a P13 effect |
+| New tests | **+130** |
+| Coverage, whole tree | **89.54%** (P12: 89.20%) · without the two new modules the same run reports **89.19%**, so P13 **raised** it by 0.35 pp |
+| Coverage, `src/{ai,net,scoring}` | **90.29%**, against the ≥85% floor · new modules **98.20%** and **96.13%** |
 | `ruff check` / `format --check` | Clean · 179 files |
 | `alembic heads` | `0007_projects_and_knowledge_base` — one head, **unchanged**; seven revisions of ten |
 | `check_schema.py` | **76/76** on the live database |
 | Boundary / fence tests | **81 passed** (AST-based) |
 | Legacy contract | 459 baseline leads · `max 164.28` · `avg 42.29` · 13 CSV columns · `GET /` 200 |
-| Mutation testing | **16 designed · 15 detected · 1 control · 0 survived.** **Three real defects found**, all three in P13's own competitor regex, all three by the fixture |
+| Mutation testing | **17 designed · 16 detected · 1 control · 0 survived.** **Four real defects found** — three in P13's own competitor regex, caught by the fixture; the fourth an `ExtractedSite.url` that changed shape on a cache hit, caught in review after the first commit |
 | Migration | **None added.** The chain is unchanged |
 | AI calls | **0** |
 | Rollback | **Executed, both paths** — config-block deletion gives identical settings; `0006` round-trip gives 51/51 down and 76/76 up |
@@ -234,7 +248,7 @@ check 6) rather than verify anything.
 - [ ] [34 §P14](34-implementation-plan.md) read — all thirteen fields, including **exactly one `ai_calls` row**, **< $0.05**, and **per-section failure isolation**
 - [ ] `phase-manager` skill loaded before the first edit under `src/`
 - [ ] `trafilatura` installed — `pip install -r requirements.txt`. **P13 added it and it is required**, not optional
-- [ ] The full suite recorded green before the first change — **2033 passed, 2 skipped**. ⚠️ **Run it locally, not from a CI badge** — [DI30](DEFERRED-IMPROVEMENTS.md)
+- [ ] The full suite recorded green before the first change — **2035 passed, 2 skipped**. ⚠️ **Run it locally, not from a CI badge** — [DI30](DEFERRED-IMPROVEMENTS.md)
 - [ ] `git status` clean · `alembic heads` = one `0007` · `check_schema.py` **76/76**
 - [ ] ⚠️ **`config.yaml` checked for uncommitted local values** — it carried a real chat id at the start of both P8 and P9. **P13 added the `website:` block**; nothing else in the file should have moved
 - [ ] ⚠️ **P14 opens no revision.** `0008` is **P17's**. P14 writes rows into tables `0007` already created

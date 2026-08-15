@@ -483,7 +483,7 @@ class WebsiteFetcher:
         key = normalise_url(target)
 
         if session is not None and project_id is not None:
-            cached = self._cache_hit(session, project_id, key)
+            cached = self._cache_hit(session, project_id, key, target)
             if cached is not None:
                 log.info("website L1 hit for project %s (%s); 0 requests made", project_id, key)
                 return cached
@@ -588,11 +588,21 @@ class WebsiteFetcher:
 
     # ----------------------------------------------------------- L1 cache
 
-    def _cache_hit(self, session, project_id: int, key: str) -> ExtractedSite | None:
+    def _cache_hit(self, session, project_id: int, key: str, target: str) -> ExtractedSite | None:
         """The newest snapshot for this project and URL, if it is still fresh.
 
         ``cache_ttl_days: 0`` disables the cache rather than expiring everything
         instantly, which is the reading an operator turning it off expects.
+
+        ``key`` and ``target`` are both needed and are **not** the same string.
+        ``key`` is the normalised scheme+host that the row is stored under;
+        ``target`` is the validated URL as the caller gave it, which keeps its
+        path and its trailing slash. :attr:`ExtractedSite.url` is built from
+        ``target`` on **both** paths, because a field that changed shape
+        depending on whether the cache hit would be a trap for every consumer:
+        P14 reads this attribute, and `https://x.example/` comparing unequal to
+        `https://x.example` is the kind of difference that surfaces as a
+        duplicate row three phases later rather than as an error here.
         """
         if self.settings.cache_ttl_days <= 0:
             return None
@@ -615,7 +625,7 @@ class WebsiteFetcher:
 
         text = row.extracted_text or ""
         return ExtractedSite(
-            url=row.url,
+            url=target,
             # The per-page split is not stored -- only the concatenation is --
             # so a reuse reports one page's worth of text under the landing
             # path. `pages_fetched` comes off the row instead, below.

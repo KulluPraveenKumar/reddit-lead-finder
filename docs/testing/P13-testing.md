@@ -469,7 +469,7 @@ OK — all 76 checks passed.
 
 ## T9 — The full suite is green
 
-The long one. Roughly 17 minutes; leave it running.
+The long one. Roughly 20 minutes; leave it running.
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest
@@ -478,10 +478,10 @@ The long one. Roughly 17 minutes; leave it running.
 **Expected — the last line:**
 
 ```
-1984 passed, 2 skipped in 1014.79s (0:16:54)
+2035 passed, 2 skipped in 1205.35s (0:20:05)
 ```
 
-**PASS if:** `1984 passed` and `2 skipped`, with **0 failed**.
+**PASS if:** `2035 passed` and `2 skipped`, with **0 failed**.
 **FAIL if:** any failure. Record the test name; it is more useful than the count.
 
 > ⚠️ **Run this locally, not from the CI badge.** Ten tests use your real database, which is not in
