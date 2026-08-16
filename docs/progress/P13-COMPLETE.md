@@ -25,8 +25,8 @@
 | New dependency | `trafilatura 2.2.0` + 13 transitive packages — **required, not optional** |
 | AI calls | **0**, asserted as `COUNT(*) FROM ai_calls` |
 | Live verification | `https://example.com` — 1 request, 285 chars, thin, hash `01d96b8d…` |
-| Commit · push | six commits `d0ef28c..366695e` on `main`, pushed — `a1ea5c2` (the phase), `26ba0a6` (the review fix), `366695e` (**the operator manual-test fix**) |
-| CI | ✅ **green on the final commit** — run `31896081590`, `conclusion: success`. **2034 passed, 12 skipped** — ten fewer than local, which is [DI30](../DEFERRED-IMPROVEMENTS.md), not a regression |
+| Commit · push | nine commits `d0ef28c..a6ec525` on `main`, pushed — `a1ea5c2` (the phase), `26ba0a6` (the review fix), `366695e` (**the operator manual-test fix**), `a6ec525` (test strengthening + DI36) |
+| CI | 🔴 **RED on `a6ec525`** — run `31925510457`. **1 failed, 2034 passed, 12 skipped**, and the one failure is **[DI36](../DEFERRED-IMPROVEMENTS.md)**, P11's time bomb. A clean checkout on another machine reproducing the *same single failure* rules out local environment, load and test pollution. The phase's own last green run was `366695e` (`31896081590`) |
 | Sign-off | ❌ **Unsigned** — `docs/testing/P13-testing.md` awaits the operator |
 | Tag | ❌ **Not tagged**, and must not be while the sign-off is blank ([lock §6.2](../EXECUTION_MODE_LOCK.md)) |
 

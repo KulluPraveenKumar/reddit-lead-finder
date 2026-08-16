@@ -400,8 +400,10 @@ unchanged and its warning was honoured: the suite was run **locally**, not read 
 | **`26ba0a6`** | `fix(P13): ExtractedSite.url changed shape depending on the cache` — the review fix in §4.2, and the coverage correction |
 | **`bd00bd6`** | `docs(P13): the four commits and the green CI run on the final one` |
 | **`366695e`** | `fix(P13): the BeautifulSoup fallback discarded a JS-only page, and a missing dependency was logged like a stubborn page` — **the operator manual-test fix, §1a** |
+| **`8f93556`**, **`bbe2cea`** | `docs(P13)`: the commit list and the CI run id |
+| **`a6ec525`** | `test(P13): assert the fallback's exact output, and record DI36` — the review strengthening in §1a, and the time bomb in §4.1 |
 
-Six commits, `d0ef28c..366695e`, all pushed. `git status -sb` reports `## main...origin/main` with
+Nine commits, `d0ef28c..a6ec525`, all pushed. `git status -sb` reports `## main...origin/main` with
 no ahead count.
 
 **Repository hygiene ([lock §5](EXECUTION_MODE_LOCK.md) H1–H8), against the staged diff:**
@@ -419,7 +421,26 @@ no ahead count.
 
 ## 8. CI status
 
-✅ **Green on the final commit** — run
+🔴 **Red on the final commit `a6ec525` — run
+[`31925510457`](https://github.com/KulluPraveenKumar/reddit-lead-finder/actions/runs/31925510457),
+`conclusion: failure`. One failure, and it is [DI36](DEFERRED-IMPROVEMENTS.md):**
+
+```
+FAILED tests/test_prescore_stage.py::test_the_group_representative_is_chosen_by_pre_score_not_by_upvotes
+1 failed, 2034 passed, 12 skipped in 239.13s
+```
+
+**This is corroboration, not a new problem.** CI is a clean checkout on a different machine with no
+`data/leads.db` and no load from this session, and it reproduces the *same single failure* — which
+rules out the local environment, machine load, and test pollution, the three explanations that would
+otherwise be open. It is P11's date-dependent test, described in §4.1, and **P13 is green underneath
+it**: the other 2034 tests pass, including all of P13's.
+
+⚠️ **`main` is red and stays red until DI36 is fixed.** That is stated here rather than softened,
+because the last commit of a phase leaving `main` red is exactly the thing a completion report must
+not bury.
+
+**The phase's own last green CI run** was `366695e`, the manual-test fix —
 [`31896081590`](https://github.com/KulluPraveenKumar/reddit-lead-finder/actions/runs/31896081590)
 (`366695e`, the manual-test fix), `conclusion: success`. `ruff check` clean; `pytest`
 **2034 passed, 12 skipped** in 213.47 s. The first commit's run [`31890330477`](https://github.com/KulluPraveenKumar/reddit-lead-finder/actions/runs/31890330477)
