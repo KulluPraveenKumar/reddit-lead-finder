@@ -86,6 +86,7 @@
 | `alembic heads` | one — `0007_projects_and_knowledge_base` |
 | Legacy contract | 459 leads · `max 164.28` · `avg 42.29` · 13 CSV · 17 endpoints |
 | Doc links | **192 checked in P14's docs, 0 broken** |
+| CI | ✅ **success** — run 31936632035, 4m39s, `2151 passed, 12 skipped`. The **10-test difference from local is [DI30](../DEFERRED-IMPROVEMENTS.md) exactly** — the live-database tests skip on a fresh checkout |
 
 **Skips explained:** bare 2 = proxy tests with no pool. Coverage 9 = those 2 plus **7 performance
 tests that self-skip under a tracer by design** — and those 7 **ran and passed** in the bare run.

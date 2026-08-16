@@ -128,6 +128,7 @@ only partially verified. Each is named below with its documented reason.
 | 1 | `ruff check .` | ✅ **All checks passed** · 188 files |
 | 2 | `ruff format --check .` | ✅ **188 files already formatted** |
 | — | `pytest` (bare) | ✅ **2,161 passed · 0 failed · 2 skipped · 466.85 s (7:46)** |
+| — | CI — run [31936632035](https://github.com/KulluPraveenKumar/reddit-lead-finder/actions/runs/31936632035) | ✅ **success** · 4m39s · `2151 passed, 12 skipped` |
 | — | `pytest --cov` | ✅ **2,154 passed · 0 failed · 9 skipped · 658.43 s (10:58)** |
 | 6 | Offline guarantee | ✅ `block_network` active; **no test opens a socket**. The CLI is the only live path and no test invokes it (P13's trap T7) |
 | 7 | Coverage | ✅ **90% whole tree**; floor packages **90.81%** — §4.2 |
@@ -161,6 +162,24 @@ baseline of 9 exactly.
 | 5 | `pytest tests/integration` | **Directory does not exist** — [DI31](DEFERRED-IMPROVEMENTS.md). Every integration-shaped test lives flat in `tests/`, which is the shipped convention; **bare `pytest` runs all of them** |
 | 8–11 | The **literal `grep` form** of the four fences | [DI29](DEFERRED-IMPROVEMENTS.md) and [freeze §11.1](ARCHITECTURE_FREEZE.md): they match docstrings that name the boundary they forbid. Re-measured — fence 2 now returns **9** (was 6), the three new ones being sentences in `src/knowledge/` stating the package does *not* import the AI layer. **Zero actual imports.** The AST tests above are the shipped enforcement |
 | — | Live-database round-trip in CI | [DI30](DEFERRED-IMPROVEMENTS.md) — `data/leads.db` is correctly gitignored, so those ten tests skip on a fresh checkout. **They ran locally here**, which is why this run was done on this machine and not read off a CI badge |
+
+> ### ⚠️ CI reproduced [DI30](DEFERRED-IMPROVEMENTS.md) exactly, and the arithmetic is worth recording
+>
+> | | Passed | Skipped |
+> |---|---|---|
+> | **Local, bare** | 2,161 | 2 |
+> | **CI** | 2,151 | 12 |
+> | **Difference** | **−10** | **+10** |
+>
+> **Exactly ten tests, in both directions.** That is DI30's number: `data/leads.db` is correctly
+> gitignored (it holds real Reddit usernames and permalinks — [lock §5](EXECUTION_MODE_LOCK.md) H2),
+> so on a fresh checkout `_raw_copy()` and the `live_db_copy` fixture both `pytest.skip`. The ten
+> include the migration round-trip that [35 §2.3](35-testing-strategy.md) calls **non-negotiable
+> because it guards the live database (K14, Critical)** — and in CI it guards nothing.
+>
+> **This is why P14's gate was run locally rather than read off a CI badge**, which is exactly what
+> [PHASE-13-HANDOVER §9](PHASE-13-HANDOVER.md)'s entry condition required. DI30 stays open and
+> unchanged; P14 neither widened nor narrowed it, and this is now the second phase to measure it.
 
 #### Partially verified — live provider not exercised
 
