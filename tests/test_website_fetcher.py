@@ -400,9 +400,20 @@ class TestExtraction:
         sentence a JavaScript-only page has.
 
         It now forces the fallback, so it cannot pass for the wrong reason again.
+
+        **And it asserts the fallback's exact output, not just that the word is
+        present.** `"JavaScript" in text` is true of trafilatura's answer too, so
+        that assertion would survive the fixture being silently broken — which is
+        the same class of mistake all over again. Only the fallback keeps the
+        `<title>`, so the leading `Nimbus` is what makes this test unable to pass
+        unless the BeautifulSoup branch really ran. Both strings measured
+        2026-08-15.
         """
         text = extract_text(fixture("spa_shell.html"), BASE)
-        assert "JavaScript" in text
+        assert text == "Nimbus\nThis application requires JavaScript."
+        assert text != "This application requires JavaScript.", (
+            "that is trafilatura's output — the without_trafilatura fixture did not take effect"
+        )
 
     def test_the_fallback_and_trafilatura_agree_that_the_shell_has_a_sentence(self):
         """Both paths must find the same sentence. Asserting only the installed
@@ -456,6 +467,20 @@ class TestMissingDependency:
     per-page parse failure. A broken install and a stubborn page are different
     problems and now log differently.
     """
+
+    def test_the_fixture_really_does_block_the_import(self, without_trafilatura):
+        """The fixture is load-bearing for six tests, so it is checked directly.
+
+        It patches `builtins.__import__`, which every other import on the same
+        code path also goes through — `extract_text` does `from bs4 import
+        BeautifulSoup` *after* the blocked import. If the passthrough were wrong,
+        the fallback would raise instead of running and several tests here would
+        be passing on an unintended path.
+        """
+        with pytest.raises(ModuleNotFoundError):
+            import trafilatura  # noqa: F401
+
+        from bs4 import BeautifulSoup  # noqa: F401  - must still import fine
 
     def test_the_whole_fetch_still_works_without_trafilatura(self, without_trafilatura):
         """It degrades rather than crashing — the fallback is a real fallback."""

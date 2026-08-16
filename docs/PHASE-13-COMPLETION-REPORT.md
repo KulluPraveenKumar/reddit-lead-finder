@@ -119,11 +119,26 @@ the one nobody exercised.
 | `noscript` removed from the strip list; the five tags are now the named constant `FALLBACK_STRIPPED_TAGS` | `src/ai/website_fetcher.py` |
 | `ImportError` split from the per-page failure branch; `TRAFILATURA_MISSING_MESSAGE` warned once per process | `src/ai/website_fetcher.py` |
 | `without_trafilatura` fixture — forces the fallback branch so it cannot pass vacuously again | `tests/test_website_fetcher.py` |
+| The fallback test asserts the **exact** fallback output, not just that the word is present | `tests/test_website_fetcher.py` |
 | 9 new tests: 4 on the fallback, 5 on missing-dependency behaviour | `tests/test_website_fetcher.py` |
 | A dependency-verification step with its own PASS/FAIL | `docs/testing/P13-testing.md` |
 
 **The product was never broken by this** — `WebsiteFetcher` degrades to the fallback and completes.
 What was broken was the *quality* of the degradation and the *silence* about it.
+
+⚠️ **The first version of the fix repeated the original mistake, and was caught in review.** The new
+test asserted `"JavaScript" in text` — which is true of **trafilatura's** output as well, so it would
+have kept passing if the `without_trafilatura` fixture ever silently stopped working. It now asserts
+the fallback's **exact** output, and only the fallback keeps the `<title>`:
+
+| Path | Exact output on `spa_shell.html` |
+|---|---|
+| trafilatura | `'This application requires JavaScript.'` |
+| fallback | `'Nimbus\nThis application requires JavaScript.'` |
+
+`test_the_fixture_really_does_block_the_import` checks the fixture directly — it patches
+`builtins.__import__`, which `from bs4 import BeautifulSoup` on the same code path also goes through —
+and **M21** confirms that neutering the fixture fails both tests.
 
 **Verified in both environments.** With `trafilatura`: **2044 passed, 2 skipped**. With the import
 blocked — the operator's exact state — **2042 passed, 4 skipped, 0 failed**, the two skips being the
@@ -138,7 +153,7 @@ tests that legitimately need the real module to monkeypatch. `example.com`'s T1 
 |---|---|
 | `src/ai/website_fetcher.py` | `WebsiteFetcher`, `ExtractedSite`, `WebsiteSettings`, URL validation, the L1 cache, `save_snapshot`, and the operator CLI |
 | `src/ai/site_signals.py` | The six local signals, `SiteSignals`, `PricingSignal` |
-| `tests/test_website_fetcher.py` | 90 tests |
+| `tests/test_website_fetcher.py` | 91 tests |
 | `tests/test_site_signals.py` | 49 tests |
 | `tests/fixtures/sites/landing.html` | A realistic SaaS landing page: nav, footer, priority links, three known script hosts and one unknown, a `@graph` with `Organization`/`Product`/`Offer`/`BreadcrumbList`, four social links, one off-site link, and three competitor phrasings |
 | `tests/fixtures/sites/pricing.html` | Three tiers, two currencies, both intervals, `contact sales`, `custom pricing`, `free trial` |
@@ -178,10 +193,10 @@ tests that legitimately need the real module to monkeypatch. `example.com`'s T1 
 |---|---|
 | `ruff check .` | **Clean** |
 | `ruff format --check .` | **Clean** · 179 files |
-| Full suite | **2044 passed, 2 skipped** in 436.50 s (P12: 1905 / 2) |
+| Full suite | ⚠️ **2044 passed, 1 FAILED, 2 skipped** in 443.34 s, measured 2026-08-16. **The one failure is not P13's** and is not fixable by P13 — see the box below |
 | Full suite, **`trafilatura` import blocked** | **2042 passed, 4 skipped, 0 failed** — the operator's exact environment, reproduced. The 2 extra skips are the tests that need the real module to monkeypatch |
 | Full suite **under coverage** | **2037 passed, 9 skipped** in 624.18 s — the extra 7 are the performance tests, which **self-skip under a tracer** by design (`docs/35` §2.1 checks 4–5); pre-existing behaviour, not a P13 effect |
-| New tests | **+139** — 90 fetcher, 49 signals |
+| New tests | **+140** — 91 fetcher, 49 signals |
 | Coverage, whole tree | **89.55%**, against the ≥70% gate (P12: 89.20%) |
 | Coverage, `src/{ai,net,scoring}` | **90.31%**, against the ≥85% floor (P12: 90%) |
 | Coverage, the two new modules | **97.34%** combined — `website_fetcher.py` **98.28%** · `site_signals.py` **96.13%** |
@@ -212,10 +227,43 @@ tests that legitimately need the real module to monkeypatch. `example.com`'s T1 
 > exactly. The intermediate reading came from a run whose numbers I did not reconcile before writing
 > them down; the final figures above are from a single uninterrupted run against the shipped code.
 
+> 🔴 **The suite is red today, and P13 is not the reason. Read this before reading the row above as
+> a P13 result.**
+>
+> `test_prescore_stage.py::test_the_group_representative_is_chosen_by_pre_score_not_by_upvotes`
+> **fails 5/5, deterministically, and will fail every day from here.** It is **P11's** test over
+> **P11's** code; P13's diff is `src/ai/website_fetcher.py` and its tests, and touches none of it.
+>
+> **It is a time bomb that went off when the date rolled to 2026-08-16.** The test pins
+> `NOW = datetime(2026, 8, 15, 12, 0, 0)` and builds two leads at `NOW - 1 hour` and `NOW - 28 days`,
+> but `run_prescore_stage` computes `recency_decay` against the **real clock**, which no longer bears
+> any relation to that constant. The fresh lead ages while the stale one already sits near the decay
+> floor, so the margin closes at roughly **half a point of `total` per day**:
+>
+> | Real clock | `recency_decay` gap | `total` margin |
+> |---|---|---|
+> | 2026-08-15 | **+0.7128** | ~ +0.5 — passing |
+> | **2026-08-16** | **+0.6912** | **−0.07** — `assert 59.19 > 59.26` |
+> | 2026-08-20 | +0.5745 | further negative |
+>
+> **P13 did not fix it**, on [lock §8](EXECUTION_MODE_LOCK.md)'s rule that an improvement must relate
+> to the phase and the operator's instruction not to make unrelated changes. It is recorded as
+> [DI36](DEFERRED-IMPROVEMENTS.md) **with its trigger already fired**, because unlike every other
+> entry in that register this one is not latent: `main` is red now and stays red, so it blocks P14's
+> entry conditions and every phase after. The fix is small and belongs to whoever owns it — thread the
+> run's clock into the stage, since `recency_decay(..., now=...)` already accepts one, so the test's
+> pinned `NOW` governs the scoring as well as the fixtures. **It needs a decision, not evidence.**
+>
+> **Two timing flakes were also seen and are separately recorded.** `test_a5_minhash_…` failed once
+> under heavy load ([DI18](DEFERRED-IMPROVEMENTS.md), whose trigger was already met) and
+> `test_the_worker_claimable_job_…` once ([DI35](DEFERRED-IMPROVEMENTS.md)); both passed on the clean
+> run above. The machine's load varied enormously across this session — the same suite took **436 s**,
+> **1257 s** and once **37,989 s** — which is the context for both.
+
 ### 4.2 Mutation discipline
 
 Every **bold** criterion in [34 §P13](34-implementation-plan.md) plus the surrounding guarantees.
-**20 designed · 19 detected · 1 control held · 0 survived.**
+**21 designed · 20 detected · 1 control held · 0 survived.**
 
 | # | Guarantee broken | Verdict |
 |---|---|---|
@@ -239,6 +287,7 @@ Every **bold** criterion in [34 §P13](34-implementation-plan.md) plus the surro
 | M18 | `noscript` goes back into the strip list — **the operator's bug** | **DETECTED** |
 | M19 | A missing dependency is absorbed as a per-page failure again | **DETECTED** |
 | M20 | The missing-dependency warning fires on every page instead of once | **DETECTED** |
+| M21 | The `without_trafilatura` fixture stops blocking — i.e. the new tests go back to passing vacuously | **DETECTED** |
 
 **M8, M9, M10 and M17 are not hypothetical — they are the four defects this phase actually shipped
 and fixed.** The first three were found by the fixture rather than by inspection:
