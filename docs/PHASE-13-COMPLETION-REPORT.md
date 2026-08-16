@@ -441,9 +441,11 @@ unchanged and its warning was honoured: the suite was run **locally**, not read 
 | **`bd00bd6`** | `docs(P13): the four commits and the green CI run on the final one` |
 | **`366695e`** | `fix(P13): the BeautifulSoup fallback discarded a JS-only page, and a missing dependency was logged like a stubborn page` — **the operator manual-test fix, §1a** |
 | **`8f93556`**, **`bbe2cea`** | `docs(P13)`: the commit list and the CI run id |
-| **`a6ec525`** | `test(P13): assert the fallback's exact output, and record DI36` — the review strengthening in §1a, and the time bomb in §4.1 |
+| **`a6ec525`** | `test(P13): assert the fallback's exact output, and record DI36` — the review strengthening in §1a |
+| **`1f3355b`** | `docs(P13): record the red CI run and its single cause` |
+| **`49c64d9`** | `fix(DI36): the prescore fixtures now age with the scorer, in naive UTC` — **§4.6**, on operator instruction |
 
-Nine commits, `d0ef28c..a6ec525`, all pushed. `git status -sb` reports `## main...origin/main` with
+Eleven commits, `d0ef28c..49c64d9`, all pushed. `git status -sb` reports `## main...origin/main` with
 no ahead count.
 
 **Repository hygiene ([lock §5](EXECUTION_MODE_LOCK.md) H1–H8), against the staged diff:**
@@ -461,38 +463,31 @@ no ahead count.
 
 ## 8. CI status
 
-🔴 **Red on the final commit `a6ec525` — run
-[`31925510457`](https://github.com/KulluPraveenKumar/reddit-lead-finder/actions/runs/31925510457),
-`conclusion: failure`. One failure, and it is [DI36](DEFERRED-IMPROVEMENTS.md):**
+✅ **Green on the final commit `49c64d9`** — run
+[`31927137478`](https://github.com/KulluPraveenKumar/reddit-lead-finder/actions/runs/31927137478),
+`conclusion: success`. `ruff check` clean; `pytest` **2036 passed, 12 skipped** in 213.90 s.
 
-```
-FAILED tests/test_prescore_stage.py::test_the_group_representative_is_chosen_by_pre_score_not_by_upvotes
-1 failed, 2034 passed, 12 skipped in 239.13s
-```
+**It was red in between, and the record keeps that.** Commit `a6ec525` — run
+[`31925510457`](https://github.com/KulluPraveenKumar/reddit-lead-finder/actions/runs/31925510457) —
+failed with exactly one test, `test_the_group_representative_is_chosen_by_pre_score_not_by_upvotes`.
+**That red run was the most useful signal of the whole phase.** CI is a clean checkout on a different
+machine with no `data/leads.db` and none of this session's load, so reproducing the *same single
+failure* ruled out local environment, machine load and test pollution together — which is what turned
+"a third flaky test" into a diagnosis. It is closed as [DI36](DEFERRED-IMPROVEMENTS.md) (§4.6).
 
-**This is corroboration, not a new problem.** CI is a clean checkout on a different machine with no
-`data/leads.db` and no load from this session, and it reproduces the *same single failure* — which
-rules out the local environment, machine load, and test pollution, the three explanations that would
-otherwise be open. It is P11's date-dependent test, described in §4.1, and **P13 is green underneath
-it**: the other 2034 tests pass, including all of P13's.
+Earlier green runs: [`31896081590`](https://github.com/KulluPraveenKumar/reddit-lead-finder/actions/runs/31896081590)
+(`366695e`, the manual-test fix, **2034 passed**) and
+[`31890330477`](https://github.com/KulluPraveenKumar/reddit-lead-finder/actions/runs/31890330477)
+(`a1ea5c2`, the phase itself, **2023 passed**).
 
-⚠️ **`main` is red and stays red until DI36 is fixed.** That is stated here rather than softened,
-because the last commit of a phase leaving `main` red is exactly the thing a completion report must
-not bury.
-
-**The phase's own last green CI run** was `366695e`, the manual-test fix —
-[`31896081590`](https://github.com/KulluPraveenKumar/reddit-lead-finder/actions/runs/31896081590)
-(`366695e`, the manual-test fix), `conclusion: success`. `ruff check` clean; `pytest`
-**2034 passed, 12 skipped** in 213.47 s. The first commit's run [`31890330477`](https://github.com/KulluPraveenKumar/reddit-lead-finder/actions/runs/31890330477)
-was also green (**2023 passed, 12 skipped**).
-
-⚠️ **That is ten fewer passes and ten more skips than the local 2044 / 2**, and the difference is
+⚠️ **CI shows ten fewer passes and ten more skips than the local 2046 / 2**, and the difference is
 [DI30](DEFERRED-IMPROVEMENTS.md), not a regression: `data/leads.db` is gitignored, so a fresh checkout
 skips the ten live-database tests — **including the migration round-trip
 [35 §2.3](35-testing-strategy.md) calls non-negotiable**. P12's run showed the same signature
 (1893/12 in CI against 1903/2 locally). **A green CI run is not evidence this phase is sound.** The
-local **2044 passed / 2 skipped** in §4.1 is the one that counts, and it is why the manual guide's T9
-tells the operator to run the suite themselves.
+local **2046 passed / 2 skipped** in §4.1 is the one that counts, and it is why the manual guide's T9
+tells the operator to run the suite themselves — which is exactly how both of this phase's real
+defects were found.
 
 ---
 
