@@ -14,13 +14,13 @@
 |---|---|
 | `alembic heads` | `0007_projects_and_knowledge_base` — **one head, unchanged**; seven revisions of ten |
 | `data/leads.db` | **at `0007`**, untouched by this phase · 492 leads (459 baseline + 33) · every P12 table still empty |
-| Full suite | ⚠️ **2044 passed, 1 FAILED, 2 skipped** (2026-08-16) · **+140 tests**. The failure is **DI36**, a P11 time bomb, not P13 |
+| Full suite | ✅ **2046 passed, 2 skipped, 0 failed** (2026-08-16, after the DI36 fix) · **+140 P13 tests** |
 | Full suite, `trafilatura` blocked | **2042 passed, 4 skipped, 0 failed** |
 | Under coverage | **2037 passed, 9 skipped** — the extra 7 are performance tests that self-skip under a tracer, by design |
 | Coverage | **89.55%** whole tree (P12: 89.20%) · **90.31%** on `src/{ai,net,scoring}` · new modules **98.28%** and **96.13%** |
 | `check_schema.py` | **76/76** on the live database |
 | Boundary / fence tests | **81 passed** |
-| Mutation testing | **21 designed · 20 detected · 1 control held · 0 survived** |
+| Mutation testing | **23 designed · 22 detected · 1 control held · 0 survived** |
 | Rollback | **Executed, both paths** — config-block deletion identical; `0006` round-trip 51/51 down, 76/76 up |
 | New dependency | `trafilatura 2.2.0` + 13 transitive packages — **required, not optional** |
 | AI calls | **0**, asserted as `COUNT(*) FROM ai_calls` |
@@ -59,15 +59,17 @@ unused. **`ARCHITECTURE_FREEZE.md` is unchanged.**
 
 **Six opened — [DI31](../DEFERRED-IMPROVEMENTS.md), [DI32](../DEFERRED-IMPROVEMENTS.md),
 [DI33](../DEFERRED-IMPROVEMENTS.md), [DI34](../DEFERRED-IMPROVEMENTS.md),
-[DI35](../DEFERRED-IMPROVEMENTS.md), [DI36](../DEFERRED-IMPROVEMENTS.md). None closed.** DI33 is
-**P14's**. DI34, DI35 and DI36 are **pre-existing defects P13 found but does not own** — recorded
+[DI35](../DEFERRED-IMPROVEMENTS.md), [DI36](../DEFERRED-IMPROVEMENTS.md). **One closed — DI36.**
+DI33 is **P14's**. DI34, DI35 and DI36 are **pre-existing defects P13 found but does not own** — recorded
 rather than chased, because [lock §8](../EXECUTION_MODE_LOCK.md) requires an improvement to relate to
 the phase.
 
-🔴 **[DI36](../DEFERRED-IMPROVEMENTS.md) is not latent and blocks the next phase.** P11's
-`test_the_group_representative_is_chosen_by_pre_score_not_by_upvotes` pins `NOW` to 2026-08-15 while
-the scorer reads the real clock, so the margin closes ~0.5 points a day and crossed zero on
-2026-08-16. It fails **5/5** and `main` stays red until someone fixes it.
+✅ **[DI36](../DEFERRED-IMPROVEMENTS.md) is closed** — built 2026-08-16 on the operator's explicit
+instruction to restore a green baseline before P14, **scoped to that entry alone**. P11's
+`test_prescore_stage.py` pinned `NOW` to a literal `2026-08-15` while the scorer reads the real clock,
+so the margin closed ~0.5 points a day and crossed zero overnight. `NOW` now tracks the real clock in
+**naive UTC** and the gap is invariant (+0.7239 at +3650d). **No production code changed** — the
+scoring was always right; the test disagreed with it. Mutations **M22** and **M23** both detected.
 
 ---
 
@@ -99,11 +101,9 @@ The next session does **one** of these, in this order of precedence:
    * **[DI33](../DEFERRED-IMPROVEMENTS.md) is yours to resolve**: a cache hit hands you text and no
      markup, so four of the six local signals come back empty. `SiteSignals.markup_seen` is the flag.
 
-**Before any of it:** 🔴 **fix [DI36](../DEFERRED-IMPROVEMENTS.md) first** — the suite has one failing
-test as of 2026-08-16 and no phase can record a green baseline until it is gone. Then: `git status`
-clean · `alembic heads` = one `0007` · full suite green at **2044 passed, 2 skipped** ·
-`check_schema.py --db data\leads.db` = **76/76** · `trafilatura` installed · `config.yaml` checked for
-uncommitted local values.
+**Before any of it:** `git status` clean · `alembic heads` = one `0007` · full suite green at
+**2046 passed, 2 skipped** · `check_schema.py --db data\leads.db` = **76/76** · `trafilatura`
+installed · `config.yaml` checked for uncommitted local values.
 
 ⚠️ **Run the suite locally. A green CI badge is not a substitute** — CI has no `data/leads.db` and
 skips ten tests including the migration round-trip ([DI30](../DEFERRED-IMPROVEMENTS.md)). That is how

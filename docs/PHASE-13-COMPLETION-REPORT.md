@@ -41,10 +41,17 @@ writer — P16's `project add`, which does not exist yet — so this phase's tes
 row in a fixture, exactly as [PHASE-12-HANDOVER §3.2](PHASE-12-HANDOVER.md) required. The CLI added
 for manual verification writes **nothing at all**, for the same reason.
 
-**The Files row is honoured and nothing sits outside it** — the first phase since P4 for which that
-is true. `save_snapshot` lives inside `src/ai/website_fetcher.py` rather than in a new
-`src/db/repositories/website.py`, because P14's Files row is where a knowledge repository first
-appears.
+**The Files row is honoured for every line of production code, and `save_snapshot` lives inside
+`src/ai/website_fetcher.py`** rather than in a new `src/db/repositories/website.py`, because P14's
+Files row is where a knowledge repository first appears.
+
+⚠️ **One file outside the row was edited afterwards, and it is named rather than absorbed.**
+`tests/test_prescore_stage.py` is **P11's**, and it was changed to fix
+[DI36](DEFERRED-IMPROVEMENTS.md) on the operator's explicit instruction to restore a green baseline
+before P14 (§4.6). It is a **test-only** change — one constant and one new test, no production code —
+and it happened *after* the phase was first reported complete, in response to a direction, not as
+something P13 decided to take on. The earlier draft of this report claimed *"nothing sits outside the
+Files row"*; that was true when written and is not true now, so it says so.
 
 **Four documentation clarifications were recorded before code was written**, at
 [34 §P13](34-implementation-plan.md). **None is a [§11](ARCHITECTURE_FREEZE.md) amendment or a
@@ -178,10 +185,11 @@ tests that legitimately need the real module to monkeypatch. `example.com`'s T1 
 | `docs/35-testing-strategy.md` | The P13 row in §6, rewritten to name *where* each assertion has to be made rather than only what it asserts; and a note on gate rows 4 and 5 (see §6) |
 | `docs/05-database-plan.md` | `website_snapshots` now has a writer. Records that `url` holds the **normalised** form, that every post-TTL fetch **inserts**, and that no markup is stored |
 | `docs/14-phase-04.md` | §9.1 described `WebsiteFetcher` as *"goes through `ProxiedHTTPClient`"* and was silent on the half that matters. It is one of the two documents the phase's **Docs** row names |
-| `docs/DEFERRED-IMPROVEMENTS.md` | DI31, DI32, DI33 and DI34 opened; the register range corrected to DI1–DI34 |
+| `docs/DEFERRED-IMPROVEMENTS.md` | DI31–DI36 opened; **DI36 built and moved to §3**; the register range corrected to DI1–DI36 |
+| `tests/test_prescore_stage.py` | ⚠️ **The only file outside P13's Files row.** P11's, edited to fix [DI36](DEFERRED-IMPROVEMENTS.md) on the operator's explicit instruction to restore a green baseline before P14 — §4.6. One constant and one new test; **no production code** |
 | `docs/README.md` | The execution table row for P13 |
 | `README.md` | The **Status** section had said *"P0 and P1 complete"* since P1, twelve phases ago |
-| `docs/testing/P12-testing.md` | ⚠️ **The P12 sign-off table was stamped** — see §10 |
+| `docs/testing/P12-testing.md` | **The P12 sign-off table was stamped**, and the operator has confirmed it stands — see §10 |
 
 ---
 
@@ -193,7 +201,7 @@ tests that legitimately need the real module to monkeypatch. `example.com`'s T1 
 |---|---|
 | `ruff check .` | **Clean** |
 | `ruff format --check .` | **Clean** · 179 files |
-| Full suite | ⚠️ **2044 passed, 1 FAILED, 2 skipped** in 443.34 s, measured 2026-08-16. **The one failure is not P13's** and is not fixable by P13 — see the box below |
+| Full suite | ✅ **2046 passed, 2 skipped, 0 failed** in 489.09 s, measured 2026-08-16 **after the DI36 fix** (P12: 1905 / 2). It read `2044 passed, 1 FAILED` before that fix — see §4.6 |
 | Full suite, **`trafilatura` import blocked** | **2042 passed, 4 skipped, 0 failed** — the operator's exact environment, reproduced. The 2 extra skips are the tests that need the real module to monkeypatch |
 | Full suite **under coverage** | **2037 passed, 9 skipped** in 624.18 s — the extra 7 are the performance tests, which **self-skip under a tracer** by design (`docs/35` §2.1 checks 4–5); pre-existing behaviour, not a P13 effect |
 | New tests | **+140** — 91 fetcher, 49 signals |
@@ -227,43 +235,20 @@ tests that legitimately need the real module to monkeypatch. `example.com`'s T1 
 > exactly. The intermediate reading came from a run whose numbers I did not reconcile before writing
 > them down; the final figures above are from a single uninterrupted run against the shipped code.
 
-> 🔴 **The suite is red today, and P13 is not the reason. Read this before reading the row above as
-> a P13 result.**
->
-> `test_prescore_stage.py::test_the_group_representative_is_chosen_by_pre_score_not_by_upvotes`
-> **fails 5/5, deterministically, and will fail every day from here.** It is **P11's** test over
-> **P11's** code; P13's diff is `src/ai/website_fetcher.py` and its tests, and touches none of it.
->
-> **It is a time bomb that went off when the date rolled to 2026-08-16.** The test pins
-> `NOW = datetime(2026, 8, 15, 12, 0, 0)` and builds two leads at `NOW - 1 hour` and `NOW - 28 days`,
-> but `run_prescore_stage` computes `recency_decay` against the **real clock**, which no longer bears
-> any relation to that constant. The fresh lead ages while the stale one already sits near the decay
-> floor, so the margin closes at roughly **half a point of `total` per day**:
->
-> | Real clock | `recency_decay` gap | `total` margin |
-> |---|---|---|
-> | 2026-08-15 | **+0.7128** | ~ +0.5 — passing |
-> | **2026-08-16** | **+0.6912** | **−0.07** — `assert 59.19 > 59.26` |
-> | 2026-08-20 | +0.5745 | further negative |
->
-> **P13 did not fix it**, on [lock §8](EXECUTION_MODE_LOCK.md)'s rule that an improvement must relate
-> to the phase and the operator's instruction not to make unrelated changes. It is recorded as
-> [DI36](DEFERRED-IMPROVEMENTS.md) **with its trigger already fired**, because unlike every other
-> entry in that register this one is not latent: `main` is red now and stays red, so it blocks P14's
-> entry conditions and every phase after. The fix is small and belongs to whoever owns it — thread the
-> run's clock into the stage, since `recency_decay(..., now=...)` already accepts one, so the test's
-> pinned `NOW` governs the scoring as well as the fixtures. **It needs a decision, not evidence.**
+> ✅ **The suite was red and is now green. The failure was never P13's** — the full account is
+> **§4.6**, and the row above is the run after that fix.
 >
 > **Two timing flakes were also seen and are separately recorded.** `test_a5_minhash_…` failed once
 > under heavy load ([DI18](DEFERRED-IMPROVEMENTS.md), whose trigger was already met) and
-> `test_the_worker_claimable_job_…` once ([DI35](DEFERRED-IMPROVEMENTS.md)); both passed on the clean
-> run above. The machine's load varied enormously across this session — the same suite took **436 s**,
-> **1257 s** and once **37,989 s** — which is the context for both.
+> `test_the_worker_claimable_job_…` once ([DI35](DEFERRED-IMPROVEMENTS.md)); both passed on every
+> clean run. The machine's load varied enormously across this session — the same suite took **436 s**,
+> **489 s**, **1257 s** and once **37,989 s** — which is the context for both, and neither is
+> reproducible.
 
 ### 4.2 Mutation discipline
 
 Every **bold** criterion in [34 §P13](34-implementation-plan.md) plus the surrounding guarantees.
-**21 designed · 20 detected · 1 control held · 0 survived.**
+**23 designed · 22 detected · 1 control held · 0 survived.**
 
 | # | Guarantee broken | Verdict |
 |---|---|---|
@@ -288,6 +273,8 @@ Every **bold** criterion in [34 §P13](34-implementation-plan.md) plus the surro
 | M19 | A missing dependency is absorbed as a per-page failure again | **DETECTED** |
 | M20 | The missing-dependency warning fires on every page instead of once | **DETECTED** |
 | M21 | The `without_trafilatura` fixture stops blocking — i.e. the new tests go back to passing vacuously | **DETECTED** |
+| M22 | `NOW` goes back to the pinned literal date — **DI36 itself** (§4.6) | **DETECTED** |
+| M23 | `NOW` uses local time instead of naive UTC — DI36's silent half | **DETECTED** |
 
 **M8, M9, M10 and M17 are not hypothetical — they are the four defects this phase actually shipped
 and fixed.** The first three were found by the fixture rather than by inspection:
@@ -357,6 +344,56 @@ sentence and no traceback; `https://example.com/definitely-not-a-real-page` fail
 | L1 hit = 0 requests | **0**, counted |
 | Cost | **$0.00** — no provider was contacted |
 
+### 4.6 ✅ DI36 — the time bomb that left `main` red, fixed on operator instruction
+
+**Found during this phase's re-validation, in P11's test over P11's code, and fixed on the operator's
+explicit direction to restore a green baseline before P14 — scoped to this entry alone.**
+
+**The defect.** `test_prescore_stage.py` pinned `NOW = datetime(2026, 8, 15, 12, 0, 0)` and built its
+leads at `NOW - 1 hour` and `NOW - 28 days`. But the stage scores `recency_decay` against the **real**
+clock (`handlers/prescore.py`: `now = datetime.now(UTC)`), so the fixtures stopped ageing with the
+scorer the moment real time left that date. The *fresh* lead aged while the *stale* one already sat
+near the decay floor, closing the margin at roughly **half a point of `total` per day** — it crossed
+zero overnight:
+
+| Real clock | `recency_decay` gap | Outcome |
+|---|---|---|
+| 2026-08-15 | +0.7128 | passing, margin ~ +0.5 |
+| **2026-08-16** | +0.6912 | **`assert 59.19 > 59.26`** — failed 5/5 |
+| 2026-09-15 | +0.1728 | worse every day |
+
+**Not a flake, and the proof was CI.** A clean checkout on a different machine, with no
+`data/leads.db` and none of this session's load, reproduced the *same single failure* — which is what
+ruled out local environment, machine load and test pollution together.
+
+**A distinction that decided the fix.** The stage's *lead selection* is bounded by
+`Lead.scraped_at >= run.started_at` — relative to a row, therefore perfectly stable. Only
+`recency_decay` reads the wall clock. So **the production behaviour was never wrong**: scoring a lead
+against the real present is exactly right, and it was the *test* that disagreed with it. The fix is
+therefore one line of test code and **no production change at all**:
+
+```python
+NOW = datetime.datetime.now(datetime.UTC).replace(tzinfo=None, microsecond=0)
+```
+
+**Now the gap is invariant** — measured at **+0.7239** at +0d, +1d, +30d, +365d and **+3650d**.
+
+**Naive UTC, not `datetime.now()`, and that half needed its own test.** This host is **UTC+5:30**, so
+the local form would place every fixture five and a half hours *in the future* relative to the
+scorer — and `recency_decay` **clamps a future timestamp to 1.0**, so the orderings every other test
+asserts still hold. Mutation **M23** confirmed it: the local form passed all 19 tests in the file.
+`test_the_fixture_clock_tracks_the_scorer_in_naive_utc` now asserts the offset from real UTC
+directly, so the silent half is caught too.
+
+| Mutation | Verdict |
+|---|---|
+| **M22** — `NOW` back to the pinned literal date (the bug itself) | **DETECTED** |
+| **M23** — `NOW` uses local time instead of naive UTC (the silent half) | **DETECTED** *(survived before the new test)* |
+
+**Scope.** The diff is **two files**: `tests/test_prescore_stage.py` and this register entry in
+`docs/DEFERRED-IMPROVEMENTS.md`. No production code, no schema, no unrelated cleanup. DI36 is closed
+and moved to [DEFERRED-IMPROVEMENTS §3](DEFERRED-IMPROVEMENTS.md).
+
 ---
 
 ## 5. Documentation updated
@@ -372,12 +409,15 @@ sentence and no traceback; `https://example.com/definitely-not-a-real-page` fail
 
 ## 6. Deferred improvements opened and closed
 
-**Five opened. None closed.** DI31–DI33 are things the phase chose not to build; **DI34 and DI35 are
-pre-existing defects P13 found but does not own**, recorded rather than chased because
-[lock §8](EXECUTION_MODE_LOCK.md) requires an improvement to relate to the phase.
+**Six opened, one closed.** DI31–DI33 are things the phase chose not to build; DI34–DI36 are
+**pre-existing defects P13 found but does not own**, recorded rather than chased because
+[lock §8](EXECUTION_MODE_LOCK.md) requires an improvement to relate to the phase. **DI36 was then
+built on the operator's explicit instruction**, because it was the one entry that was failing rather
+than latent.
 
 | | Entry | Owner |
 |---|---|---|
+| **DI36** | ✅ **CLOSED.** P11's `test_prescore_stage.py` pinned `NOW` to a literal date while the scorer reads the real clock; the suite went red overnight. Fixed 2026-08-16, **test-only, two files, no production change** — §4.6 | Closed |
 | **DI35** | `test_the_worker_claimable_job_is_the_only_side_effect_of_failing` failed **once in three full-suite runs** during this re-validation and has not reproduced — **8/8 in isolation**, **4/4** after the concurrency soak that was the obvious suspect. P13's diff is `src/ai/website_fetcher.py` and its tests; this is `RunService`/`JobQueue` code the phase never touched. The fourth flaky test recorded here, after DI18, DI20 and DI27 | *A second occurrence.* DI27's precedent is exact: P9 tried to fix its equivalent and could not, because one data point is not a bug report |
 | **DI34** | Six internal links point at `02-research-findings.md`, which has never existed. Found by gate check 18; pre-existing since `87ba926` and absent from P13's diff | Whoever next edits one of the four documents — it needs a person to decide which document each of the four claims lives in |
 | **DI31** | `tests/integration/` does not exist while [35 §2.1](35-testing-strategy.md) row 5 runs `pytest tests/integration -q` as a gate check. Measured: exit code **4**, `ERROR: file or directory not found`. **Row 4 has the same defect** — `tests/unit/` holds exactly one file, so `pytest tests/unit -q` runs one file and reports success. What every phase has actually run is bare `pytest`, so **no test goes unrun**; the defect is in what the table claims. Same family as [DI29](DEFERRED-IMPROVEMENTS.md) and P5's F3 | Operator — it is a documentation decision (does row 5 name a directory or a marker?), which is why P13 did not make it unilaterally |
@@ -477,11 +517,13 @@ test step. It lives inside `website_fetcher.py`, so **the Files row stays exact*
 
 **Yes**, with two things stated rather than left implicit.
 
-⚠️ **The P12 sign-off table was blank and has been stamped in this session.** The operator stated
-P12 was signed off; `docs/testing/P12-testing.md` still showed `☐ PASS ☐ FAIL` with no date and no
-signature on all nine rows. On the operator's explicit instruction the table was filled in
-(PASS / 2026-08-15 / Praveen). **This is recorded because a stamped table is a claim about a human
-having run those steps**, and the record should say who stamped it and when.
+✅ **The P12 sign-off table was blank, was stamped in this session, and the operator has confirmed it
+stands.** `docs/testing/P12-testing.md` showed `☐ PASS ☐ FAIL` with no date and no signature on all
+nine rows; it was filled in (PASS / 2026-08-15 / Praveen) on the operator's instruction. Because a
+stamped table is a claim that a **human** executed those steps, the question was put back to them
+explicitly, and the answer was to keep it: *"I performed the manual testing, found the regression that
+CI missed, reviewed the fixes, and approved P12. The current sign-off accurately reflects that
+history."* **The record and the history agree**, which is the only thing that was ever in doubt.
 
 ⚠️ **No tag.** [lock §6.2](EXECUTION_MODE_LOCK.md) permits one only when the phase's own sign-off
 table is signed. P13's is blank, as it must be until the operator runs it.

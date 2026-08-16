@@ -20,7 +20,32 @@ from src.db.models import AICall, DedupGroup, DedupMember, Lead, Prescore, Run, 
 from src.orchestration.handlers.prescore import run_prescore_stage
 from src.scoring import DECISION_ADMIT, DECISION_GROUPED, DECISION_REJECT, STAGE_FULL
 
-NOW = datetime.datetime(2026, 8, 15, 12, 0, 0)
+#: The clock every fixture in this file is built relative to.
+#:
+#: ⚠️ **It tracks the real clock, and pinning it to a literal date is a time
+#: bomb — measured, not theorised.** This was
+#: ``datetime.datetime(2026, 8, 15, 12, 0, 0)`` and the suite went red on
+#: **2026-08-16** ([DI36](../docs/DEFERRED-IMPROVEMENTS.md)).
+#:
+#: The reason is a split that is easy to miss: the stage's *lead selection* is
+#: bounded by ``Lead.scraped_at >= run.started_at``, which is relative to a row
+#: and so is perfectly stable — but ``recency_decay`` is measured against the
+#: **real** clock (``handlers/prescore.py``: ``now = datetime.now(UTC)``). So a
+#: fixture pinned to a literal date does not age with the scorer. The lead
+#: written as *"one hour old"* was a day old by the next morning and a week old
+#: by the next Friday, while the *"28 days old"* one sat near the decay floor and
+#: barely moved. In ``test_the_group_representative_is_chosen_by_pre_score_not_
+#: by_upvotes`` the two totals were separated by about half a point and closed at
+#: roughly that rate per day: ``59.19`` against ``59.26`` on the second morning.
+#:
+#: **Naive UTC, not ``datetime.now()``.** This machine is UTC+5:30, so the local
+#: form would place every fixture five and a half hours in the future relative to
+#: the scorer — an error large enough to change a recency score and invisible on
+#: a UTC-configured host. ``src/db/models.py``'s ``_utcnow`` and the stage both
+#: use exactly this expression; the schema stores naive UTC throughout.
+#:
+#: ``microsecond=0`` only so failure messages are readable.
+NOW = datetime.datetime.now(datetime.UTC).replace(tzinfo=None, microsecond=0)
 
 CONFIG = {
     "keywords": {
@@ -72,6 +97,38 @@ def add_lead(session, reddit_id, title, body=STRONG_BODY, **kwargs):
     session.add(lead)
     session.commit()
     return lead
+
+
+# ------------------------------------------------- DI36: the clock itself
+
+
+def test_the_fixture_clock_tracks_the_scorer_in_naive_utc():
+    """[DI36](../docs/DEFERRED-IMPROVEMENTS.md), pinned so it cannot come back.
+
+    Two ways to break :data:`NOW`, and only one of them is loud:
+
+    * **A literal date.** Caught immediately — the fixtures stop ageing with the
+      scorer and `test_the_group_representative_…` fails within a day. That is
+      the bug this test exists because of.
+    * **``datetime.now()`` instead of naive UTC.** Silent. This host is UTC+5:30,
+      so every fixture lands *in the future* relative to the scorer's clock —
+      and ``recency_decay`` **clamps a future timestamp to 1.0**, so the ordering
+      the other tests assert still holds and nothing complains. The "28 days old"
+      lead would really be 27.8 days old, and on a UTC-configured host the whole
+      problem would be invisible. Measured: a mutation to the local form passed
+      all 19 tests in this file.
+
+    So the assertion is on the *offset from real UTC*, not on any score.
+    """
+    reference = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
+    drift = abs((NOW - reference).total_seconds())
+
+    assert NOW.tzinfo is None, "the schema stores naive datetimes throughout"
+    assert drift < 300, (
+        f"NOW is {drift:.0f}s from real UTC. A literal date makes the fixtures stop "
+        f"ageing with the scorer (DI36); a local-time clock puts them "
+        f"{drift / 3600:.1f}h in the future, which recency_decay hides by clamping to 1.0."
+    )
 
 
 # ------------------------------------------------------- AC1: every item

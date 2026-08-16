@@ -220,7 +220,7 @@ real module to monkeypatch; both now skip cleanly.
 
 | | |
 |---|---|
-| Full suite | ⚠️ **2044 passed, 1 FAILED, 2 skipped**, measured 2026-08-16. The failure is **P11 time bomb DI36**, not P13 — see the completion report §4.1 |
+| Full suite | ✅ **2046 passed, 2 skipped, 0 failed** in 489.09 s (P12: 1905 / 2), after the DI36 fix |
 | Full suite, `trafilatura` blocked | **2042 passed, 4 skipped, 0 failed** — the fallback path is now exercised, not assumed |
 | Under coverage | **2037 passed, 9 skipped** — the extra 7 are performance tests that **self-skip under a tracer** by design, not a P13 effect |
 | New tests | **+140** |
@@ -231,7 +231,7 @@ real module to monkeypatch; both now skip cleanly.
 | `check_schema.py` | **76/76** on the live database |
 | Boundary / fence tests | **81 passed** (AST-based) |
 | Legacy contract | 459 baseline leads · `max 164.28` · `avg 42.29` · 13 CSV columns · `GET /` 200 |
-| Mutation testing | **21 designed · 20 detected · 1 control · 0 survived.** **Five real defects found** — three in the competitor regex; an `ExtractedSite.url` that changed shape on a cache hit; and `noscript` in the fallback strip list, **found by the operator's manual run** |
+| Mutation testing | **23 designed · 22 detected · 1 control · 0 survived.** **Five real defects found** — three in the competitor regex; an `ExtractedSite.url` that changed shape on a cache hit; and `noscript` in the fallback strip list, **found by the operator's manual run** |
 | Migration | **None added.** The chain is unchanged |
 | AI calls | **0** |
 | Rollback | **Executed, both paths** — config-block deletion gives identical settings; `0006` round-trip gives 51/51 down and 76/76 up |
@@ -265,8 +265,8 @@ real module to monkeypatch; both now skip cleanly.
 - [ ] [34 §P14](34-implementation-plan.md) read — all thirteen fields, including **exactly one `ai_calls` row**, **< $0.05**, and **per-section failure isolation**
 - [ ] `phase-manager` skill loaded before the first edit under `src/`
 - [ ] `trafilatura` installed — `pip install -r requirements.txt`. **P13 added it and it is required**, not optional
-- [ ] 🔴 **[DI36](DEFERRED-IMPROVEMENTS.md) resolved first** — the suite has one failing test as of 2026-08-16 and it is not P13s. P14 cannot record a green baseline until it is fixed
-- [ ] The full suite recorded green before the first change — **2044 passed, 2 skipped** once DI36 is fixed. ⚠️ **Run it locally, not from a CI badge** — [DI30](DEFERRED-IMPROVEMENTS.md)
+- [ ] The full suite recorded green before the first change — **2046 passed, 2 skipped**. ⚠️ **Run it locally, not from a CI badge** — [DI30](DEFERRED-IMPROVEMENTS.md)
+- [ ] ✅ **[DI36](DEFERRED-IMPROVEMENTS.md) is closed** — the baseline is green again. **Read its entry before writing a time-dependent test**: fixtures must age *with* the scorer, in **naive UTC**, because `recency_decay` clamps a future timestamp to `1.0` and hides a local-time clock entirely
 - [ ] `git status` clean · `alembic heads` = one `0007` · `check_schema.py` **76/76**
 - [ ] ⚠️ **`config.yaml` checked for uncommitted local values** — it carried a real chat id at the start of both P8 and P9. **P13 added the `website:` block**; nothing else in the file should have moved
 - [ ] ⚠️ **P14 opens no revision.** `0008` is **P17's**. P14 writes rows into tables `0007` already created
