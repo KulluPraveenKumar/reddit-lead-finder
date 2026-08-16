@@ -47,6 +47,23 @@ from src.scoring import DECISION_ADMIT, DECISION_GROUPED, DECISION_REJECT, STAGE
 #: ``microsecond=0`` only so failure messages are readable.
 NOW = datetime.datetime.now(datetime.UTC).replace(tzinfo=None, microsecond=0)
 
+#: The yardstick :data:`NOW` is checked against, read **here, one line later** —
+#: deliberately not inside the test body.
+#:
+#: ``NOW`` is bound once, at import (collection), while a test body runs whenever
+#: the suite reaches it. Taking the reference in the test therefore measures *how
+#: long the suite took to get there*, not whether the clock is right: this file
+#: alone passed in 1.2s, and the complete suite failed at 483s against the 300s
+#: bound — a green CI run on a faster host and a red local one, from identical
+#: code. Captured at import, the gap is under a second and the assertion is back
+#: to measuring the only thing it ever meant to.
+#:
+#: Timezone-aware on purpose. The subtraction below is aware-minus-aware, so it
+#: is anchored to true UTC no matter what the host's local zone is — which is
+#: what makes the ``datetime.now()`` mutation show up as a 5.5h drift here
+#: instead of passing silently.
+_UTC_AT_IMPORT = datetime.datetime.now(datetime.UTC)
+
 CONFIG = {
     "keywords": {
         "high_intent": ["looking for", "any recommendations", "what tool do you use"],
@@ -118,10 +135,11 @@ def test_the_fixture_clock_tracks_the_scorer_in_naive_utc():
       problem would be invisible. Measured: a mutation to the local form passed
       all 19 tests in this file.
 
-    So the assertion is on the *offset from real UTC*, not on any score.
+    So the assertion is on the *offset from real UTC*, not on any score — and it
+    is measured against :data:`_UTC_AT_IMPORT`, captured beside :data:`NOW`
+    rather than read here, so that suite runtime cannot leak into the number.
     """
-    reference = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
-    drift = abs((NOW - reference).total_seconds())
+    drift = abs((NOW.replace(tzinfo=datetime.UTC) - _UTC_AT_IMPORT).total_seconds())
 
     assert NOW.tzinfo is None, "the schema stores naive datetimes throughout"
     assert drift < 300, (
