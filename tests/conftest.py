@@ -189,6 +189,146 @@ def enrichment_payload():
 
 
 @pytest.fixture
+def bkb_payload():
+    """A well-formed 23-section ``analyze_business`` response.
+
+    The counterpart to ``enrichment_payload``, and the input every P14 test
+    starts from. It is deliberately **valid in every section and inside every
+    bound** — 1–3 ICPs, 1–5 personas, 3–12 pains, 3–12 signals — so that a test
+    which breaks one section is testing exactly the break it made. A fixture that
+    started out slightly wrong would make every isolation test ambiguous.
+    """
+    return {
+        "company_overview": {
+            "summary": "Attribution software for B2B SaaS marketing teams.",
+            "founded_context": "Founded 2021 by two ex-agency analysts.",
+            "confidence": 0.8,
+        },
+        "products_services": [
+            {"name": "Attribution Cloud", "description": "Multi-touch attribution model."}
+        ],
+        "features": [{"product": "Attribution Cloud", "capabilities": ["multi-touch", "reports"]}],
+        "pricing_positioning": {
+            "model": "tiered",
+            "posture": "Mid-market, published pricing.",
+            "price_points": ["$99/mo", "$499/mo"],
+        },
+        "industry": {"primary": "Marketing analytics", "adjacent": ["Sales enablement"]},
+        "target_market": {
+            "segment": "B2B",
+            "company_sizes": ["50-200"],
+            "stages": ["Series A"],
+            "geographies": ["US", "EU"],
+        },
+        "ideal_customer_profiles": [
+            {
+                "slug": "series-a-saas",
+                "name": "Series A B2B SaaS",
+                "firmographics": {"headcount": "50-200"},
+                "trigger_events": ["hired a demand gen lead"],
+                "disqualifiers": ["ecommerce"],
+            }
+        ],
+        "buyer_personas": [
+            {
+                "slug": "growth-lead",
+                "name": "Growth Lead",
+                "job_title": "Head of Growth",
+                "seniority": "manager",
+                "responsibilities": ["pipeline"],
+                "metrics": ["CAC"],
+                "tools": ["HubSpot"],
+                "where_they_ask": ["r/marketing"],
+            }
+        ],
+        "pain_points": [
+            {
+                "slug": "attribution-gap",
+                "title": "Cannot attribute pipeline to channel",
+                "description": "Spend decisions are made blind.",
+                "severity": 4,
+                "frequency": 4,
+                "how_people_phrase_it": ["no idea which channel actually works"],
+            },
+            {
+                "slug": "manual-reporting",
+                "title": "Reporting eats a day a week",
+                "severity": 3,
+                "frequency": 5,
+                "how_people_phrase_it": ["stuck in spreadsheets every Monday"],
+            },
+            {
+                "slug": "tool-sprawl",
+                "title": "Too many overlapping tools",
+                "severity": 2,
+                "frequency": 3,
+                "how_people_phrase_it": ["we pay for four things that do the same job"],
+            },
+        ],
+        "jobs_to_be_done": [{"type": "functional", "statement": "Prove which channel works."}],
+        "value_propositions": [
+            {"claim": "See pipeline by channel in a day.", "answers_pain": "attribution-gap"}
+        ],
+        "competitor_references": [
+            {
+                "slug": "segment",
+                "name": "Segment",
+                "aliases": ["Twilio Segment"],
+                "context": "Named on the comparison page.",
+            }
+        ],
+        "alternative_solutions": [
+            {"name": "Spreadsheets", "why_people_use_it": "Free and already there."}
+        ],
+        "customer_language": ["which channel actually works", "our numbers never match"],
+        "reddit_terminology": ["attribution", "UTM"],
+        "search_intent": [{"shape": "comparison", "examples": ["segment alternative"]}],
+        "buying_signals": [
+            {
+                "slug": "evaluating-alternatives",
+                "label": "Evaluating alternatives",
+                "tier": "high",
+                "example_phrases": ["looking to replace"],
+            },
+            {
+                "slug": "reporting-pain",
+                "label": "Complaining about reporting",
+                "tier": "medium",
+                "example_phrases": ["reporting is a nightmare"],
+            },
+            {
+                "slug": "new-hire",
+                "label": "Just hired a growth lead",
+                "tier": "low",
+                "example_phrases": ["just joined as head of growth"],
+            },
+        ],
+        "common_objections": [
+            {"objection": "Too expensive", "typical_phrasing": "not at that price"}
+        ],
+        "outreach_angles": [
+            {
+                "persona": "growth-lead",
+                "pain": "attribution-gap",
+                "angle": "Lead with the day-one report.",
+            }
+        ],
+        "content_themes": ["attribution", "reporting"],
+        "seo_entities": ["multi-touch attribution"],
+        "geo_entities": ["United States"],
+        "negative_signals": ["hiring post"],
+        "evidence": [
+            {
+                "quote": "See which channel actually works.",
+                "source_url": "https://example.com",
+                "section": "company_overview",
+            }
+        ],
+        "thin_content": False,
+    }
+
+
+@pytest.fixture
 def app(temp_db, monkeypatch):
     """The dashboard, with **no in-process worker**.
 

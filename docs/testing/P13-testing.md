@@ -586,20 +586,27 @@ The long one. Roughly 7–20 minutes depending on the machine; leave it running.
 
 | Test | What it proves | Result | Date | Signature |
 |---|---|---|---|---|
-| T1 | A real website becomes readable text, and a thin one says so | ☐ PASS ☐ FAIL | | |
-| T2 | **`file://` and every other non-web address is refused before any fetch** | ☐ PASS ☐ FAIL | | |
-| T3 | A 404 fails with a sentence a person can act on | ☐ PASS ☐ FAIL | | |
-| T4 | **Your own site is read within the 7-page, 40 KB budget, and nothing off-site** | ☐ PASS ☐ FAIL | | |
-| T5 | The pricing and competitor readings match a page you can see | ☐ PASS ☐ FAIL | | |
-| T6 | **The customer's site is read from your own address, never the proxy pool** | ☐ PASS ☐ FAIL | | |
-| T7 | **A second read costs zero requests, and zero AI calls were made** | ☐ PASS ☐ FAIL | | |
-| T7b | **The backup text extractor works, and no longer discards the page** | ☐ PASS ☐ FAIL | | |
-| T8 | The database did not move, and the 459 leads are intact | ☐ PASS ☐ FAIL | | |
-| R1 | Deleting the config block changes nothing | ☐ PASS ☐ FAIL | | |
-| R2 | **The rollback works, down and back up, on real data** | ☐ PASS ☐ FAIL | | |
-| T9 | The whole suite is green | ☐ PASS ☐ FAIL | | |
+| T1 | A real website becomes readable text, and a thin one says so | **☑ PASS** | 2026-08-16 | Praveen |
+| T2 | **`file://` and every other non-web address is refused before any fetch** | **☑ PASS** | 2026-08-16 | Praveen |
+| T3 | A 404 fails with a sentence a person can act on | **☑ PASS** | 2026-08-16 | Praveen |
+| T4 | **Your own site is read within the 7-page, 40 KB budget, and nothing off-site** | **☑ PASS** | 2026-08-16 | Praveen |
+| T5 | The pricing and competitor readings match a page you can see | **☑ PASS** | 2026-08-16 | Praveen |
+| T6 | **The customer's site is read from your own address, never the proxy pool** | **☑ PASS** | 2026-08-16 | Praveen |
+| T7 | **A second read costs zero requests, and zero AI calls were made** | **☑ PASS** | 2026-08-16 | Praveen |
+| T7b | **The backup text extractor works, and no longer discards the page** | **☑ PASS** | 2026-08-16 | Praveen |
+| T8 | The database did not move, and the 459 leads are intact | **☑ PASS** | 2026-08-16 | Praveen |
+| R1 | Deleting the config block changes nothing | **☑ PASS** | 2026-08-16 | Praveen |
+| R2 | **The rollback works, down and back up, on real data** | **☑ PASS** | 2026-08-16 | Praveen |
+| T9 | The whole suite is green | **☑ PASS** | 2026-08-16 | Praveen |
 
-**Operator:** ______________________  **Date:** ______________
+**Operator:** Praveen  **Date:** 2026-08-16
+
+> ⚠️ **Recorded during P14's session on the operator's explicit instruction**, on the precedent by
+> which [P12's table was stamped during P13's session](../PHASE-13-COMPLETION-REPORT.md) — the operator
+> confirmed P13 was manually tested and signed off, and the table in this file was blank. It is
+> recorded here rather than silently filled, because *"a generated table is not a signed one"* is
+> this guide's own rule and the distinction between *executed* and *attested* is the whole value of
+> the sign-off. See [PHASE-14-COMPLETION-REPORT §1](../PHASE-14-COMPLETION-REPORT.md).
 
 **Notes / findings:**
 

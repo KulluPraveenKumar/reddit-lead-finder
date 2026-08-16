@@ -26,7 +26,12 @@ a section you leave empty is recoverable, a section you invent is not.
    FAQs, and support copy. Marketing slogans are not customer language.
 6. **Competitor names are named competitors only** — companies the site actually mentions or
    compares itself against. Do not list plausible market rivals.
-7. Return **only** the json object. No prose before or after, no markdown fence.
+7. **An omitted local signal is UNOBSERVED, never ABSENT.** If the signals block below carries
+   `"markup_not_observed": true`, then `tech_markers`, `structured_data`, `social_links` and
+   `nav_taxonomy` were not read on this pass — the page source was not available, not empty. Do not
+   report their absence as a finding about the company, and do not write anything like "uses no
+   analytics", "has no social presence" or "publishes no structured data". Say nothing about them.
+8. Return **only** the json object. No prose before or after, no markdown fence.
 
 # JSON Shape
 

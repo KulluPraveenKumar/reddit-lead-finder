@@ -502,6 +502,77 @@ def test_the_scoring_package_exists():
     assert package.exists(), "R3, docs/34 §P11 and docs/35 §2.1 all name src/scoring/ by path"
 
 
+def test_the_knowledge_package_is_inside_the_ai_fence():
+    """Grep fence 2 (R3), over ``src/knowledge/`` — the **fourth** of the six paths.
+
+    ``test_the_scoring_package_is_inside_the_ai_fence`` says *"``src/knowledge/``
+    is P15's"*, and that was right when it was written: P15 is the phase
+    [34](../docs/34-implementation-plan.md) gives the package's *bulk*. But
+    **P14 is the phase that creates it** — its Files row is
+    ``src/knowledge/{bkb,sections}.py`` — and a fence extended one phase after the
+    package appears is a fence that was absent for exactly the change that
+    introduced the risk. This is P4's and P7's defect, recorded twice: a fence
+    ticked as delivered while missing. Fence 2 now covers **5 of 6**;
+    ``src/feedback/`` is P19's.
+
+    ⚠ **This path carries the sharpest version of R3's temptation yet, and P14
+    met it head-on.** The BKB is *built from* a model's output, so every instinct
+    says this package should import the layer that produced it — and the phase's
+    own section models were, on the first pass, imported straight from
+    ``src.ai.schemas``. That is why they now live in
+    ``src/knowledge/sections.py`` and why ``AIService`` is **injected** into
+    ``bkb.analyze`` rather than constructed there. What arrives here is a
+    validated value, not a call. Keeping it so is what lets the knowledge base be
+    read and reasoned about on a host with no API key.
+    """
+    knowledge = SRC / "knowledge"
+    assert knowledge.exists(), (
+        "src/knowledge/ is P14's package; its absence is a failure, not a skip"
+    )
+
+    scanned = 0
+    offenders = []
+    for path in _python_files(knowledge):
+        scanned += 1
+        hits = _imports_any(path, {"src.ai", "hermes"})
+        if hits:
+            offenders.append(f"{path.relative_to(PROJECT_ROOT)}: {hits}")
+
+    assert scanned > 0, "fence 2 scanned no files under src/knowledge/"
+    assert offenders == [], (
+        "R3: src/knowledge/ imports neither the AI layer nor an agent runtime. The "
+        "BKB is the platform's core asset (AD-13) and must be readable, "
+        "regenerable and reasonable-about without the thing that filled it. The "
+        "service is injected into bkb.analyze as a parameter; the section models "
+        "live in this package. Offenders: " + str(offenders)
+    )
+
+
+def test_the_knowledge_package_exists():
+    """The fence above walks whatever is there, so absence must fail loudly.
+
+    P5's F3, **seventh** occurrence — *a guard that cannot fail is documentation.*
+    """
+    package = SRC / "knowledge" / "__init__.py"
+    assert package.exists(), "R3, docs/34 §P14 and docs/35 §2.1 all name src/knowledge/ by path"
+
+
+def test_the_slug_pattern_agrees_across_the_fence():
+    """``SLUG_PATTERN`` is defined twice, on purpose, and the two must agree.
+
+    R3 forbids ``src/knowledge/`` from importing ``src.ai``, so the five-line
+    slug regex is duplicated rather than shared — the price of the fence, paid
+    knowingly. **A duplicate that can silently diverge is worse than an import**,
+    which is what this test exists to prevent: slugs are join keys written by one
+    side and matched by the other, so a pattern that drifted would produce a
+    persona the enrichment path can never match, with nothing failing.
+    """
+    from src.ai.schemas import SLUG_PATTERN as ai_pattern
+    from src.knowledge.sections import SLUG_PATTERN as knowledge_pattern
+
+    assert ai_pattern.pattern == knowledge_pattern.pattern
+
+
 def test_the_legacy_lead_scorer_is_still_importable():
     """``from src.scoring import LeadScorer`` survives the module-to-package move.
 

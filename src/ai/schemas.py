@@ -24,7 +24,10 @@ Urgency = Literal["none", "low", "medium", "high", "critical"]
 ICPMatch = Literal["none", "weak", "partial", "strong"]
 Sentiment = Literal["negative", "frustrated", "neutral", "positive"]
 Priority = Literal["low", "medium", "high", "urgent"]
-SignalTier = Literal["high", "medium", "low"]
+# ``SignalTier`` was here and is **removed**, not merely unused: its only
+# consumer, ``BuyingSignalOut``, moved to ``src/knowledge/sections.py`` under R3
+# (D5), and it took the literal with it. A dead alias in a module about wire
+# shapes is one a later reader wires something to.
 
 
 class StrictModel(BaseModel):
@@ -75,54 +78,52 @@ class Evidence(StrictModel):
 # consumer depends on them.
 
 
-class PainPointOut(StrictModel):
-    slug: str
-    title: str
-    description: str = ""
-    severity: int = Field(default=3, ge=1, le=5)
-    frequency: int = Field(default=3, ge=1, le=5)
-    how_people_phrase_it: list[str] = Field(default_factory=list)
-
-    _slug = field_validator("slug")(classmethod(lambda cls, v: _validate_slug(v)))
-
-
-class PersonaOut(StrictModel):
-    slug: str
-    name: str
-    job_title: str = ""
-    seniority: str = ""
-    responsibilities: list[str] = Field(default_factory=list)
-    metrics: list[str] = Field(default_factory=list)
-    tools: list[str] = Field(default_factory=list)
-    where_they_ask: list[str] = Field(default_factory=list)
-
-    _slug = field_validator("slug")(classmethod(lambda cls, v: _validate_slug(v)))
-
-
-class BuyingSignalOut(StrictModel):
-    slug: str
-    label: str
-    tier: SignalTier = "medium"
-    example_phrases: list[str] = Field(default_factory=list)
-
-    _slug = field_validator("slug")(classmethod(lambda cls, v: _validate_slug(v)))
-
-
-class CompetitorOut(StrictModel):
-    slug: str
-    name: str
-    aliases: list[str] = Field(default_factory=list)
-    context: str = ""
-
-    _slug = field_validator("slug")(classmethod(lambda cls, v: _validate_slug(v)))
+# ⚠️ **The 23 strict section models are NOT here — they are in
+# ``src/knowledge/sections.py``**, and that is [R3](../../docs/ARCHITECTURE_FREEZE.md)
+# rather than taste: ``src/knowledge/`` sits inside grep fence 2 and may never
+# import ``src.ai``, so a section schema it must use cannot live in this module.
+#
+# It is also the right split on the merits. **This module owns the envelope** —
+# what a *provider response* may look like. **``src/knowledge/`` owns the
+# sections** — what the *knowledge base is*. A BKB whose definition lived in the
+# AI layer would depend on the thing that happens to fill it.
+#
+# ``PersonaOut``, ``PainPointOut``, ``BuyingSignalOut`` and ``CompetitorOut``
+# were defined here by P1 and **had no importer**; P14 **moved** them rather than
+# copying them, so there is one definition and not two. See
+# [P14-DECISION-ANALYSIS §D5](../../docs/P14-DECISION-ANALYSIS.md).
 
 
 class BusinessKnowledgeOut(BaseModel):
-    """The 23-section BKB.
+    """The 23-section BKB envelope — **deliberately lenient**.
 
-    ``extra="allow"`` here, unlike everywhere else: sections are typed
-    individually in Phase 4, and rejecting a whole 23-section response because
-    one section gained a field would be a poor trade during that build-out.
+    ⚠ **Every field defaults and every container is untyped, and that is
+    load-bearing rather than lazy.** Two of P14's acceptance criteria pull
+    against each other on a strict envelope:
+
+        Exactly ONE `ai_calls` row with stage='business_intelligence' per
+        analysis  ·  a forced schema failure in ONE section leaves the other 22
+        persisted
+
+    ``AIService._record_ai_call`` writes one row **per attempt**, and
+    ``_execute``'s repair ladder retries on any ``output_model`` failure. So if
+    this envelope typed ``buyer_personas`` as ``list[PersonaOut]``, one
+    malformed slug in one persona would fail all 23 sections, send the response
+    down the repair ladder, and write a second and third ``ai_calls`` row — and
+    the two criteria would be **jointly unsatisfiable**.
+
+    Validation therefore happens in two places, not one:
+
+    * **here**, loosely, so well-formed JSON always validates in one attempt and
+      the repair ladder is reserved for what it was built for — malformed or
+      truncated JSON, which no per-section logic can rescue;
+    * **in :mod:`src.knowledge.sections`**, strictly, against the typed models
+      above, one section at a time.
+
+    The strict models were **not weakened — they were moved** to the section
+    boundary, which is where per-section failure isolation requires them, and
+    every one of them keeps its slug validator. See
+    [P14-DECISION-ANALYSIS §D4](../../docs/P14-DECISION-ANALYSIS.md).
     """
 
     model_config = ConfigDict(extra="allow", str_strip_whitespace=True)
@@ -134,16 +135,16 @@ class BusinessKnowledgeOut(BaseModel):
     industry: dict = Field(default_factory=dict)
     target_market: dict = Field(default_factory=dict)
     ideal_customer_profiles: list[dict] = Field(default_factory=list)
-    buyer_personas: list[PersonaOut] = Field(default_factory=list)
-    pain_points: list[PainPointOut] = Field(default_factory=list)
+    buyer_personas: list[dict] = Field(default_factory=list)
+    pain_points: list[dict] = Field(default_factory=list)
     jobs_to_be_done: list[dict] = Field(default_factory=list)
     value_propositions: list[dict] = Field(default_factory=list)
-    competitor_references: list[CompetitorOut] = Field(default_factory=list)
+    competitor_references: list[dict] = Field(default_factory=list)
     alternative_solutions: list[dict] = Field(default_factory=list)
     customer_language: list[str] = Field(default_factory=list)
     reddit_terminology: list[str] = Field(default_factory=list)
     search_intent: list[dict] = Field(default_factory=list)
-    buying_signals: list[BuyingSignalOut] = Field(default_factory=list)
+    buying_signals: list[dict] = Field(default_factory=list)
     common_objections: list[dict] = Field(default_factory=list)
     outreach_angles: list[dict] = Field(default_factory=list)
     content_themes: list[str] = Field(default_factory=list)

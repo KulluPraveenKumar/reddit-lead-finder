@@ -179,7 +179,16 @@ WEIGHTS: dict[str, float] = {
 #: the thing this constant exists to prevent. Each entry now names the phase
 #: that supplies the **data**, not the phase that supplies the column.
 ABSENT_COMPONENTS: dict[str, str] = {
-    "pain_phrase": "P14 — `pain_points.phrases_json` is written by analyze_business",
+    # ⚠️ The prefix stays **P14** because this dict's convention, stated above, is
+    # *the phase that supplies the data* — and P14 supplies it: `analyze_business`
+    # writes `phrases_json`. What P14 deliberately did NOT do is wire the
+    # component (operator decision D2, docs/P14-DECISION-ANALYSIS.md): the first
+    # `projects` row is P16's, so a component wired at P14 would contribute a
+    # structural zero to every real lead until then — DI24 inside the phase that
+    # fixed DI24. Wiring it beside `subreddit_fit` at P16 also rescales every
+    # stored total ONCE rather than twice (PHASE-11-HANDOVER §4 T2).
+    "pain_phrase": "P14 — `pain_points.phrases_json` is written by analyze_business; "
+    "the component waits for P16, when the first `projects` row makes it readable (D2)",
     "competitor": "P15 — the EntityRegistry over `bkb_entities` (created empty in 0007)",
     "subreddit_fit": "P16 — the first `projects` row is written by `project add`",
 }

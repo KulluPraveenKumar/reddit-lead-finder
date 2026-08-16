@@ -181,9 +181,50 @@ class AIService:
     # ------------------------------------------------------- domain methods
 
     def analyze_business(
-        self, *, url: str, site_text: str, local_signals: dict[str, Any] | None = None
+        self,
+        *,
+        url: str,
+        site_text: str,
+        local_signals: dict[str, Any] | None = None,
+        max_tokens: int | None = None,
+        project_id: int | None = None,
     ) -> BusinessKnowledgeOut:
         """URL -> the whole Business Knowledge Base, in ONE call."""
+        return self.analyze_business_call(
+            url=url,
+            site_text=site_text,
+            local_signals=local_signals,
+            max_tokens=max_tokens,
+            project_id=project_id,
+        ).value
+
+    def analyze_business_call(
+        self,
+        *,
+        url: str,
+        site_text: str,
+        local_signals: dict[str, Any] | None = None,
+        max_tokens: int | None = None,
+        project_id: int | None = None,
+    ) -> CallResult:
+        """:meth:`analyze_business`, with the call's metadata attached.
+
+        The sibling exists because **P14 is the first phase whose acceptance
+        criteria are about the call rather than the answer** —
+        [34 §P14](../../docs/34-implementation-plan.md) requires *"**exactly
+        one** ``ai_calls`` row … total cost **< $0.05** and displayed …
+        re-analysis of an unchanged fingerprint makes **zero** calls"*. Those are
+        ``from_cache`` and ``cost_usd``, and a caller that cannot see them cannot
+        display the cost or prove the zero.
+
+        :meth:`analyze_business` keeps returning the model, so the domain-method
+        idiom the other three follow is unbroken and no existing caller changes.
+
+        ``max_tokens`` defaults to ``ai.max_tokens.business_intelligence``
+        ([34 §P14](../../docs/34-implementation-plan.md)'s **Config** row).
+        Generous headroom on purpose: truncation is the one failure the repair
+        ladder cannot fix, and unused headroom costs nothing.
+        """
         return self._call(
             stage="business_intelligence",
             variables={
@@ -192,11 +233,11 @@ class AIService:
                 "local_signals": json.dumps(local_signals or {}, sort_keys=True, indent=2),
             },
             output_model=BusinessKnowledgeOut,
-            # Generous headroom: truncation is the one failure the repair ladder
-            # cannot fix, and unused headroom costs nothing.
-            max_tokens=12000,
+            max_tokens=max_tokens
+            or int(self.settings.get("ai.max_tokens.business_intelligence", 12000)),
             content_for_hash=site_text,
-        ).value
+            project_id=project_id,
+        )
 
     def regenerate_section(
         self,
@@ -453,6 +494,7 @@ class AIService:
         prompt_version: int | None = None,
         frozen: FrozenContext | None = None,
         content_for_hash: str | None = None,
+        project_id: int | None = None,
     ) -> CallResult:
         self.require_enabled()
         self._ensure_day_spend_loaded()
@@ -527,6 +569,7 @@ class AIService:
                 output_model=output_model,
                 max_tokens=max_tokens,
                 prefix_hash=prefix_hash,
+                project_id=project_id,
             )
             payload = (
                 result.value.model_dump() if hasattr(result.value, "model_dump") else result.value
@@ -558,6 +601,7 @@ class AIService:
         output_model: type[BaseModel] | None,
         max_tokens: int,
         prefix_hash: str,
+        project_id: int | None = None,
     ) -> CallResult:
         repair_hint: str | None = None
         branch_attempts: dict[RepairBranch, int] = {}
@@ -653,6 +697,7 @@ class AIService:
                     outcome="truncated",
                     attempt=total_attempts,
                     prefix_hash=prefix_hash,
+                    project_id=project_id,
                     error=f"output budget {previous} exhausted; retrying at {max_tokens}",
                 )
                 continue
@@ -670,6 +715,7 @@ class AIService:
                     outcome="ok",
                     attempt=total_attempts,
                     prefix_hash=prefix_hash,
+                    project_id=project_id,
                 )
                 return CallResult(
                     value=outcome.value,
@@ -690,6 +736,7 @@ class AIService:
                 outcome=branch.value,
                 attempt=total_attempts,
                 prefix_hash=prefix_hash,
+                project_id=project_id,
                 error=outcome.error,
             )
 
@@ -714,9 +761,18 @@ class AIService:
         outcome: str,
         attempt: int,
         prefix_hash: str,
+        project_id: int | None = None,
         error: str | None = None,
     ) -> None:
-        """Persist to ``ai_calls``. Never allowed to break the call it records."""
+        """Persist to ``ai_calls``. Never allowed to break the call it records.
+
+        ``project_id`` has existed on this table since `0007` closed its deferred
+        foreign key, and P14 is the first stage with a project to attribute a
+        call to. It is what makes *"this project's BKB cost $0.0x"* a query
+        rather than a time window — the indirection
+        [DI28](../../docs/DEFERRED-IMPROVEMENTS.md) records ``leads`` still
+        living with.
+        """
         try:
             from ..db.database import session_scope
             from ..db.models import AICall
@@ -726,6 +782,7 @@ class AIService:
                     AICall(
                         provider=self.provider_name,
                         model=getattr(self.provider, "model", ""),
+                        project_id=project_id,
                         stage=stage,
                         prompt_version=version,
                         prefix_hash=prefix_hash,

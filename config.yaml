@@ -299,6 +299,14 @@ ai:
     max_attempts: 3
     base_delay: 1.0
 
+  # Output budget per stage. Generous on purpose: truncation is the one failure
+  # the repair ladder cannot fix, and unused headroom costs nothing — an output
+  # ceiling is billed on tokens emitted, not on tokens allowed. The 23-section
+  # BKB is the largest single response in the system, which is why it is the
+  # only stage with a key here (34 §P14).
+  max_tokens:
+    business_intelligence: 12000
+
 # Prices per 1M tokens, verified 2026-07-30. Displayed alongside this date so
 # staleness is visible rather than assumed.
 pricing:
